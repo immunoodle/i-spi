@@ -1,0 +1,16 @@
+version: '3'
+
+services:
+  madi-toolset:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file: .env
+    environment:
+      - SHINY_LOG_LEVEL=TRACE
+    ports:
+      - "3838:3838"
+    stdin_open: true
+    tty: true
+    image: madi-lumi-reader
+    container_name: madi-lumi-reader
