@@ -1,5 +1,6 @@
 # Use an official R runtime as a parent image
 FROM rocker/tidyverse:latest
+LABEL org.opencontainers.image.source=https://github.com/hoenlab/i-spi
 
 # Install any needed packages specified in requirements.txt
 RUN apt-get update && apt-get install -y \
