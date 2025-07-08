@@ -4104,20 +4104,20 @@ plot_standard_curves <- function(fitted_df_in, cv_dilutions, aggrigated_fit_df, 
   p <- plot_ly()
 
   for (plate in unique(fitted_df$model_id)) {
-    plate_data <- fitted_df[fitted_df$model_id == plate,]
-    plate_data <- plate_data[order(plate_data$x), ]
+    sc_plate_data <- fitted_df[fitted_df$model_id == plate,]
+    sc_plate_data <- sc_plate_data[order(sc_plate_data$x), ]
 
     # print(plate_data$dash)
     p <- p %>%
       add_trace(
-        x = plate_data$x,
-        y = plate_data$fitted,
+        x = sc_plate_data$x,
+        y = sc_plate_data$fitted,
         type = "scatter",
         mode = "lines",
-        line = list(dash = unique(plate_data$dash)),
-        color = plate_data$model_id, # color by plateid
+        line = list(dash = unique(sc_plate_data$dash)),
+        color = sc_plate_data$model_id, # color by plateid
         colors = microviz_kelly_pallete,
-        name = paste(plate, plate_data$crit) # Name trace by plateid and model class.
+        name = paste(plate, sc_plate_data$crit) # Name trace by plateid and model class.
       )
   }
 
@@ -4260,11 +4260,11 @@ plot_mse_cv <- function(mse_cv_df) {
   p <- plot_ly()
 
   for (plate in unique(mse_cv_df$plateid)) {
-    plate_data <- mse_cv_df[mse_cv_df$plateid == plate,]
+    sc_plate_data <- mse_cv_df[mse_cv_df$plateid == plate,]
 
     p <- p %>%
       add_trace(
-        data = plate_data,
+        data = sc_plate_data,
         x = ~cv,
         y = ~mse,
         type = "scatter",

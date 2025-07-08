@@ -1946,7 +1946,7 @@ prepare_lm_sample_data <- function(study_accession, experiment_accession, is_log
 
 ## Fit lm with AU outcome
 fit_model <- function(sub_df) {
-  mod <- lm(y_au ~ x_au, data = sub_df)
+  mod <- lm(y_au ~ x_au, data = sub_df[sub_df$ecs_group == "usual",])
   tidy_out <- tidy(mod)
   glance_out <- glance(mod)
   new_x <- seq(min(sub_df$x_au, na.rm = TRUE), max(sub_df$x_au, na.rm = TRUE), length.out = 100)
@@ -1958,13 +1958,55 @@ fit_model <- function(sub_df) {
   est_intercept <- as.numeric(tidy_out[tidy_out$term == "(Intercept)", "estimate"])
   est_slope <- as.numeric(tidy_out[tidy_out$term == "x_au", "estimate"])
 
-  fit_data <- data.frame(new_y = sub_df$new_y, x_au = sub_df$x_au)
+  sub_df$new_y <- (sub_df$y_au - est_intercept) / est_slope
+  fit_data <- data.frame(new_y = sub_df$new_y, x_au = sub_df$x_au, ecs_group = sub_df$ecs_group)
   fit_data <- na.omit(fit_data)
   # model_corr <- lm(new_y ~ sub_df$x_au)
-  model_corr <- lm(new_y ~ x_au, data = fit_data)
+  model_corr <- lm(new_y ~ x_au, data = fit_data[fit_data$ecs_group == "usual",])
   model_corr_tidy <- tidy(model_corr)
   model_corr_glance <- glance(model_corr)
   pred_corr_df <- data.frame(x_au = new_x)
+  pred_corr <- predict(model_corr, newdata = pred_corr_df, interval = "confidence")
+  pred_corr_df <- cbind(pred_corr_df, as.data.frame(pred_corr))
+
+
+  return(list(
+    tidy = tidy_out,
+    glance = glance_out,
+    predict = pred_df,
+    model_corr_tidy = model_corr_tidy,
+    model_corr_glance = model_corr_glance,
+    predict_corr = pred_corr_df,
+    data_with_new_y = sub_df
+    # has_corrected_model = has_corrected_model
+
+  ))
+
+}
+## Fit lm with AU outcome
+fit_model_xy <- function(sub_df, x, y) {
+  sub_df$x <- sub_df[[x]]
+  sub_df$y <- sub_df[[y]]
+
+  mod <- lm(y ~ x, data = sub_df[sub_df$ecs_group == "usual",])
+  tidy_out <- tidy(mod)
+  glance_out <- glance(mod)
+  new_x <- seq(min(sub_df$x, na.rm = TRUE), max(sub_df$x, na.rm = TRUE), length.out = 100)
+  pred_df <- data.frame(x_au = new_x)
+  pred <- predict(mod, newdata = pred_df, interval = "confidence")
+  pred_df <- cbind(pred_df, as.data.frame(pred))
+
+
+  est_intercept <- as.numeric(tidy_out[tidy_out$term == "(Intercept)", "estimate"])
+  est_slope <- as.numeric(tidy_out[tidy_out$term == "x_au", "estimate"])
+
+  fit_data <- data.frame(new_y = sub_df$new_y, x = sub_df$x, ecs_group = sub_df$ecs_group)
+  fit_data <- na.omit(fit_data)
+  # model_corr <- lm(new_y ~ sub_df$x_au)
+  model_corr <- lm(new_y ~ x, data = fit_data[fit_data$ecs_group == "usual",])
+  model_corr_tidy <- tidy(model_corr)
+  model_corr_glance <- glance(model_corr)
+  pred_corr_df <- data.frame(x = new_x)
   pred_corr <- predict(model_corr, newdata = pred_corr_df, interval = "confidence")
   pred_corr_df <- cbind(pred_corr_df, as.data.frame(pred_corr))
 
@@ -1983,7 +2025,7 @@ fit_model <- function(sub_df) {
 }
 
 fit_mfi_model <- function(sub_df) {
-  mod <- lm(y_mfi ~ x_mfi, data = sub_df)
+  mod <- lm(y_mfi ~ x_mfi, data = sub_df[sub_df$ecs_group == "usual",])
   tidy_out <- tidy(mod)
   glance_out <- glance(mod)
   new_x <- seq(min(sub_df$x_mfi, na.rm = TRUE), max(sub_df$x_mfi, na.rm = TRUE), length.out = 100)
@@ -1996,11 +2038,12 @@ fit_mfi_model <- function(sub_df) {
   est_slope <- as.numeric(tidy_out[tidy_out$term == "x_mfi", "estimate"])
 
   # if (!is.na(est_slope)) {
-  # new_y <- (sub_df$y_mfi - est_intercept) / est_slope
-  fit_data <- data.frame(new_y = sub_df$new_y, x_mfi = sub_df$x_mfi)
+  sub_df$new_y <- (sub_df$y_mfi - est_intercept) / est_slope
+
+  fit_data <- data.frame(new_y = sub_df$new_y, x_mfi = sub_df$x_mfi, ecs_group = sub_df$ecs_group)
   fit_data <- na.omit(fit_data)
   # model_corr <- lm(new_y ~ sub_df$x_au)
-  model_corr <- lm(new_y ~ x_mfi, data = fit_data)
+  model_corr <- lm(new_y ~ x_mfi, data = fit_data[fit_data$ecs_group == "usual",])
   model_corr_tidy <- tidy(model_corr)
   model_corr_glance <- glance(model_corr)
   pred_corr_df <- data.frame(x_mfi = new_x)
@@ -2015,7 +2058,8 @@ fit_mfi_model <- function(sub_df) {
     predict = pred_df,
     model_corr_tidy = model_corr_tidy,
     model_corr_glance = model_corr_glance,
-    predict_corr = pred_corr_df
+    predict_corr = pred_corr_df,
+    data_with_new_y = sub_df
     # has_corrected_model = has_corrected_model
 
   ))
@@ -2023,7 +2067,7 @@ fit_mfi_model <- function(sub_df) {
 }
 
 # Preform dilutional linearity regression
-dil_lin_regress <- function(distinct_samples, response_type) {
+dil_lin_regress <- function(distinct_samples, response_type, exclude_conc_samples) {
   distinct_samples <- distinct_samples[, c("study_accession", "experiment_accession", "antigen", "plate", "dilution", "antibody_mfi", "antibody_au", "patientid", "timeperiod", "gate_class_linear_region", "gate_class", "gate_class_loq", "quality_score")]
 
   dilutions <- sort(unique(distinct_samples$dilution))
@@ -2038,64 +2082,136 @@ dil_lin_regress <- function(distinct_samples, response_type) {
 
   dilution_df <- merge(x_dilution_df, y_dilution_df, by = c("study_accession", "experiment_accession", "antigen", "plate", "patientid", "timeperiod"), all.x = T)
 
+  # Keep all original data including too concentrated samples
+  cat("Excluding concentrated samples")
+  print(exclude_conc_samples)
+  #dilution_df_full <- dilution_df
+  dilution_df_modeling <- dilution_df
+  if (exclude_conc_samples) {
+    dilution_df_modeling$ecs_group <- case_when(
+      dilution_df_modeling$x_gate_class_linear_region == "Too Concentrated" ~ "Too Concentrated",
+      dilution_df_modeling$y_gate_class_linear_region == "Too Concentrated" ~ "Too Concentrated",
+      .default = "usual"
+    )
+    # dilution_df_modeling <- dilution_df_full[dilution_df_full$x_gate_class_linear_region != "Too Concentrated", ]
+    # dilution_df_modeling <- dilution_df_modeling[dilution_df_modeling$y_gate_class_linear_region != "Too Concentrated", ]
+  } else {
+    dilution_df_modeling$ecs_group <- "usual"
+    #dilution_df_modeling <- dilution_df_full
+  }
+  #dilution_df_modeling <- dilution_df_full
+
   # filtered data
   if (response_type == "au") {
-    dilution_df <-dilution_df[!is.na(dilution_df$x_au) & !is.na(dilution_df$y_au), ]
+    dilution_df_modeling <-dilution_df_modeling[!is.na(dilution_df_modeling$x_au) & !is.na(dilution_df_modeling$y_au), ]
   } else if (response_type == "mfi") {
-    dilution_df <-dilution_df[!is.na(dilution_df$x_mfi) & !is.na(dilution_df$y_mfi), ]
+    dilution_df_modeling <-dilution_df_modeling[!is.na(dilution_df_modeling$x_mfi) & !is.na(dilution_df_modeling$y_mfi), ]
   }
+
   #x_dilution_df <- x_dilution_df[, c("study_accession", "experiment_accession", "antigen", "plate", "patientid", "timeperiod", "")]
   # by_plate_dil_antigen <- group_by(dilution_df, plate, y_dilution, antigen)
+ # if (nrow(dilution_df) > 0) {
 
   #  Pre-calculate adjusted y
-  if (response_type == "au") {
-    dilution_df <- dilution_df %>%
-      group_by(plate, y_dilution, antigen) %>%
-      group_modify(~ {
-        mod <- lm(y_au ~ x_au, data = .x)
-        intercept <- coef(mod)[["(Intercept)"]]
-        slope <- coef(mod)[["x_au"]]
-        .x$new_y <- (.x$y_au - intercept) / slope
-        .x
-      }) %>%
-      ungroup()
-  } else if (response_type == "mfi") {
-    dilution_df <- dilution_df %>%
-      group_by(plate, y_dilution, antigen) %>%
-      group_modify(~ {
-        mod <- lm(y_mfi ~ x_mfi, data = .x)
-        intercept <- coef(mod)[["(Intercept)"]]
-        slope <- coef(mod)[["x_mfi"]]
-        .x$new_y <- (.x$y_mfi - intercept) / slope
-        .x
-      }) %>%
-      ungroup()
-  }
+  # if (response_type == "au") {
+  #   dilution_df_modeling <- dilution_df_modeling %>%
+  #     group_by(plate, y_dilution, antigen) %>%
+  #     group_modify(~ {
+  #       mod <- lm(y_au ~ x_au, data = .x[.x$esc_group == "usual",])
+  #       intercept <- coef(mod)[["(Intercept)"]]
+  #       slope <- coef(mod)[["x_au"]]
+  #       .x$new_y <- (.x$y_au - intercept) / slope
+  #       .x
+  #     }) %>%
+  #     ungroup()
+  # } else if (response_type == "mfi") {
+  #   dilution_df_modeling <- dilution_df_modeling %>%
+  #     group_by(plate, y_dilution, antigen) %>%
+  #     group_modify(~ {
+  #       mod <- lm(y_mfi ~ x_mfi, data = .x[.x$esc_group == "usual",])
+  #       intercept <- coef(mod)[["(Intercept)"]]
+  #       slope <- coef(mod)[["x_mfi"]]
+  #       .x$new_y <- (.x$y_mfi - intercept) / slope
+  #       .x
+  #     }) %>%
+  #     ungroup()
+  # }
 
+  # dilution_df_with_newy <- dilution_df_full %>%
+  #   left_join(model_params, by = c("plate", "y_dilution", "antigen")) %>%
+  #   mutate(
+  #     new_y = case_when(
+  #       response_type == "au"  ~ (y_au  - intercept) / slope,
+  #       response_type == "mfi" ~ (y_mfi - intercept) / slope,
+  #       TRUE ~ NA_real_
+  #     )
+  #   )
+
+ # fit_model_xy <- function(sub_df, x, y)
   if (response_type == "au") {
-    results <- dilution_df %>%
+    # x <- "x_au"
+    # y <- "y_au"
+    safe_fit_model <- safely(fit_model)
+    results <- dilution_df_modeling %>%
+      group_by(plate, y_dilution, antigen) %>%
+      nest() %>%
+      # mutate(
+      #   model_results = map(data, fit_model)
+      # )
+      mutate(
+        model_out = map(data, safe_fit_model),          # catch errors safely
+        model_results = map(model_out, "result")       # extract result
+      ) %>%
+      filter(!map_lgl(model_results, is.null))
+
+  } else if (response_type == "mfi") {
+    # x <- "x_mfi"
+    # y <- "y_mfi"
+    safe_fit_mfi_model <- safely(fit_mfi_model)
+    results <- dilution_df_modeling %>%
       group_by(plate, y_dilution, antigen) %>%
       nest() %>%
       mutate(
-        model_results = map(data, fit_model)
-      )
-  } else if (response_type == "mfi") {
-    results <- dilution_df %>%
-      group_by(plate, y_dilution, antigen) %>%
-      nest() %>%
-      mutate(
-        model_results = map(data, fit_mfi_model)
-      )
+        model_out = map(data, safe_fit_mfi_model),          # catch errors safely
+        model_results = map(model_out, "result")       # extract result
+      ) %>%
+      filter(!map_lgl(model_results, is.null))
+      # mutate(
+      #   model_results = map(data, fit_mfi_model)
+      # )
   }
 
-  by_plate_dil_antigen <- group_by(dilution_df, plate, y_dilution, antigen)
+  by_plate_dil_antigen <- group_by(dilution_df_modeling, plate, y_dilution, antigen)
+  by_plate_dil_antigen <- results %>%
+    mutate(data_with_new_y = map(model_results, "data_with_new_y")) %>%
+    select(plate, y_dilution, antigen, data_with_new_y) %>%
+    unnest(data_with_new_y)
+
+  print(summary(by_plate_dil_antigen))
+  #print(head(by_plate_dil_antigen))
+  # by_plate_dil_antigen <- by_plate_dil_antigen %>%
+  #   left_join(dilution_df_modeling, by = c("plate", "y_dilution", "antigen")) %>%
+  #   mutate(
+  #     new_y = if_else(
+  #       !is.na(y_au) & !is.na(intercept) & !is.na(slope),
+  #       (y_au - intercept) / slope,
+  #       NA_real_
+  #     )
+  #   )
+
+  # cat("results")
+  # print(results)
+  cat("model_out\n")
+  #print(results$model_out[[1]])
+  cat("model_results\n")
+ # print(results$model_results[[1]])
 
   tidy_results <- results %>%
-    select(plate, y_dilution, antigen, model_results) %>%
-    unnest_wider(model_results)
+     select(plate, y_dilution, antigen, model_results) %>%
+     unnest_wider(model_results)
 
-  tidy_results_2 <- tidy_results %>%
-    unnest_wider(tidy)
+   tidy_results_2 <- tidy_results %>%
+     unnest_wider(tidy)
 
   predict_df <- tidy_results_2[, c("plate", "y_dilution", "antigen", "predict")] %>% unnest(predict)
   glance_df <- tidy_results_2[, c("plate", "y_dilution", "antigen", "glance")] %>% unnest(glance)
@@ -2125,6 +2241,10 @@ dil_lin_regress <- function(distinct_samples, response_type) {
     observed_data = by_plate_dil_antigen
     # has_corrected_flags = tidy_results[, c("plate", "y_dilution", "antigen", "has_corrected_model")]
   ))
+
+  # } else {
+ # return(NULL)
+  # }
 }
 # Plot one regression in the facet
 plot_single_regres <- function(distinct_samples, dil_lin_regress_list, plate, antigen, y_dil, is_dil_lin_corr, response_type, is_log_mfi_axis) {
@@ -2155,6 +2275,8 @@ plot_single_regres <- function(distinct_samples, dil_lin_regress_list, plate, an
 
   observed_data <- dil_lin_regress_list$observed_data
 
+ # observed_data_v <<- observed_data
+
   observed_data <- observed_data[observed_data$antigen == antigen &
                                    observed_data$plate == plate &
                                    observed_data$y_dilution == y_dil,]
@@ -2183,6 +2305,8 @@ plot_single_regres <- function(distinct_samples, dil_lin_regress_list, plate, an
   if (response_type == "au") {
   if (is_dil_lin_corr) {
     observed_data$hover_text <- paste0(
+      "Subject Accession: ", observed_data$patientid, "<br>",
+      "Timpoint: ", observed_data$timeperiod, "<br>",
       x_label, ": ", observed_data$x_au, "<br>",
       y_label, ": ", observed_data$new_y, "<br>",
       "Concentration Status at ", observed_data$x_dilution, ": ", observed_data$x_gate_class_linear_region, "<br>",
@@ -2190,6 +2314,8 @@ plot_single_regres <- function(distinct_samples, dil_lin_regress_list, plate, an
     )
   }else {
     observed_data$hover_text <- paste0(
+      "Subject Accession: ", observed_data$patientid, "<br>",
+      "Timpoint: ", observed_data$timeperiod, "<br>",
       x_label, ": ", observed_data$x_au, "<br>",
       y_label, ": ", observed_data$y_au, "<br>",
       "Concentration Status at ", observed_data$x_dilution, ": ", observed_data$x_gate_class_linear_region, "<br>",
@@ -2266,6 +2392,8 @@ plot_single_regres <- function(distinct_samples, dil_lin_regress_list, plate, an
   } else {
     if (is_dil_lin_corr) {
       observed_data$hover_text <- paste0(
+        "Subject Accession: ", observed_data$patientid, "<br>",
+        "Timpoint: ", observed_data$timeperiod, "<br>",
         x_label, ": ", observed_data$x_mfi, "<br>",
         y_label, ": ", observed_data$new_y, "<br>",
         "Concentration Status at ", observed_data$x_dilution, ": ", observed_data$x_gate_class_linear_region, "<br>",
@@ -2273,6 +2401,8 @@ plot_single_regres <- function(distinct_samples, dil_lin_regress_list, plate, an
       )
     }else {
       observed_data$hover_text <- paste0(
+        "Subject Accession: ", observed_data$patientid, "<br>",
+        "Timpoint: ", observed_data$timeperiod, "<br>",
         x_label, ": ", observed_data$x_mfi, "<br>",
         y_label, ": ", observed_data$y_mfi, "<br>",
         "Concentration Status at ", observed_data$x_dilution, ": ", observed_data$x_gate_class_linear_region, "<br>",
@@ -2366,6 +2496,10 @@ plot_single_regres <- function(distinct_samples, dil_lin_regress_list, plate, an
 
 # Plot a single plate facet
 dilution_lm_facet <- function(distinct_samples, dil_lin_regress_list, plate, antigen, is_dil_lin_corr, response_type, is_log_mfi_axis) {
+
+  # if (is.null(dil_lin_regress_list)) {
+  #   return(NULL)
+  # }
 
   observed_dat <- dil_lin_regress_list$observed_data
   middle_dilution <- unique(observed_dat$x_dilution)

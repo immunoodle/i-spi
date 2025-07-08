@@ -125,34 +125,34 @@ observe({
                 )
               } else {
                 em("None selected", style = "color: #98FB98;")
-              }, br(),
-              strong("Reference Arm: ", style = "color: #90EE90;"),
-              reference_arm(),
-              br(),
-             strong("Blank Control: ", style = "color: #90EE90;"),
-             if(background_control_rv() == "ignored") {
-               "Ignored"
-             } else if (background_control_rv() == "included"){
-               "Included"
-             } else if (background_control_rv() == "subtracted") {
-               "Subtracted 1 x Geometric mean"
-             } else if (background_control_rv() == "subtracted_3x") {
-               "Subtract 3 x Geometric Mean"
-             }  else if (background_control_rv() == "subtracted_10x") {
-               "Subtracted 10 x Geometric Mean"
-             }, br(),
-             strong("Failed Well Criteria: ", style = "color: #90EE90;"),
-             if (failed_well_criteria() == "lower") {
-               "Below Lower Threshold"
-             } else if (failed_well_criteria() == "upper") {
-               "Below Upper Threshold"
-             }, br(),
-             strong("Bead Count Upper Threshold: ", style = "color: #90EE90;"),
-             upper_threshold_rv(),
-             br(),
-             strong("Bead Count Lower Threshold: ", style = "color: #90EE90;"),
-             lower_threshold_rv(),
-             br()
+              }, #br()
+             #  strong("Reference Arm: ", style = "color: #90EE90;"),
+             #  reference_arm(),
+             #  br(),
+             # strong("Blank Control: ", style = "color: #90EE90;"),
+             # if(background_control_rv() == "ignored") {
+             #   "Ignored"
+             # } else if (background_control_rv() == "included"){
+             #   "Included"
+             # } else if (background_control_rv() == "subtracted") {
+             #   "Subtracted 1 x Geometric mean"
+             # } else if (background_control_rv() == "subtracted_3x") {
+             #   "Subtract 3 x Geometric Mean"
+             # }  else if (background_control_rv() == "subtracted_10x") {
+             #   "Subtracted 10 x Geometric Mean"
+             # }, br(),
+             # strong("Failed Well Criteria: ", style = "color: #90EE90;"),
+             # if (failed_well_criteria() == "lower") {
+             #   "Below Lower Threshold"
+             # } else if (failed_well_criteria() == "upper") {
+             #   "Below Upper Threshold"
+             # }, br(),
+             # strong("Bead Count Upper Threshold: ", style = "color: #90EE90;"),
+             # upper_threshold_rv(),
+             # br(),
+             # strong("Bead Count Lower Threshold: ", style = "color: #90EE90;"),
+             # lower_threshold_rv(),
+             # br()
              #strong("Treatment of MFI values in Standard Curves: ",style = "color: #90EE90;"),
                # if (aggrigate_mfi_dilution()) {
                #   "Mean MFI at each Dilution Factor"
@@ -166,7 +166,19 @@ observe({
             )
           }
       )
-    )
+    #   div(style = "padding: 15px; color: #FFFFFF;",
+    #       hr(style = "margin: 10px 0; border-color: #90EE90;"),
+    #       conditionalPanel(
+    #         condition = "input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
+    #
+    #       selectInput(
+    #         inputId = "qc_component",
+    #         label = "QC Phase",
+    #         choices = c("Data", "Bead Count", "Standard Curve", "Dilution Analysis", "Plate Normalization", "Outliers", "Subgroup Detection"),
+    #         selected = "Data",
+    #         multiple = FALSE
+    #       )))
+     )
   })
 
   output$primarysidepanel <- renderUI({

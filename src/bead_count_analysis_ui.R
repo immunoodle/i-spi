@@ -1,7 +1,24 @@
-observeEvent(list(input$inLoadedData, input$readxMap_experiment_accession), {
-  req(input$inLoadedData, input$readxMap_experiment_accession)
+#observeEvent(list(input$inLoadedData, input$readxMap_experiment_accession), {
+observeEvent(list(
+     input$readxMap_experiment_accession,
+     input$readxMap_study_accession,
+     input$qc_component,
+     input$study_level_tabs,
+     input$main_tabs), {
 
-  if (input$inLoadedData == "Bead Count") {
+       req(input$qc_component == "Bead Count",
+           input$readxMap_study_accession != "Click here",
+           input$readxMap_experiment_accession != "Click here",
+           input$study_level_tabs == "Experiments",
+           input$main_tabs == "view_files_tab")
+
+  #req(input$inLoadedData, input$readxMap_experiment_accession)
+
+  if (input$qc_component == "Bead Count" && input$readxMap_study_accession != "Click here" &&
+      input$readxMap_experiment_accession != "Click here" &&
+      input$study_level_tabs == "Experiments" &&
+      input$main_tabs == "view_files_tab") {
+
     selected_study <- selected_studyexpplate$study_accession
     selected_experiment <- selected_studyexpplate$experiment_accession
 
@@ -159,14 +176,14 @@ observeEvent(list(input$inLoadedData, input$readxMap_experiment_accession), {
     req(input$readxMap_study_accession, input$readxMap_experiment_accession)
     req(sample_data$study_accession, sample_data$experiment_accession)
     updateSelectInput(session, "plateSelection_bead", selected = NULL)  # Reset the plateSelection
-    plate_data <- sample_data[sample_data$study_accession %in% input$readxMap_study_accession &
+    bead_plate_data <- sample_data[sample_data$study_accession %in% input$readxMap_study_accession &
                                    sample_data$experiment_accession %in% input$readxMap_experiment_accession, ]
 
-    req(nrow(plate_data) > 0)
+    req(nrow(bead_plate_data) > 0)
 
     selectInput("plateSelection_bead",
                 label = "Plate in Sample data",
-                choices = unique(plate_data$plateid))
+                choices = unique(bead_plate_data$plateid))
   })
   # sample data antigens
   output$sample_data_antigenUI <- renderUI({
@@ -280,5 +297,13 @@ observeEvent(list(input$inLoadedData, input$readxMap_experiment_accession), {
 
   })
 
+  }
+  else {
+    output$beadCountAnalysisUI <- renderUI({ NULL })
+    output$plateSelection_bead_count_UI <- renderUI({ NULL })
+    output$sample_data_antigenUI <- renderUI({ NULL })
+    output$beadCountPlot <- renderPlotly({ NULL })
+    output$sample_low_bead_count_table <- renderTable({ NULL })
+    output$download_bead_gating <- renderUI({ NULL })
   }
 })

@@ -1,7 +1,19 @@
-observeEvent(list(input$inLoadedData, input$readxMap_experiment_accession), {
-  req(input$inLoadedData, input$readxMap_experiment_accession)
+#observeEvent(list(input$inLoadedData, input$readxMap_experiment_accession), {
+observeEvent(list(
+  input$readxMap_experiment_accession,
+  input$readxMap_study_accession,
+  input$qc_component,
+  input$study_level_tabs,
+  input$main_tabs), {
 
-  if (input$inLoadedData == "Subgroup Detection") {
+    req(input$qc_component == "Subgroup Detection",
+        input$readxMap_study_accession != "Click here",
+        input$readxMap_experiment_accession != "Click here",
+        input$study_level_tabs == "Experiments",
+        input$main_tabs == "view_files_tab")
+  # req(input$inLoadedData, input$readxMap_experiment_accession)
+
+  if (input$qc_component == "Subgroup Detection") {
 
     selected_study <- selected_studyexpplate$study_accession
     selected_experiment <- selected_studyexpplate$experiment_accession
@@ -521,6 +533,22 @@ observeEvent(list(input$inLoadedData, input$readxMap_experiment_accession), {
 
   } else {# in Subgroup Detection tab
     output$subgroupDetectionUI <- NULL
+    output$parameter_subgroup_dependencies_UI <- renderUI(NULL)
+    output$selectedFeatureUI <- renderUI(NULL)
+    output$response_class <- renderUI(NULL)
+    output$transformation_type <- renderUI(NULL)
+    output$selectedAntigenSampleUI <- renderUI(NULL)
+    output$density_histogram_UI <- renderPlotly(NULL)
+    output$download_density_histogram_first_visit <- renderUI(NULL)
+    output$show_time_dependent_plots <- renderUI(NULL)
+    output$k_selection_display <- renderUI(NULL)
+    output$visit_difference_UI <- renderPlotly(NULL)
+    output$download_visit_difference <- renderUI(NULL)
+    output$difference_histogram_UI <- renderPlotly(NULL)
+    output$download_difference_histogram_data <- renderUI(NULL)
+    output$assay_classification_UI <- renderPlotly(NULL)
+    output$download_assay_classification_data <- renderUI(NULL)
+
   }
 
 })

@@ -8,11 +8,11 @@ reset_import_values <- function() {
     rv_value_button$valueButton <- 0
 
     # Clear reactiveValues objects
-    header_rvdata$data <- NULL
-    standard_rvdata$data <- NULL
-    sample_rvdata$data <- NULL
-    control_rvdata$data <- NULL
-    buffer_rvdata$data <- NULL
+    # header_rvdata$data <- NULL
+    # standard_rvdata$data <- NULL
+    # sample_rvdata$data <- NULL
+    # control_rvdata$data <- NULL
+    # buffer_rvdata$data <- NULL
 
     # Clear reactiveVal objects
     plate_data(NULL)
@@ -202,63 +202,64 @@ output$view_stored_experiments_ui <- renderUI({
           # Study Overview Tab
           tabPanel("Study Overview",
                    id = "study_overview_tab",
-                   bsCollapse(
-                     id = "studyOverviewCollapse",
-                       bsCollapsePanel(
-                         title = "Antigen Family",
-                         div(
-                           style = "padding: 15px; width: 100%; max-width: 100%; overflow-x: auto;",  # Added styling
-                           uiOutput("antigenFamilyUI")
-                         ),
-                         style = "primary"
-                       ),
-                     bsCollapsePanel(
-                       title = "Bead Count Options",
-                       div(
-                         style = "padding: 15px; width: 100%; max-width: 100%; overflow-x: auto;",  # Added styling
-                         uiOutput("bead_count_controls_UI")
-                       ),
-                       style = "primary"
-                     ),
-                     bsCollapsePanel(
-                       title = "Standard Curve Dilution Options",
-                       div(
-                         style = "padding: 15px; width: 100%; max-width: 100%; overflow-x: auto;",  # Added styling
-                          uiOutput("dilution_standards_controls")
-                       ),
-                       style = "primary"
-                     ),
-                       bsCollapsePanel(
-                         title = "Blank Controls",
-                         div(
-                           style = "padding: 15px; width: 100%; max-width: 100%; overflow-x: auto;",  # Added styling
-                           uiOutput("blankControlOptionUI")
-                         ),
-                         style = "primary"
-                       ),
-                       bsCollapsePanel(
-                         title = "Dilution Analysis Parameters",
-                         div(
-                           style = "padding: 15px; width: 100%; max-width: 100%; overflow-x: auto; overflow-y: auto;",
-                           uiOutput("dilution_paramatersUI")
-                         ),
-                         style = "primary"
-                       ),
-                       bsCollapsePanel(
-                         title = "Set Reference Arm",
-                         div(
-                           style = "padding: 15px; width: 100%; max-width: 100%; overflow-x: auto;",
-                           uiOutput("reference_arm_UI")
-                         ),
-                         style = "primary"
-                       )
-                   )
+                   "Study Overview Coming Soon."
+                   # bsCollapse(
+                   #   id = "studyOverviewCollapse",
+                   #     bsCollapsePanel(
+                   #       title = "Antigen Family",
+                   #       div(
+                   #         style = "padding: 15px; width: 100%; max-width: 100%; overflow-x: auto;",  # Added styling
+                   #         uiOutput("antigenFamilyUI")
+                   #       ),
+                   #       style = "primary"
+                   #     ),
+                   #   bsCollapsePanel(
+                   #     title = "Bead Count Options",
+                   #     div(
+                   #       style = "padding: 15px; width: 100%; max-width: 100%; overflow-x: auto;",  # Added styling
+                   #       uiOutput("bead_count_controls_UI")
+                   #     ),
+                   #     style = "primary"
+                   #   ),
+                   #   bsCollapsePanel(
+                   #     title = "Standard Curve Dilution Options",
+                   #     div(
+                   #       style = "padding: 15px; width: 100%; max-width: 100%; overflow-x: auto;",  # Added styling
+                   #        uiOutput("dilution_standards_controls")
+                   #     ),
+                   #     style = "primary"
+                   #   ),
+                   #     bsCollapsePanel(
+                   #       title = "Blank Controls",
+                   #       div(
+                   #         style = "padding: 15px; width: 100%; max-width: 100%; overflow-x: auto;",  # Added styling
+                   #         uiOutput("blankControlOptionUI")
+                   #       ),
+                   #       style = "primary"
+                   #     ),
+                   #     bsCollapsePanel(
+                   #       title = "Dilution Analysis Parameters",
+                   #       div(
+                   #         style = "padding: 15px; width: 100%; max-width: 100%; overflow-x: auto; overflow-y: auto;",
+                   #         uiOutput("dilution_paramatersUI")
+                   #       ),
+                   #       style = "primary"
+                   #     ),
+                   #     bsCollapsePanel(
+                   #       title = "Set Reference Arm",
+                   #       div(
+                   #         style = "padding: 15px; width: 100%; max-width: 100%; overflow-x: auto;",
+                   #         uiOutput("reference_arm_UI")
+                   #       ),
+                   #       style = "primary"
+                   #     )
+                   # )
           ),
 
           # Experiment Level Tab
           tabPanel("Experiments",
                    fluidRow(
-                     column(5,
+                     column(6,
                             selectInput("readxMap_experiment_accession",
                                         "Choose Experiment Name",
                                         choices = c("Click here" = "Click here",
@@ -267,13 +268,80 @@ output$view_stored_experiments_ui <- renderUI({
                                         selected = "Click here",
                                         multiple = FALSE
                             )
+                     ),
+                     column(6,
+                     conditionalPanel(
+                       condition = "input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
+
+                       selectInput(
+                         inputId = "qc_component",
+                         label = "QC Phase",
+                         choices = c("Data", "Bead Count", "Standard Curve", "Dilution Analysis", "Plate Normalization", "Outliers", "Subgroup Detection"),
+                         selected = "Data",
+                         multiple = FALSE
+                       ))
                      )
                    ),
 
                    # Experiment Level Content
+                   # conditionalPanel(
+                   #   condition = "input.readxMap_experiment_accession != 'Click here'",
+                   #   uiOutput("stored_plates_ui")
+                   # )
+
                    conditionalPanel(
-                     condition = "input.readxMap_experiment_accession != 'Click here'",
-                     uiOutput("stored_plates_ui")
+                     condition = "input.qc_component == 'Data' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
+                     # uiOutput("beadCountAnalysisUI"),
+                     # uiOutput("standard_curve_section"),
+                     # uiOutput("dilution_analysis_section"),
+                     # uiOutput("subgroup_detection_section"),
+                     # uiOutput("outlierTab"),
+                     uiOutput("dynamic_data_ui")
+                   ),
+                   conditionalPanel(
+                     condition = "input.qc_component == 'Bead Count' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
+                     # uiOutput("standard_curve_section"),
+                     # uiOutput("dilution_analysis_section"),
+                     # uiOutput("subgroup_detection_section"),
+                     # uiOutput("dynamic_data_ui"),
+                     # uiOutput("outlierTab"),
+                     uiOutput("beadCountAnalysisUI")
+                   ),
+                   conditionalPanel(
+                     condition = "input.qc_component == 'Standard Curve' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
+                     # uiOutput("dilution_analysis_section"),
+                     # uiOutput("subgroup_detection_section"),
+                     # uiOutput("dynamic_data_ui"),
+                     # uiOutput("beadCountAnalysisUI"),
+                     # uiOutput("outlierTab"),
+                     uiOutput("standard_curve_section")
+                   ),
+                   conditionalPanel(
+                     condition = "input.qc_component == 'Dilution Analysis' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
+                     # uiOutput("subgroup_detection_section"),
+                     # uiOutput("dynamic_data_ui"),
+                     # uiOutput("beadCountAnalysisUI"),
+                     # uiOutput("standard_curve_section"),
+                     # uiOutput("outlierTab"),
+                     uiOutput("dilution_analysis_section")
+                   ),
+                   conditionalPanel(
+                     condition = "input.qc_component == 'Outliers'  && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
+                     # uiOutput("subgroup_detection_section"),
+                     # uiOutput("dynamic_data_ui"),
+                     # uiOutput("beadCountAnalysisUI"),
+                     # uiOutput("standard_curve_section"),
+                     # uiOutput("dilution_analysis_section"),
+                     uiOutput("outlierTab")
+                   ),
+                   conditionalPanel(
+                     condition = "input.qc_component == 'Subgroup Detection' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
+                     # uiOutput("dynamic_data_ui"),
+                     # uiOutput("beadCountAnalysisUI"),
+                     # uiOutput("standard_curve_section"),
+                     # uiOutput("dilution_analysis_section"),
+                     # uiOutput("outlierTab"),
+                     uiOutput("subgroup_detection_section")
                    )
           )
         )
@@ -282,6 +350,236 @@ output$view_stored_experiments_ui <- renderUI({
   )
 })
 
+# Data Contents
+output$dynamic_data_ui <- renderUI({
+  if (
+    input$qc_component == "Data" &&
+    input$readxMap_study_accession != "Click here" &&
+    input$readxMap_experiment_accession != "Click here" &&
+    input$study_level_tabs == "Experiments" &&
+    input$main_tabs == "view_files_tab"
+  ) {
+    bsCollapse(
+      id = "dataCollapse",
+      multiple = FALSE,
+      bsCollapsePanel(
+        title = "Header",
+        DT::dataTableOutput("stored_header"),
+        downloadButton("download_stored_header"),
+        uiOutput("header_actions"),
+        style = "primary"
+      ),
+      bsCollapsePanel(
+        title = "Standards",
+        DT::dataTableOutput("swide_standard"),
+        downloadButton("download_stored_standard"),
+        style = "primary"
+      ),
+      bsCollapsePanel(
+        title = "Controls",
+        DT::dataTableOutput("swide_control"),
+        downloadButton("download_stored_control"),
+        style = "primary"
+      ),
+      bsCollapsePanel(
+        title = "Buffer",
+        DT::dataTableOutput("swide_buffer"),
+        downloadButton("download_stored_buffer"),
+        style = "primary"
+      ),
+      bsCollapsePanel(
+        title = "Sample",
+        DT::dataTableOutput("swide_sample"),
+        downloadButton("download_stored_sample"),
+        style = "primary"
+      )
+    )
+  } else {
+    NULL  # Removes the bsCollapse completely
+  }
+})
+
+
+
+output$standard_curve_section <- renderUI({
+  req(input$readxMap_study_accession, input$readxMap_experiment_accession)
+  if (
+    input$qc_component == "Standard Curve" &&
+    input$readxMap_study_accession != "Click here" &&
+    input$readxMap_experiment_accession != "Click here" &&
+    input$study_level_tabs == "Experiments" &&
+    input$main_tabs == "view_files_tab"
+  ) {
+  num_plates_stored_std_curve <- count_n_std_curve_plates(input$readxMap_study_accession, input$readxMap_experiment_accession)
+ # n_plates_standard_curve(num_plates_stored_std_curve)
+
+  n_dilutions_antigen_df <- count_n_dilutions_per_antigen(input$readxMap_study_accession, input$readxMap_experiment_accession)
+  # check if all antigens have at minimum 5 points
+  dilutions_per_antigen_boolean <- all(n_dilutions_antigen_df$num_dilutions >= 5)
+
+ # mininum_dilution_count_boolean(dilutions_per_antigen_boolean)
+  bsCollapse(
+    id = "StandardCurveCollapse",
+    #multiple = TRUE,  # Also adding multiple = TRUE here for consistency
+    if (dilutions_per_antigen_boolean){
+      bsCollapsePanel(
+        title = "Standard Curve Fitting",
+        uiOutput("standardCurveUI"),
+        style = "primary"
+      )
+    },
+    bsCollapsePanel(
+      title = "Standard Curve Summary",
+      if (num_plates_stored_std_curve >= 2) {
+        uiOutput("standardCurveSummaryUI")
+      } else {
+        output$invalidPlatesUI <- renderUI({
+          req(input$readxMap_study_accession, input$readxMap_experiment_accession)
+          HTML(paste("<span style='font-size:20px;'>There must be 2 or more plates in ",
+                     input$readxMap_experiment_accession, "for ",
+                     input$readxMap_study_accession," to access the standard curve summary<br></span>"))
+        })
+        uiOutput("invalidPlatesUI")
+      },
+      style = "primary"
+    )
+  )
+  }
+  else {
+    NULL
+  }
+})
+
+output$dilution_analysis_section <- renderUI({
+  req(input$readxMap_study_accession, input$readxMap_experiment_accession)
+
+  if (
+    input$qc_component == "Dilution Analysis" &&
+    input$readxMap_study_accession != "Click here" &&
+    input$readxMap_experiment_accession != "Click here" &&
+    input$study_level_tabs == "Experiments" &&
+    input$main_tabs == "view_files_tab"
+  ) {
+    tagList(
+      uiOutput("dilutionAnalysisUI"),
+      bsCollapse(
+        id = "main_dilution_linearity_collapse",
+        bsCollapsePanel(
+          title = "Dilutional Linearity",
+          uiOutput("dilutionalLinearityUI"),
+          style = "primary"
+        )
+      )
+    )
+  } else {
+    NULL
+  }
+})
+
+output$subgroup_detection_section <- renderUI({
+  req(input$readxMap_study_accession, input$readxMap_experiment_accession)
+
+  if (
+    input$qc_component == "Subgroup Detection" &&
+    input$readxMap_study_accession != "Click here" &&
+    input$readxMap_experiment_accession != "Click here" &&
+    input$study_level_tabs == "Experiments" &&
+    input$main_tabs == "view_files_tab"
+  ) {
+    tagList(
+      bsCollapse(
+        id = "subgroupCollapse",
+        bsCollapsePanel(
+          title = "Subgroup Detection",
+          uiOutput("subgroupDetectionUI"),
+          style = "primary"
+        ),
+        bsCollapsePanel(
+          title = "Subgroup Detection Summary",
+          uiOutput("subgroup_summary_UI"),
+          style = "primary"
+        )
+      )
+    )
+  } else {
+    NULL
+  }
+})
+
+
+
+observe({
+  req(input$qc_component)
+ # req(input$qc_component != "Select Phase")
+  cat("QC component\n")
+  print(input$qc_component)
+})
+
+# observeEvent(input$qc_component, {
+#   req(input$readxMap_experiment_accession)
+#   req(stored_plates_data)
+#   req(input$qc_component != "Select Phase")
+#   cat("QC component")
+#   print(input$qc_component)
+#
+#   # m <<- m + 1
+#   # print(paste("plate_selected", plate_selected))
+#   # update_modal_progress(
+#   #   value = m / 8,
+#   #   text = "Rendering wide tables",
+#   #   session = shiny::getDefaultReactiveDomain()
+#   # )
+#
+#
+# #
+# #   tabsetPanel(id = "inLoadedData",
+# #               tabPanel(
+# #                 title = "Data",
+# #                 br(),
+# #                 bsCollapse(
+# #                   id = "dataCollapse",
+# #                   multiple = FALSE,
+# #                   bsCollapsePanel(
+# #                     title = "Header",
+# #                     DT::dataTableOutput("stored_header"),
+# #                     downloadButton("download_stored_header"),
+# #                     uiOutput("header_actions"),
+# #                     style = "primary"
+# #                   ),
+# #                   bsCollapsePanel(
+# #                     title = "Standards",
+# #                     DT::dataTableOutput("swide_standard"),
+# #                     downloadButton("download_stored_standard"),
+# #                     style = "primary"
+# #                   ),
+# #                   bsCollapsePanel(
+# #                     title = "Controls",
+# #                     DT::dataTableOutput("swide_control"),
+# #                     downloadButton("download_stored_control"),
+# #                     style = "primary"
+# #                   ),
+# #                   bsCollapsePanel(
+# #                     title = "Buffer",
+# #                     DT::dataTableOutput("swide_buffer"),
+# #                     downloadButton("download_stored_buffer"),
+# #                     style = "primary"
+# #                   ),
+# #                   bsCollapsePanel(
+# #                     title = "Sample",
+# #                     DT::dataTableOutput("swide_sample"),
+# #                     downloadButton("download_stored_sample"),
+# #                     style = "primary" # set to open initially
+# #                   ),
+# #                   open = "Header"
+# #                 )
+# #               ))
+# }, ignoreInit = FALSE)
+
+observeEvent(input$study_level_tabs, {
+  if (input$study_level_tabs == "Experiments") {
+    updateSelectInput(session, "qc_component", selected = "Data")
+  }
+})
 
 load_project <- function(conn, project_id, current_user){
     if (project_id != "") {

@@ -15,9 +15,21 @@ data_summary <- list()
 #     return(NULL)
 #   }
 # })
+observeEvent(list(
+  input$readxMap_experiment_accession,
+  input$readxMap_study_accession,
+  input$qc_component,
+  input$study_level_tabs,
+  input$main_tabs), {
 
-observeEvent(input$inLoadedData, {
-  if (input$inLoadedData == "Standard Curve") {
+# observeEvent(input$inLoadedData, {
+    req(input$qc_component == "Standard Curve",
+        input$readxMap_study_accession != "Click here",
+        input$readxMap_experiment_accession != "Click here",
+        input$study_level_tabs == "Experiments",
+        input$main_tabs == "view_files_tab")
+
+  if (input$qc_component == "Standard Curve") {
 
     selected_study <- selected_studyexpplate$study_accession
     selected_experiment <- selected_studyexpplate$experiment_accession
@@ -552,5 +564,20 @@ observeEvent(input$inLoadedData, {
       })
     } # end is standard curves avaliable in db check
   } # end is loaded data
+    else {
+      output$standardCurveSummaryUI <- renderUI(NULL)
+      output$antigenFamilySelectionUI <- renderUI(NULL)
+      output$antigenSelectionUI2 <- renderUI(NULL)
+      output$sourceSelectionUI2 <- renderUI(NULL)
+      output$infoSavedMesssage <- renderUI(NULL)
+      output$standard_curve_antigenContainer <- renderUI(NULL)
+      output$download_button_ui <- renderUI(NULL)
+      output$download_sample_data_ui <- renderUI(NULL)
+      output$save_norm_mfiUI <- renderUI(NULL)
+      output$antigens_in_family_UI <- renderUI(NULL)
+      output$cv_log_dilution_plot <- renderPlotly(NULL)
+      output$download_cv_log_dilution_study_level <- renderUI(NULL)
+
+    }
 }
 )# end observe event

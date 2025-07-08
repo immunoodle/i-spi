@@ -1,8 +1,20 @@
-observeEvent(list(input$inLoadedData, input$readxMap_experiment_accession), {
+#observeEvent(list(input$inLoadedData, input$readxMap_experiment_accession), {
+observeEvent(list(
+  input$readxMap_experiment_accession,
+  input$readxMap_study_accession,
+  input$qc_component,
+  input$study_level_tabs,
+  input$main_tabs), {
 
-  req(input$inLoadedData, input$readxMap_experiment_accession)
+    req(input$qc_component == "Dilution Analysis",
+        input$readxMap_study_accession != "Click here",
+        input$readxMap_experiment_accession != "Click here",
+        input$study_level_tabs == "Experiments",
+        input$main_tabs == "view_files_tab")
+
+ # req(input$inLoadedData, input$readxMap_experiment_accession)
  # input$readxMap_experiment_accession
-  if (input$inLoadedData == "Dilution Analysis") {
+  if (input$qc_component == "Dilution Analysis") {
     selected_study <- selected_studyexpplate$study_accession
     selected_experiment <- selected_studyexpplate$experiment_accession
 
@@ -95,9 +107,10 @@ observeEvent(list(input$inLoadedData, input$readxMap_experiment_accession), {
          # id = "da_linearity",
          # bsCollapsePanel(
           #  title = "Dilution Linearity",
-            fluidRow(column(6,
+            fluidRow(column(4,
                             uiOutput("response_selectionUI")),
-                     column(6,uiOutput("linear_correction_UI"))),
+                     column(4, uiOutput("exclude_concentrated_samples_UI")),
+                     column(4,uiOutput("linear_correction_UI"))),
           #  plotlyOutput("facet_lm_plot", width = "75vw"),
           uiOutput("facet_tabs_ui"),
 
@@ -279,7 +292,8 @@ observeEvent(list(input$inLoadedData, input$readxMap_experiment_accession), {
 
     ### Decision tree
     decision_tree_reactive <- reactive({
-      req(input$inLoadedData == "Dilution Analysis")
+      #req(input$inLoadedData == "Dilution Analysis")
+      req(input$qc_component == "Dilution Analysis")
       req(study_configuration)
 
       is_binary <- study_configuration[study_configuration$param_name == "is_binary_gc",]$param_boolean_value
@@ -435,7 +449,8 @@ observeEvent(list(input$inLoadedData, input$readxMap_experiment_accession), {
 
 
     output$dilution_summary_barplot <- renderPlotly({
-      req(input$inLoadedData == "Dilution Analysis")
+     # req(input$inLoadedData == "Dilution Analysis")
+      req(input$qc_component == "Dilution Analysis")
       # if (input$inLoadedData != "Dilution Analysis") {
       #   return(NULL)
       # }
@@ -550,7 +565,7 @@ observeEvent(list(input$inLoadedData, input$readxMap_experiment_accession), {
 
     # Filter the classified  merged
     classified_merged_rv <- reactive({
-      if (is.null(input$inLoadedData) || input$inLoadedData != "Dilution Analysis") {
+      if (is.null(input$qc_component) || input$qc_component != "Dilution Analysis") {
         return(NULL)
       }
 
@@ -933,13 +948,18 @@ observeEvent(list(input$inLoadedData, input$readxMap_experiment_accession), {
     #   produce_all_plate_facets(distinct_samples = distinct_samples, dil_lin_regress_list = dil_lin_regress_list, selected_antigen = input$antigen_da_selector,
     #                            is_dil_lin_corr = input$apply_lm_corr, response_type =  input$dil_lin_response, is_log_mfi_axis = is_log_mfi_axis )[[1]]
     # })
+    output$exclude_concentrated_samples_UI <- renderUI({
+      checkboxInput(inputId = "exclude_conc_samples",
+                    label = "Exclude Concentrated Samples from Model Fittting",
+                    value = F)
+    })
 
     plate_lm_facets <- reactive({
-      req(input$inLoadedData == "Dilution Analysis")
+      req(input$qc_component == "Dilution Analysis")
       req(selected_study)
       req(selected_experiment)
       req(input$dil_lin_response)
-      req(is_log_mfi_axis)
+      #req(is_log_mfi_axis)
       req(input$antigen_da_selector)
 
       distinct_samples <- prepare_lm_sample_data(
@@ -949,10 +969,15 @@ observeEvent(list(input$inLoadedData, input$readxMap_experiment_accession), {
         response_type = input$dil_lin_response
       )
 
+
+
       dil_lin_regress_list <- dil_lin_regress(
         distinct_samples,
-        response_type = input$dil_lin_response
+        response_type = input$dil_lin_response,
+        exclude_conc_samples = input$exclude_conc_samples
       )
+
+
 
      produce_all_plate_facets(
         distinct_samples = distinct_samples,
@@ -1041,17 +1066,18 @@ observeEvent(list(input$inLoadedData, input$readxMap_experiment_accession), {
     #                                   selected_antigen = input$antigen_da_selector , response_type = input$dil_lin_response, is_log_mfi_axis)[[2]]
     #
     # })
+
     output$facet_model_glance <- renderTable({
-    req(input$inLoadedData == "Dilution Analysis")
+    req(input$qc_component == "Dilution Analysis")
       req(selected_study)
       req(selected_experiment)
       req(input$dil_lin_response)
-      req(is_log_mfi_axis)
+      #req(is_log_mfi_axis)
       req(input$antigen_da_selector)
 
 
       distinct_samples <- prepare_lm_sample_data(study_accession = selected_study, experiment_accession = selected_experiment, is_log_mfi_axis = is_log_mfi_axis, response_type = input$dil_lin_response)
-      dil_lin_regress_list <- dil_lin_regress(distinct_samples, response_type = input$dil_lin_response)
+      dil_lin_regress_list <- dil_lin_regress(distinct_samples, response_type = input$dil_lin_response, exclude_conc_samples = input$exclude_conc_samples)
 
       if (input$apply_lm_corr) {
         glance_df <- dil_lin_regress_list$model_corr_glance_df
@@ -1078,7 +1104,7 @@ observeEvent(list(input$inLoadedData, input$readxMap_experiment_accession), {
         req(input$antigen_da_selector)
 
         distinct_samples <- prepare_lm_sample_data(study_accession = selected_study, experiment_accession = selected_experiment, is_log_mfi_axis = is_log_mfi_axis, response_type = input$dil_lin_response)
-        dil_lin_regress_list <- dil_lin_regress(distinct_samples, response_type = input$dil_lin_response)
+        dil_lin_regress_list <- dil_lin_regress(distinct_samples, response_type = input$dil_lin_response, exclude_conc_samples = input$exclude_conc_samples)
         proccessed_lm_fit_data <- dil_lin_regress_list$observed_data
         # download data component (data frame)
         write.csv(proccessed_lm_fit_data, file)
@@ -1098,7 +1124,7 @@ observeEvent(list(input$inLoadedData, input$readxMap_experiment_accession), {
 
 
         distinct_samples <- prepare_lm_sample_data(study_accession = selected_study, experiment_accession = selected_experiment, is_log_mfi_axis = is_log_mfi_axis, response_type = input$dil_lin_response)
-        dil_lin_regress_list <- dil_lin_regress(distinct_samples, response_type = input$dil_lin_response)
+        dil_lin_regress_list <- dil_lin_regress(distinct_samples, response_type = input$dil_lin_response, exclude_conc_samples = input$exclude_conc_samples)
 
         glance_df <- dil_lin_regress_list$glance_uncorrect_df
 
@@ -1121,7 +1147,7 @@ observeEvent(list(input$inLoadedData, input$readxMap_experiment_accession), {
 
 
         distinct_samples <- prepare_lm_sample_data(study_accession = selected_study, experiment_accession = selected_experiment, is_log_mfi_axis = is_log_mfi_axis, response_type = input$dil_lin_response)
-        dil_lin_regress_list <- dil_lin_regress(distinct_samples, response_type = input$dil_lin_response)
+        dil_lin_regress_list <- dil_lin_regress(distinct_samples, response_type = input$dil_lin_response, exclude_conc_samples = input$exclude_conc_samples)
 
         glance_df <- dil_lin_regress_list$model_corr_glance_df
 
@@ -1178,20 +1204,10 @@ observeEvent(list(input$inLoadedData, input$readxMap_experiment_accession), {
     #
     #
 
-}  else {
-
+}
+  else {
     output$dilutionAnalysisUI <- NULL  # remove UI if not on the tab
     output$dilutionalLinearityUI <- NULL
-  }# end in the tab
-
-}) # end in loaded data
-
-
-observeEvent(input$inLoadedData, {
-  if (!is.null(input$inLoadedData) && input$inLoadedData != "Dilution Analysis") {
-    message("Not on Dilution Analysis tab")
-
-    # clear outputs
     output$dilutionAnalysisUI <- NULL
     output$dilutionalLinearityUI <- NULL
     output$dilution_summary_barplot <- NULL
@@ -1210,9 +1226,37 @@ observeEvent(input$inLoadedData, {
     output$download_processed_lm_fit_data <- NULL
     output$download_model_uncorrected_glance <- NULL
     output$download_model_correction_glance <- NULL
-     #output$download_model_glances <- NULL
+  }# end in the tab
+
+}) # end in loaded data
 
 
-  }
-})
+# observeEvent(input$inLoadedData, {
+#   if (!is.null(input$inLoadedData) && input$inLoadedData != "Dilution Analysis") {
+#     message("Not on Dilution Analysis tab")
+#
+#     # clear outputs
+#     output$dilutionAnalysisUI <- NULL
+#     output$dilutionalLinearityUI <- NULL
+#     output$dilution_summary_barplot <- NULL
+#     output$download_classified_sample_UI <- NULL
+#     output$final_average_au_table <- NULL
+#     output$download_average_au_table_UI <- NULL
+#     output$patient_dilution_series_plot <- NULL
+#     output$passing_subject_selection <- NULL
+#     output$antigen_selector_UI <- NULL
+#     output$response_selectionUI <- NULL
+#     # output$plate_lm_selectionUI <- NULL
+#     output$linear_correction_UI <- NULL
+#     output$facet_lm_plot <- NULL
+#     output$facet_tabs_ui <- NULL
+#     output$facet_model_glance <- NULL
+#     output$download_processed_lm_fit_data <- NULL
+#     output$download_model_uncorrected_glance <- NULL
+#     output$download_model_correction_glance <- NULL
+#      #output$download_model_glances <- NULL
+#
+#
+#   }
+# })
 

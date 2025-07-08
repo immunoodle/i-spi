@@ -4,9 +4,20 @@ data_summary <- list()
 
 std_curve_tab_active <- reactiveVal(FALSE)
 
+observeEvent(list(
+  input$readxMap_experiment_accession,
+  input$readxMap_study_accession,
+  input$qc_component,
+  input$study_level_tabs,
+  input$main_tabs), {
 
-observeEvent(input$inLoadedData, {
-  if (input$inLoadedData == "Standard Curve") {
+    req(input$qc_component == "Standard Curve",
+        input$readxMap_study_accession != "Click here",
+        input$readxMap_experiment_accession != "Click here",
+        input$study_level_tabs == "Experiments",
+        input$main_tabs == "view_files_tab")
+#observeEvent(input$inLoadedData, {
+  if (input$qc_component == "Standard Curve") {
     selected_study <- selected_studyexpplate$study_accession
     selected_experiment <- selected_studyexpplate$experiment_accession
 
@@ -278,14 +289,14 @@ The information icon below the figure provides definitions for terminology and a
         req(input$readxMap_study_accession, input$readxMap_experiment_accession)
         req(std_curve_data$study_accession, std_curve_data$experiment_accession)
         updateSelectInput(session, "plateSelection", selected = NULL)  # Reset the plateSelection
-        plate_data <- std_curve_data[std_curve_data$study_accession %in% input$readxMap_study_accession &
+        sc_plate_data <- std_curve_data[std_curve_data$study_accession %in% input$readxMap_study_accession &
                                        std_curve_data$experiment_accession %in% input$readxMap_experiment_accession, ]
 
-        req(nrow(plate_data) > 0)
+        req(nrow(sc_plate_data) > 0)
 
         selectInput("plateSelection",
                     label = "Plate",
-                    choices = unique(plate_data$plateid))
+                    choices = unique(sc_plate_data$plateid))
       })
 
 
@@ -1025,7 +1036,29 @@ The information icon below the figure provides definitions for terminology and a
 
 
   } # end in Standard Curve tab
+  else {
+    output$standardCurveUI <- renderUI(NULL)
+    output$plateSelectionUI <- renderUI(NULL)
+    output$antigenSelectionUI <- renderUI(NULL)
+    output$sourceSelectionUI <- renderUI(NULL)
+    output$dilution_message <- renderUI(NULL)
+    output$dilution_plot_ui <- renderUI(NULL)
+    output$standardFitUI <- renderPlotly(NULL)
+    output$download_standard_plot_data <- downloadHandler(
+      filename = function() { NULL },
+      content = function(file) {}
+    )
+    output$download_sample_plot_data <- downloadHandler(
+      filename = function() { NULL },
+      content = function(file) {}
+    )
+    output$saveButtonsUI <- renderUI(NULL)
+    output$parameterFit <- renderTable(NULL)
+    output$modelFit <- renderTable(NULL)
+    output$above_ulod_table <- renderTable(NULL)
+    output$below_limit_table <- renderTable(NULL)
 
+  }
 })
 
 

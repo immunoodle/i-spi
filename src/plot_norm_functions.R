@@ -1,106 +1,106 @@
 
 # Functions to populate data frames
 produce_buffer_data <- function(stored_plates_data){
-  plate_data <- data.frame()
+  norm_plate_data <- data.frame()
   buffers <- stored_plates_data$stored_buffer[ , c("study_accession", "experiment_accession", "antigen", "mfi", "n", "dilution","feature", "plateid")]
-  plate_data <- buffers
-  
-  return(plate_data)
+  norm_plate_data <- buffers
+
+  return(norm_plate_data)
 }
 
 produce_stand_data <- function(stored_plates_data){
-  plate_data <- data.frame()
+  norm_plate_data <- data.frame()
   standards <- stored_plates_data$stored_standard[ , c("study_accession", "experiment_accession", "antigen", "mfi", "n", "dilution", "feature", "plateid")]
-  plate_data <- standards
-  return(plate_data)
+  norm_plate_data <- standards
+  return(norm_plate_data)
 }
 
 produce_buffer_standards_data <- function(stored_plates_data) {
-  plate_data <- data.frame()
+  norm_plate_data <- data.frame()
   buffers <- stored_plates_data$stored_buffer[ , c("study_accession", "experiment_accession", "antigen", "mfi", "n", "dilution", "feature", "plateid")]
   standards <- stored_plates_data$stored_standard[ , c("study_accession", "experiment_accession", "antigen", "mfi", "n", "dilution", "feature", "plateid")]
-  plate_data <- rbind(buffers, standards)
-  return(plate_data)
+  norm_plate_data <- rbind(buffers, standards)
+  return(norm_plate_data)
 }
 
 produce_controls_standards_data <- function(stored_plates_data) {
-  plate_data <- data.frame()
+  norm_plate_data <- data.frame()
   controls <- stored_plates_data$stored_control[ , c("study_accession", "experiment_accession", "antigen", "mfi", "n", "dilution", "feature", "plateid")]
   standards <- stored_plates_data$stored_standard[ , c("study_accession", "experiment_accession", "antigen", "mfi", "n", "dilution", "feature", "plateid")]
-  plate_data <- rbind(controls, standards)
-  
-  return(plate_data)
+  norm_plate_data <- rbind(controls, standards)
+
+  return(norm_plate_data)
 }
 
 produce_buffer_controls_data <- function(stored_plates_data){
-  plate_data <- data.frame()
+  norm_plate_data <- data.frame()
   buffers <- stored_plates_data$stored_buffer[ , c("study_accession", "experiment_accession", "antigen", "mfi", "n", "dilution", "feature", "plateid")]
   controls <- stored_plates_data$stored_control[ , c("study_accession", "experiment_accession", "antigen", "mfi", "n", "dilution", "feature", "plateid")]
-  plate_data <- rbind(buffers, controls)
-  
-  return(plate_data)
+  norm_plate_data <- rbind(buffers, controls)
+
+  return(norm_plate_data)
 }
 
 produce_buffer_controls_standards_data <- function(stored_plates_data) {
-  plate_data <- data.frame()
+  norm_plate_data <- data.frame()
   buffers <- stored_plates_data$stored_buffer[ , c("study_accession", "experiment_accession", "antigen", "mfi", "n", "dilution", "feature", "plateid")]
   controls <- stored_plates_data$stored_control[ , c("study_accession", "experiment_accession", "antigen", "mfi", "n", "dilution", "feature", "plateid")]
   standards <- stored_plates_data$stored_standard[ , c("study_accession", "experiment_accession", "antigen", "mfi", "n", "dilution", "feature", "plateid")]
-  plate_data <- rbind(buffers, controls, standards)
-  return(plate_data)
+  norm_plate_data <- rbind(buffers, controls, standards)
+  return(norm_plate_data)
 }
 
 produce_controls_data <- function(stored_plates_data){
-  plate_data <- data.frame()
-  plate_data <- stored_plates_data$stored_control[ , c("study_accession", "experiment_accession", "antigen", "mfi", "n", "dilution", "feature", "plateid")]
-  return(plate_data)
+  norm_plate_data <- data.frame()
+  norm_plate_data <- stored_plates_data$stored_control[ , c("study_accession", "experiment_accession", "antigen", "mfi", "n", "dilution", "feature", "plateid")]
+  return(norm_plate_data)
 }
 
 # function for loading plate data
-load_plate_data <- function(stored_plates_data, normset_str = NULL, selected_antigen = NULL, selected_feature = NULL){
+load_norm_plate_data <- function(stored_plates_data, normset_str = NULL, selected_antigen = NULL, selected_feature = NULL){
   # If normset_str is null return message
   if (is.null(normset_str)){
     errorMessage <- "A combination of buffers, standards, and controls must be selected"
     return(errorMessage)
   }
-  
-  
+
+
   if (normset_str == "standards"){
-    plate_data <- produce_stand_data(stored_plates_data)
+    norm_plate_data <- produce_stand_data(stored_plates_data)
   } else if (normset_str == "buffers"){
-    plate_data <- produce_buffer_data(stored_plates_data)
+    norm_plate_data <- produce_buffer_data(stored_plates_data)
   } else if (normset_str == "buffers, standards") {
-    plate_data <- produce_buffer_standards_data(stored_plates_data)
+    norm_plate_data <- produce_buffer_standards_data(stored_plates_data)
   } else if (normset_str == "controls, standards"){
-    plate_data <- produce_controls_standards_data(stored_plates_data)
+    norm_plate_data <- produce_controls_standards_data(stored_plates_data)
   } else if (normset_str == "buffers, controls, standards") {
-    plate_data <- produce_buffer_controls_standards_data(stored_plates_data)
+    norm_plate_data <- produce_buffer_controls_standards_data(stored_plates_data)
   }
-  
+
   # select antigen and feature from input
   antigen <- selected_antigen
   feature <- selected_feature
-  
+
   # subset data based on antigen and feature
-  plate_data <- plate_data[plate_data$antigen == selected_antigen & plate_data$feature == selected_feature, ]
-  plate_data$raw_value <- plate_data$mfi
-  plate_data$plateid <- as.factor(plate_data$plateid)
-  plate_data <- as.data.frame(plate_data)
-  
-  return(plate_data)
+  norm_plate_data <- norm_plate_data[norm_plate_data$antigen == selected_antigen & norm_plate_data$feature == selected_feature, ]
+  norm_plate_data$raw_value <- norm_plate_data$mfi
+  norm_plate_data$plateid <- as.factor(norm_plate_data$plateid)
+  norm_plate_data <- as.data.frame(norm_plate_data)
+
+  return(norm_plate_data)
 }
 
 # function for loading sample data
 load_sample_data <- function(stored_plates_data, selected_antigen, selected_feature){
-  
+
   sample_data <- stored_plates_data$stored_sample
   sample_data$selected_str <- paste0(sample_data$study_accession,sample_data$experiment_accession)
   names(sample_data)[names(sample_data) == "xmap_sample_id"] <- "tid"
   sample_data <- sample_data[sample_data$antigen == selected_antigen & sample_data$feature== selected_feature, ]
   sample_data$raw_value <- sample_data$mfi
   sample_data$plateid <- as.factor(sample_data$plateid)
-  
-  
+
+
   sample_data <- as.data.frame(sample_data[ ,
                                             c("study_accession", "experiment_accession", "tid", "plateid", "dilution", "antigen", "feature", "raw_value")]
   )
@@ -108,34 +108,34 @@ load_sample_data <- function(stored_plates_data, selected_antigen, selected_feat
 }
 
 # This function fits a cgam, gam, polynomial or linear model to the plate data
-fit_models <- function(plate_data){
+fit_models <- function(norm_plate_data){
   fitted_models <- list()
   model_types <- c()
   fit_status <- c()
-  
-  for(plate in unique(plate_data$plateid)){
-    plate_data_subset <- plate_data[plate_data$plateid == plate,]
-    
+
+  for(plate in unique(norm_plate_data$plateid)){
+    norm_plate_data_subset <- norm_plate_data[norm_plate_data$plateid == plate,]
+
     # ### prozone fix
-    # datlstda <- plate_data_subset
+    # datlstda <- norm_plate_data_subset
     # max_raw_value <- max(datlstda$raw_value)
     # logd_at_max_raw_value <- max(datlstda[datlstda$raw_value==max_raw_value, ]$log_dilution)
     # # 2. identify the raw_values lower than the max_raw_value at higher concentrations
     # datlstda[datlstda$log_dilution > logd_at_max_raw_value, ]$raw_value <- max_raw_value + ((max_raw_value -
     #                                                                          datlstda[datlstda$log_dilution > logd_at_max_raw_value, ]$raw_value)*0.02 /
     #                                                                         ((datlstda[datlstda$log_dilution > logd_at_max_raw_value, ]$log_dilution-logd_at_max_raw_value)*2))
-    # plate_data_subset <- datlstda
-    
+    # norm_plate_data_subset <- datlstda
+
     # # fit a cgam model
     # tryCatch({
     #   cgam_model <-cgam(log10(normal_reference) ~ s.incr(log10(raw_value),
     #                                                      numknots = 4,
     #                                                      knots = 0, var.knots = 0,
     #                                                      space = "Q", db.exp = T),
-    #                                                     data = plate_data_subset,
+    #                                                     data = norm_plate_data_subset,
     #                                                     cic = FALSE, nsim = 100)
     #   # cgam_model <-cgam(normal_reference ~ s.incr(raw_value, numknots = 4, knots = 0, var.knots = 0, space = "Q", db.exp = T),
-    #   #                   data = plate_data_subset, cic = FALSE, nsim = 100)
+    #   #                   data = norm_plate_data_subset, cic = FALSE, nsim = 100)
     #   # Glance info
     #   cgam_summary <- summary(cgam_model)
     #   # check deviance
@@ -153,11 +153,11 @@ fit_models <- function(plate_data){
     #   cat("CGAM failed for plate", plate, "\n")
     # }
     # )
-    
+
     # Try fitting a GAM model
     if (is.null(fitted_models[[plate]])) {
       tryCatch({
-        gam_model <- gam(log10(normal_reference) ~ s(log10(raw_value)), data = plate_data_subset)
+        gam_model <- gam(log10(normal_reference) ~ s(log10(raw_value)), data = norm_plate_data_subset)
         gam_glance <- broom::glance(gam_model)
         # check deviance
         if(gam_glance$deviance > 0){
@@ -173,12 +173,12 @@ fit_models <- function(plate_data){
         cat("GAM failed for plate ", plate, "\n")
       })
     }
-    
+
     # Try fitting linear model if CGAM or GAM fails
     if (is.null(fitted_models[[plate]])){
       tryCatch({
-        lm_poly_model <- lm(log10(normal_reference) ~ poly(log10(raw_value), 3, raw = TRUE), data = plate_data_subset)
-        # lm_poly_model <- lm(normal_reference ~ poly(raw_value, 3, raw = TRUE), data = plate_data_subset)
+        lm_poly_model <- lm(log10(normal_reference) ~ poly(log10(raw_value), 3, raw = TRUE), data = norm_plate_data_subset)
+        # lm_poly_model <- lm(normal_reference ~ poly(raw_value, 3, raw = TRUE), data = norm_plate_data_subset)
         lm_glance <- broom::glance(lm_poly_model)
         # check deviance
         #  if(lm_glance$deviance > 0){
@@ -195,12 +195,12 @@ fit_models <- function(plate_data){
         cat("Polynomial Model failed for plate", plate)
       })
     }
-    
+
     # Try fitting a linear model if poly linear model fails
     if(is.null(fitted_models[[plate]])) {
       tryCatch({
-        lm_model <-  lm(log10(normal_reference) ~ log10(raw_value), data = plate_data_subset)
-        # lm_model <-  lm(normal_reference ~ raw_value, data = plate_data_subset)
+        lm_model <-  lm(log10(normal_reference) ~ log10(raw_value), data = norm_plate_data_subset)
+        # lm_model <-  lm(normal_reference ~ raw_value, data = norm_plate_data_subset)
         lm_glance <- broom:glance(lm_model)
         fitted_models[[plate]] <- list(status = paste("Plate:",plate,"fit: linear"), type = "lm", model = lm_model, glance = lm_glance)
         model_types <- c(model_types, "lm")
@@ -211,9 +211,9 @@ fit_models <- function(plate_data){
       })
     }
   } # end for loop
-  
+
   return(list(models = fitted_models, model_types = model_types, fit_status = fit_status))
-  
+
 }
 
 # Predictions on data
@@ -229,7 +229,7 @@ predict_plate <- function(in_data, model, modtype){
   #
   # cat("Model")
   # print(model)
-  
+
   # cat("Predictions: \n")
   if (modtype=="cgam") {
     predictions <- predict(model, in_data, interval = "none")
@@ -262,8 +262,8 @@ predict_fitted <- function(setdata, fitted_models){
   plate_list <- unique(setdata$plateid)
   # print(plate_list)
   # empty dataframe to store results
-  plate_data_fitted <- data.frame()
-  
+  norm_plate_data_fitted <- data.frame()
+
   for (platid in 1:length(plate_list)){
     # print(platid)
     model <- fitted_models[platid][[1]]$model
@@ -271,13 +271,13 @@ predict_fitted <- function(setdata, fitted_models){
     in_data <- setdata[setdata$plateid == plate_list[platid], ]
     result <- predict_plate(in_data = in_data, model = model, modtype = modtype)
     # print(nrow(result))
-    plate_data_fitted <- rbind(plate_data_fitted,result)
+    norm_plate_data_fitted <- rbind(norm_plate_data_fitted,result)
   }
   # cat("plate data_fitted after creation")
-  # print(names(plate_data_fitted))
-  # print(class(plate_data_fitted))
-  # print(dim(plate_data_fitted))
-  return(plate_data_fitted)
+  # print(names(norm_plate_data_fitted))
+  # print(class(norm_plate_data_fitted))
+  # print(dim(norm_plate_data_fitted))
+  return(norm_plate_data_fitted)
 }
 
 make_scatter_plotly <- function(plot_ndat=NULL,
@@ -307,7 +307,7 @@ make_scatter_plotly <- function(plot_ndat=NULL,
     ### need to fix this later
     color_normalize <- as.vector(palette36.colors(n = ncolors_needed))
   }
-  
+
   norm_plot_component <-  plot_ly(data = plot_ndat,
                                   x=~xvar,
                                   y=~yvar,
@@ -359,7 +359,7 @@ make_scatter_plotly <- function(plot_ndat=NULL,
                   ) # end sublist
                 ) # end list
   ) # end layout
-  
+
   norm_plotly <- ggplotly(norm_plot_component)
   return(norm_plotly)
 }
@@ -386,7 +386,7 @@ make_density_plotly <- function(plot_ndat=NULL,
     ### need to fix this later
     color_normalize <- as.vector(palette36.colors(n = ncolors_needed))
   }
-  
+
   raw_density <- ggplot(data=plot_ndat, aes(x = xvar)) +
     geom_density(alpha = 0.3, aes(color = byvar), show.legend = FALSE) +
     scale_color_manual(name = "Plate ID", values = color_normalize )+
@@ -398,7 +398,7 @@ make_density_plotly <- function(plot_ndat=NULL,
           plot.background=element_blank(),
           legend.position = "none"
     )
-  
+
   density_plotly <- ggplotly(raw_density)  %>%
     layout( dragmode = "lasso",
             xaxis=list(title=xlabel_txt, type = "linear", range=c(10,xmax)),
@@ -442,23 +442,23 @@ produce_fit_status_tab <- function(model_results){
 
 ### create two pairs of figures with only one legend for all plots
 # get predictions from models
-# plate_data predictions
-plot_plate_fits <- function(plate_data, fitted_models){
-  plate_data_fitted <- predict_fitted(setdata=plate_data, fitted_models=fitted_models)
-  
-  
-  
-  plat_dat <- plate_data_fitted
-  
- # plat_dat <- plate_data_fitted[ plate_data_fitted$study_accession == selected_study &
-                                  # plate_data_fitted$experiment_accession == selected_experiment &
-                                   #plate_data_fitted$antigen == selected_antigen &
-                                  # plate_data_fitted$feature == selected_feature,  ]
-  
+# norm_plate_data predictions
+plot_plate_fits <- function(norm_plate_data, fitted_models){
+  norm_plate_data_fitted <- predict_fitted(setdata=norm_plate_data, fitted_models=fitted_models)
+
+
+
+  plat_dat <- norm_plate_data_fitted
+
+ # plat_dat <- norm_plate_data_fitted[ norm_plate_data_fitted$study_accession == selected_study &
+                                  # norm_plate_data_fitted$experiment_accession == selected_experiment &
+                                   #norm_plate_data_fitted$antigen == selected_antigen &
+                                  # norm_plate_data_fitted$feature == selected_feature,  ]
+
   plat_dat$standard_id <- rownames(plat_dat)
   xmax <- max(plat_dat$raw_value)
-  
-  
+
+
   plate_raw_scatter <- make_scatter_plotly(plot_ndat=plat_dat,
                                            xvar = "raw_value",
                                            yvar = "normal_reference",
@@ -473,8 +473,8 @@ plot_plate_fits <- function(plate_data, fitted_models){
   ) %>% layout(showlegend=TRUE,
                xaxis = list(side="right", showgrid=FALSE, title="Raw Values [MFI]"),
                yaxis = list(showgrid=FALSE, title="Normal Reference [mean(MFI)]"))
-  
-  
+
+
   plate_raw_density <- make_density_plotly(plot_ndat=plat_dat,
                                            xvar = "raw_value",
                                            byvar = "plateid",
@@ -484,8 +484,8 @@ plot_plate_fits <- function(plate_data, fitted_models){
   ) %>% layout(showlegend=FALSE,
                xaxis = list(side="right", showgrid=FALSE, title="Raw MFI"),
                yaxis = list(showgrid=FALSE, title="Density"))
-  
-  
+
+
   plate_normalized_scatter <- make_scatter_plotly(plot_ndat=plat_dat,
                                                   xvar = "raw_value",
                                                   yvar = "normalized_value",
@@ -500,7 +500,7 @@ plot_plate_fits <- function(plate_data, fitted_models){
   ) %>% layout(showlegend=FALSE,
                xaxis = list(side="right", showgrid=FALSE, title="Normalized Values [normalized MFI]"),
                yaxis = list(showgrid=FALSE, title="Normal Reference [mean(MFI)]"))
-  
+
   plate_normalized_density <- make_density_plotly(plot_ndat=plat_dat,
                                                   xvar = "normalized_value",
                                                   byvar = "plateid",
@@ -510,10 +510,10 @@ plot_plate_fits <- function(plate_data, fitted_models){
   ) %>% layout(showlegend=TRUE,
                xaxis = list(side="right", showgrid=FALSE, title="Normalized"),
                yaxis = list(showgrid=FALSE, title="Density"))
-  
+
   # fig_one_list <- c(fig_one_list[1], fig_one_list[2], fig_one_list[3], fig_one_list[4])
   # list(plate_raw_scatter,plate_raw_density,plate_normalized_scatter,plate_normalized_density)
-  
+
   fig_one <- subplot(plate_raw_scatter,
                      plate_raw_density,
                      # plate_normalized_scatter,
@@ -527,7 +527,7 @@ plot_plate_fits <- function(plate_data, fitted_models){
       yaxis = list(showgrid=FALSE, title="Normal Reference [mean(MFI)]"), plot_bgcolor  = "transparent",
       paper_bgcolor = "transparent"
     ) # end layout
-  
+
   fig_two <- subplot(plate_normalized_scatter,
                      plate_normalized_density,
                      nrows = 1,
@@ -539,10 +539,10 @@ plot_plate_fits <- function(plate_data, fitted_models){
       yaxis = list(showgrid=FALSE, title="Normal Reference [mean(MFI)]",plot_bgcolor  = "transparent",
                    paper_bgcolor = "transparent")
     ) # end layout
-  
-  
+
+
   return(list(fig_one,fig_two))
-  
+
 }
 
 plot_sample_fits <- function(fitted_models,stored_plates_data, ant, feat){
@@ -550,16 +550,16 @@ plot_sample_fits <- function(fitted_models,stored_plates_data, ant, feat){
   sample_data <- load_sample_data(stored_plates_data = stored_plates_data,
                                   selected_antigen = ant,
                                   selected_feature = feat)
-  
+
   sample_data_fitted <- predict_fitted(setdata=sample_data, fitted_models=fitted_models)
-  
+
   samp_dat <- sample_data_fitted
-  
+
  # samp_dat <- sample_data_fitted[sample_data_fitted$study_accession == selected_study &
                                   # sample_data_fitted$experiment_accession == selected_experiment &
                                   # sample_data_fitted$antigen == selected_antigen &
                                   # sample_data_fitted$feature == selected_feature,  ]
-  
+
   sample_plotly <- make_scatter_plotly(plot_ndat=samp_dat,
                                        xvar = "raw_value",
                                        yvar = "normalized_value",
@@ -577,6 +577,6 @@ plot_sample_fits <- function(fitted_models,stored_plates_data, ant, feat){
       xaxis = list(side="right", showgrid=FALSE, title="Raw Sample Values [MFI]"),
       yaxis = list(showgrid=FALSE, title="Normalized Sample Values [normalized MFI]")
     ) # end layout
-  
+
   sample_plotly
 }

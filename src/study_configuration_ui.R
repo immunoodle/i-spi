@@ -121,7 +121,7 @@ render_study_parameters <- reactive({
   antigen_families_rv(fetch_antigen_family_table(selected_study))
 
   # Debug output
-  cat("Antigen families data updated for:", selected_study, "\n")
+  #cat("Antigen families data updated for:", selected_study, "\n")
 
  study_config <- fetch_study_configuration(study_accession = selected_study, user = currentuser())
   output$studyParameters_UI <- renderUI({
@@ -1202,6 +1202,7 @@ output$timeperiod_order_warning <- renderUI({
 
 # Export last saved user settings from the database
 output$user_parameter_download <- renderUI({
+  req(input$main_tabs == "view_files_tab")
   req(input$readxMap_study_accession)
   req(currentuser())
   download_user_parameters(study_accession = input$readxMap_study_accession, user = currentuser())
@@ -1528,7 +1529,7 @@ observeEvent(input$main_tabs, {
     output$default_source_warning <- NULL
     output$reference_arm_warning <- NULL
     output$timeperiod_order_warning <- NULL
-    output$user_parameter_download <- NULL
+    #output$user_parameter_download <- NULL
 
 
 

@@ -49,7 +49,7 @@ authenticated_body_content <- function() {
        }
       "))),
     tags$head(tags$style(HTML("
-   #sample_bead_count_collapse, #StandardCurveCollapse, #da_subject_level_inspection, #da_datasets, #da_linearity, #linearity_stats, #standard_curve_model_fit, #gated_samples, .table-container {
+   #sample_bead_count_collapse, #StandardCurveCollapse, #da_subject_level_inspection, #da_datasets, #da_linearity, #main_dilution_linearity_collapse, #linearity_stats, #standard_curve_model_fit, #gated_samples, .table-container {
       width: 75vw;
       overflow-x: auto;
     }
@@ -178,6 +178,7 @@ ui <- tagList(
   ), # End tags$head
 
   # Your dashboardPage etc remains unchanged
+
   dashboardPage(
     title = "xMap Reader",
     skin = "green",
@@ -287,7 +288,7 @@ server <- function(input, output, session) {
     if (is_local_dev()) {
       list(
         is_authenticated = TRUE,
-        email = "dev_user@dartmouth.edu",   # Or any test user
+        email = "seamus.owen.stein@dartmouth.edu",   # Or any test user
         name = "Local Dev User",
         id_token = "FAKE_ID_TOKEN_FOR_DEV"
       )
@@ -666,28 +667,35 @@ server <- function(input, output, session) {
       reactive_df_study_exp <- reactiveVal(NULL)
       currentuser <- reactiveVal("unknown user")
       usersession <- reactiveVal("unknown session")
+
       stored_plates_data <- reactiveValues()
       storedlong_plates_data <- reactiveValues()
       selected_studyexpplate <- reactiveValues()
+
       p_data <- reactiveValues()
       pa_data <- reactiveValues()
+
       processing_status <- reactiveVal(FALSE)
       job_status <- reactiveVal(NULL)
-      antigen_families_rv <- reactiveVal(NULL)
+      tabRefreshCounter <- reactiveVal(list(view_files_tab = 0, import_tab = 0, manage_project_tab = 0))
+
+      antigen_families_rv <- reactiveVal(NULL) #used in study configuration
       n_plates_standard_curve <- reactiveVal(NULL)
       mininum_dilution_count_boolean <- reactiveVal(NULL)
       luminex_features <- reactiveVal(c("Well", "Type", "Description", "Region", "Gate", "Total", "% Agg Beads", "Sampling Errors", "Rerun Status", "Device Error", "Plate ID", "Regions Selected", "RP1 Target", "Platform Heater Target", "Platform Temp (°C)", "Bead Map", "Bead Count", "Sample Size (µl)", "Sample Timeout (sec)", "Flow Rate (µl/min)", "Air Pressure (psi)", "Sheath Pressure (psi)", "Original DD Gates", "Adjusted DD Gates", "RP1 Gates", "User", "Access Level", "Acquisition Time", "acquisition_time", "Reader Serial Number", "Platform Serial Number", "Software Version", "LXR Library", "Reader Firmware", "Platform Firmware", "DSP Version", "Board Temp (°C)", "DD Temp (°C)", "CL1 Temp (°C)", "CL2 Temp (°C)", "DD APD (Volts)", "CL1 APD (Volts)", "CL2 APD (Volts)", "High Voltage (Volts)", "RP1 PMT (Volts)", "DD Gain", "CL1 Gain", "CL2 Gain", "RP1 Gain"))
-      std_curve_data_model_fit <- reactiveVal()
+
+       std_curve_data_model_fit <- reactiveVal()
       sample_data_model_fit <- reactiveVal()
       buffer_data_model_fit <- reactiveVal()
-      aggrigate_mfi_dilution <- reactiveVal(TRUE)
-      lower_threshold_rv <- reactiveVal(35)
-      upper_threshold_rv <- reactiveVal(50)
-      failed_well_criteria <- reactiveVal("lower")
-      background_control_rv <- reactiveVal("ignored")
-      reference_arm_rv <- reactiveVal()
-      reference_arm <- reactiveVal(NULL)
-      dilution_analysis_params_rv <- reactiveVal(NULL)
+      # aggrigate_mfi_dilution <- reactiveVal(TRUE)
+      # lower_threshold_rv <- reactiveVal(35)
+      # upper_threshold_rv <- reactiveVal(50)
+      # failed_well_criteria <- reactiveVal("lower")
+       background_control_rv <- reactiveVal("ignored")
+       reference_arm_rv <- reactiveVal()
+       reference_arm <- reactiveVal(NULL)
+
+       dilution_analysis_params_rv <- reactiveVal(NULL)
       last_saved_dilution_params <- reactiveVal(NULL)
       margin_table_reactive <- reactiveVal(NULL)
       da_filters_rv <- reactiveValues(selected = list(n_pass_dilutions = NULL, status = NULL, timeperiod = NULL))
@@ -695,13 +703,21 @@ server <- function(input, output, session) {
       final_average_au_table_rv <- reactiveVal(NULL)
       updated_classified_merged_rv <- reactiveVal(NULL)
       updated_margin_antigen_rv <- reactiveVal(NULL)
+
+
+      # UI handler
       upload_state_value <- reactiveValues(upload_state = NULL)
+      previousTab <- reactiveVal()
       rv_value_button <- reactiveValues(valueButton = 0)
       header_rvdata <- reactiveValues()
+
       standard_rvdata <- reactiveValues()
       sample_rvdata <- reactiveValues()
       control_rvdata <- reactiveValues()
       buffer_rvdata <- reactiveValues()
+
+
+      #importing
       plate_data <- reactiveVal()
       unique_plate_types <- reactiveVal()
       availableSheets <- reactiveVal()
@@ -710,8 +726,8 @@ server <- function(input, output, session) {
       xponent_meta_data <- reactiveVal()
       generated_tabs <- reactiveVal()
       lumcsv_reactive <- reactiveVal()
-      previousTab <- reactiveVal()
-      tabRefreshCounter <- reactiveVal(list(view_files_tab = 0, import_tab = 0, manage_project_tab = 0))
+
+      #outliers
       outlierJobStatus <- reactiveVal(list())
       outlierUIRefresher <- reactiveVal(0)
 
