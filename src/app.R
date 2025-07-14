@@ -5,7 +5,7 @@ source("global.R", local = TRUE)
 
 
 #Set to 1 for local and do not push in prod
-#Sys.setenv(LOCAL_DEV = "1")
+Sys.setenv(LOCAL_DEV = "1")
 
 
 
@@ -49,7 +49,7 @@ authenticated_body_content <- function() {
        }
       "))),
     tags$head(tags$style(HTML("
-   #sample_bead_count_collapse, #StandardCurveCollapse, #da_subject_level_inspection, #da_datasets, #da_linearity, #main_dilution_linearity_collapse, #linearity_stats, #standard_curve_model_fit, #gated_samples, .table-container {
+    #StandardCurveCollapse, #da_subject_level_inspection, #da_datasets, #da_linearity, #main_dilution_linearity_collapse, #linearity_stats, #standard_curve_model_fit, #gated_samples, .table-container {
       width: 75vw;
       overflow-x: auto;
     }
@@ -715,7 +715,11 @@ server <- function(input, output, session) {
       sample_rvdata <- reactiveValues()
       control_rvdata <- reactiveValues()
       buffer_rvdata <- reactiveValues()
-
+      # UI handler - reloading of Modules
+      reload_bead_count <- 0
+      reload_sc_fit_mod_count <- 0
+      reload_sc_summary_mod_count <- 0
+      reload_sg_count <- 0
 
       #importing
       plate_data <- reactiveVal()

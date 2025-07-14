@@ -66,6 +66,7 @@ plot_bead_count <- function(df_well, lower_threshold, upper_threshold, failed_we
   # calculate the average bead count to whole number
   mean_bead_count <- round(mean(df_well$n, na.rm = T),0)
   # hover text condition for sample data or standards
+  # df_well <- df_well
   df_well$hover_text <- with(df_well, ifelse(bead_count_gc == "Sufficient Bead Count" & stype == "X",
                                              paste0("<br>Well: ", well,
                                                     "<br>Bead Count: ", n,

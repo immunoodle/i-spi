@@ -276,18 +276,25 @@ output$view_stored_experiments_ui <- renderUI({
                        selectInput(
                          inputId = "qc_component",
                          label = "QC Phase",
-                         choices = c("Data", "Bead Count", "Standard Curve", "Dilution Analysis", "Plate Normalization", "Outliers", "Subgroup Detection"),
+                         choices = c("Data", "Bead Count", "Standard Curve","Standard Curve Summary", "Dilution Analysis", "Plate Normalization", "Outliers", "Subgroup Detection", "Subgroup Detection Summary"),
                          selected = "Data",
                          multiple = FALSE
-                       ))
-                     )
-                   ),
+                       )
+                      # verbatimTextOutput(paste(input$qc_component, input$readxMap_study_accession, input$readxMap_experiment_accession, input$study_level_tabs, input$main_tabs, sep = ", "))
+
+
+                    )
+                   )),
 
                    # Experiment Level Content
                    # conditionalPanel(
                    #   condition = "input.readxMap_experiment_accession != 'Click here'",
                    #   uiOutput("stored_plates_ui")
                    # )
+                   # tabPanel(
+                   #   id = "check_conditions",
+                   #   verbatimTextOutput(paste(input$qc_component, input$readxMap_study_accession, input$readxMap_experiment_accession, input$study_level_tabs, input$main_tabs, sep = ", "))
+                   # ),
 
                    conditionalPanel(
                      condition = "input.qc_component == 'Data' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
@@ -296,16 +303,26 @@ output$view_stored_experiments_ui <- renderUI({
                      # uiOutput("dilution_analysis_section"),
                      # uiOutput("subgroup_detection_section"),
                      # uiOutput("outlierTab"),
+                     # removeOutput("beadCountAnalysisUI", session = session),
+                     # removeOutput("plateSelection_bead_count_UI", session = session),
+                     # removeOutput("sample_data_antigenUI", session = session),
+                     # removeOutput("beadCountPlot", session = session),
+                     # removeOutput("sample_low_bead_count_table", session = session),
+                     # removeOutput("download_bead_gating", session = session),
                      uiOutput("dynamic_data_ui")
+
+                     #render_dynamic_ui_content()
                    ),
                    conditionalPanel(
-                     condition = "input.qc_component == 'Bead Count' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
-                     # uiOutput("standard_curve_section"),
+                     #condition = "input.qc_component == 'Bead Count' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
+                    condition = "input.qc_component == 'Bead Count'",
+                      # uiOutput("standard_curve_section"),
                      # uiOutput("dilution_analysis_section"),
                      # uiOutput("subgroup_detection_section"),
                      # uiOutput("dynamic_data_ui"),
                      # uiOutput("outlierTab"),
-                     uiOutput("beadCountAnalysisUI")
+                    # uiOutput("beadCountAnalysisUI")
+                    uiOutput("bead_count_module_ui")
                    ),
                    conditionalPanel(
                      condition = "input.qc_component == 'Standard Curve' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
@@ -314,7 +331,24 @@ output$view_stored_experiments_ui <- renderUI({
                      # uiOutput("dynamic_data_ui"),
                      # uiOutput("beadCountAnalysisUI"),
                      # uiOutput("outlierTab"),
-                     uiOutput("standard_curve_section")
+                     #uiOutput("standard_curve_section")
+                     # bsCollapse(id = "standardCurveCollapse",
+                     #            bsCollapsePanel(
+                     #              title = "Fitting",
+                     #              value = "fitting_mod",
+                     #              style = "primary"
+                     #            ),
+                     #            bsCollapsePanel(
+                     #              title = "Summary",
+                     #              value = "summ",
+                     #              style = "primary"
+                     #            )),
+                     uiOutput("sc_fit_module_ui")
+                   ),
+                   conditionalPanel(
+                     condition = "input.qc_component == 'Standard Curve Summary' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
+                   #  uiOutput("sc_summary_module_ui")
+                   uiOutput("standardCurveSummaryUI")
                    ),
                    conditionalPanel(
                      condition = "input.qc_component == 'Dilution Analysis' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
@@ -341,17 +375,47 @@ output$view_stored_experiments_ui <- renderUI({
                      # uiOutput("standard_curve_section"),
                      # uiOutput("dilution_analysis_section"),
                      # uiOutput("outlierTab"),
-                     uiOutput("subgroup_detection_section")
-                   )
-          )
-        )
-      )
-    )
-  )
+                     uiOutput("subgroupDetectionUI")
+                    # uiOutput("subgroup_detection_section")
+                   ),
+                   conditionalPanel(
+                     condition = "input.qc_component == 'Subgroup Detection Summary' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
+                      uiOutput("subgroup_summary_UI")
+                     )
+                   # conditionalPanel(
+                   #   condition = "input.qc_component == 'Test' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
+                   #   uiOutput("sg_module_ui")
+                   # )
+
+          ) # end TabsetPanel
+        ) # end study level tabs
+      ) # end  Study Level Content
+      ) # end fluidPage
+    ) #end tagList
 })
+
+# observeEvent({
+#   list(input$qc_component,
+#   input$readxMap_study_accession,
+#   input$readxMap_experiment_accession,
+#   input$study_level_tabs,
+#   input$main_tabs)
+# }, {
+#   if (
+#     input$qc_component == "Data" &&
+#     input$readxMap_study_accession != "Click here" &&
+#     input$readxMap_experiment_accession != "Click here" &&
+#     input$study_level_tabs == "Experiments" &&
+#     input$main_tabs == "view_files_tab"
+#   ) {
+#     cat("Re-entered Data panel — rerendering dynamic_data_ui\n")
+#     rerender_trigger(rerender_trigger() + 1)
+#   }
+# })
 
 # Data Contents
 output$dynamic_data_ui <- renderUI({
+  req(input$qc_component)
   if (
     input$qc_component == "Data" &&
     input$readxMap_study_accession != "Click here" &&
@@ -401,54 +465,56 @@ output$dynamic_data_ui <- renderUI({
 
 
 
-output$standard_curve_section <- renderUI({
-  req(input$readxMap_study_accession, input$readxMap_experiment_accession)
-  if (
-    input$qc_component == "Standard Curve" &&
-    input$readxMap_study_accession != "Click here" &&
-    input$readxMap_experiment_accession != "Click here" &&
-    input$study_level_tabs == "Experiments" &&
-    input$main_tabs == "view_files_tab"
-  ) {
-  num_plates_stored_std_curve <- count_n_std_curve_plates(input$readxMap_study_accession, input$readxMap_experiment_accession)
- # n_plates_standard_curve(num_plates_stored_std_curve)
 
-  n_dilutions_antigen_df <- count_n_dilutions_per_antigen(input$readxMap_study_accession, input$readxMap_experiment_accession)
-  # check if all antigens have at minimum 5 points
-  dilutions_per_antigen_boolean <- all(n_dilutions_antigen_df$num_dilutions >= 5)
-
- # mininum_dilution_count_boolean(dilutions_per_antigen_boolean)
-  bsCollapse(
-    id = "StandardCurveCollapse",
-    #multiple = TRUE,  # Also adding multiple = TRUE here for consistency
-    if (dilutions_per_antigen_boolean){
-      bsCollapsePanel(
-        title = "Standard Curve Fitting",
-        uiOutput("standardCurveUI"),
-        style = "primary"
-      )
-    },
-    bsCollapsePanel(
-      title = "Standard Curve Summary",
-      if (num_plates_stored_std_curve >= 2) {
-        uiOutput("standardCurveSummaryUI")
-      } else {
-        output$invalidPlatesUI <- renderUI({
-          req(input$readxMap_study_accession, input$readxMap_experiment_accession)
-          HTML(paste("<span style='font-size:20px;'>There must be 2 or more plates in ",
-                     input$readxMap_experiment_accession, "for ",
-                     input$readxMap_study_accession," to access the standard curve summary<br></span>"))
-        })
-        uiOutput("invalidPlatesUI")
-      },
-      style = "primary"
-    )
-  )
-  }
-  else {
-    NULL
-  }
-})
+# output$standard_curve_section <- renderUI({
+#   req(input$readxMap_study_accession, input$readxMap_experiment_accession)
+#   #req(input$qc_component)
+#   if (
+#     input$qc_component == "Standard Curve" &&
+#     input$readxMap_study_accession != "Click here" &&
+#     input$readxMap_experiment_accession != "Click here" &&
+#     input$study_level_tabs == "Experiments" &&
+#     input$main_tabs == "view_files_tab"
+#   ) {
+#   num_plates_stored_std_curve <- count_n_std_curve_plates(input$readxMap_study_accession, input$readxMap_experiment_accession)
+#  # n_plates_standard_curve(num_plates_stored_std_curve)
+#
+#   n_dilutions_antigen_df <- count_n_dilutions_per_antigen(input$readxMap_study_accession, input$readxMap_experiment_accession)
+#   # check if all antigens have at minimum 5 points
+#   dilutions_per_antigen_boolean <- all(n_dilutions_antigen_df$num_dilutions >= 5)
+#
+#  # mininum_dilution_count_boolean(dilutions_per_antigen_boolean)
+#   bsCollapse(
+#     id = "StandardCurveCollapse",
+#     #multiple = TRUE,  # Also adding multiple = TRUE here for consistency
+#     if (dilutions_per_antigen_boolean){
+#       bsCollapsePanel(
+#         title = "Standard Curve Fitting",
+#         uiOutput("standardCurveUI"),
+#         style = "primary"
+#       )
+#     },
+#     bsCollapsePanel(
+#       title = "Standard Curve Summary",
+#       if (num_plates_stored_std_curve >= 2) {
+#         uiOutput("standardCurveSummaryUI")
+#       } else {
+#         output$invalidPlatesUI <- renderUI({
+#           req(input$readxMap_study_accession, input$readxMap_experiment_accession)
+#           HTML(paste("<span style='font-size:20px;'>There must be 2 or more plates in ",
+#                      input$readxMap_experiment_accession, "for ",
+#                      input$readxMap_study_accession," to access the standard curve summary<br></span>"))
+#         })
+#         uiOutput("invalidPlatesUI")
+#       },
+#       style = "primary"
+#     )
+#   )
+#   }
+#   else {
+#     NULL
+#   }
+# })
 
 output$dilution_analysis_section <- renderUI({
   req(input$readxMap_study_accession, input$readxMap_experiment_accession)
@@ -476,44 +542,321 @@ output$dilution_analysis_section <- renderUI({
   }
 })
 
-output$subgroup_detection_section <- renderUI({
-  req(input$readxMap_study_accession, input$readxMap_experiment_accession)
+# output$subgroup_detection_section <- renderUI({
+#   req(input$readxMap_study_accession, input$readxMap_experiment_accession)
+#
+#   if (
+#     input$qc_component == "Subgroup Detection" &&
+#     input$readxMap_study_accession != "Click here" &&
+#     input$readxMap_experiment_accession != "Click here" &&
+#     input$study_level_tabs == "Experiments" &&
+#     input$main_tabs == "view_files_tab"
+#   ) {
+#     tagList(
+#       bsCollapse(
+#         id = "subgroupCollapse",
+#         bsCollapsePanel(
+#           title = "Subgroup Detection",
+#           uiOutput("subgroupDetectionUI"),
+#           style = "primary"
+#         ),
+#         bsCollapsePanel(
+#           title = "Subgroup Detection Summary",
+#           uiOutput("subgroup_summary_UI"),
+#           style = "primary"
+#         )
+#       )
+#     )
+#   } else {
+#     NULL
+#   }
+# })
 
-  if (
-    input$qc_component == "Subgroup Detection" &&
-    input$readxMap_study_accession != "Click here" &&
-    input$readxMap_experiment_accession != "Click here" &&
-    input$study_level_tabs == "Experiments" &&
-    input$main_tabs == "view_files_tab"
-  ) {
-    tagList(
-      bsCollapse(
-        id = "subgroupCollapse",
-        bsCollapsePanel(
-          title = "Subgroup Detection",
-          uiOutput("subgroupDetectionUI"),
-          style = "primary"
-        ),
-        bsCollapsePanel(
-          title = "Subgroup Detection Summary",
-          uiOutput("subgroup_summary_UI"),
-          style = "primary"
-        )
-      )
-    )
-  } else {
-    NULL
-  }
-})
+
+# Reactive flag to track if module is loaded
+# module_loaded <- reactiveVal(FALSE)
+#
+# observeEvent(input$qc_component, {
+#   req(input$readxMap_study_accession)
+#   req(input$readxMap_experiment_accession)
+#
+#   show_module <- input$qc_component == "Bead Count" &&
+#     input$readxMap_study_accession != "" &&
+#     input$readxMap_study_accession != "Click here" &&
+#     input$readxMap_experiment_accession != "" &&
+#     input$readxMap_experiment_accession != "Click here"
+#
+#   if (show_module && !module_loaded()) {
+#     output$bead_count_module_ui <- renderUI({
+#       destroyableBeadCountModuleUI("bead_count_mod")
+#     })
+#
+#     # Call module server once
+#     isolate({
+#       destroyableBeadCountModuleServer(
+#         id = "bead_count_mod",
+#         selected_study = reactive(input$readxMap_study_accession),
+#         selected_experiment = reactive(input$readxMap_experiment_accession),
+#         currentuser()
+#       )
+#     })
+#     module_loaded(TRUE)
+#
+#   } else if (!show_module && module_loaded()) {
+#     tryCatch({
+#       destroyModule("bead_count_mod")
+#     }, error = function(e) {})
+#     output$bead_count_module_ui <- renderUI({ NULL })
+#     module_loaded(FALSE)
+#   }
+# })
 
 
-
-observe({
-  req(input$qc_component)
- # req(input$qc_component != "Select Phase")
-  cat("QC component\n")
+observeEvent(input$qc_component, {
+  cat("QC component selected:\n")
   print(input$qc_component)
+
+  req(input$readxMap_study_accession)
+  req(input$readxMap_experiment_accession)
+
+ # cat("Current open panel(s):", input$standardCurveCollapse, "\n")
+  # ----- Bead Count Module -----
+  if (input$qc_component == "Bead Count" &&
+      input$readxMap_study_accession != "" &&
+      input$readxMap_study_accession != "Click here" &&
+      input$readxMap_experiment_accession != "" &&
+      input$readxMap_experiment_accession != "Click here") {
+
+    # Destroy previous module (if exists)
+    prev_bead_mod_id <- paste0("bead_count_mod_", reload_bead_count)
+    try(destroyModule(prev_bead_mod_id), silent = TRUE)
+
+    # Increment counter and build new ID
+    reload_bead_count <<- reload_bead_count + 1
+    new_bead_mod_id <- paste0("bead_count_mod_", reload_bead_count)
+
+    # Render UI and load module
+    output$bead_count_module_ui <- renderUI({
+      destroyableBeadCountModuleUI(new_bead_mod_id)
+    })
+
+    destroyableBeadCountModuleServer(
+      id = new_bead_mod_id,
+      selected_study = reactive(input$readxMap_study_accession),
+      selected_experiment = reactive(input$readxMap_experiment_accession),
+      currentuser()
+    )
+
+  } else {
+    # If switching away, destroy any existing bead module
+    try(destroyModule(paste0("bead_count_mod_", reload_bead_count)), silent = TRUE)
+    output$bead_count_module_ui <- renderUI({ NULL })
+  #  gc(verbose = TRUE)
+  }
+
+  # ----- Standard Curve Module -----
+  if (input$qc_component == "Standard Curve" &&
+      input$readxMap_study_accession != "" &&
+      input$readxMap_study_accession != "Click here" &&
+      input$readxMap_experiment_accession != "" &&
+      input$readxMap_experiment_accession != "Click here") {
+
+    # Destroy previous module (if exists)
+    prev_sc_mod_id <- paste0("standard_curve_fit_mod_", reload_sc_fit_mod_count)
+    try(destroyModule(prev_sc_mod_id), silent = TRUE)
+
+    # Increment counter and build new ID
+    reload_sc_fit_mod_count <<- reload_sc_fit_mod_count + 1
+    new_sc_mod_id <- paste0("standard_curve_fit_mod_", reload_sc_fit_mod_count)
+
+    # Render UI and load module
+    output$sc_fit_module_ui <- renderUI({
+      destroyableStandardCurveFittingModuleUI(new_sc_mod_id)
+    })
+
+    destroyableStandardCurveFittingServer(
+      id = new_sc_mod_id,
+      selected_study = reactive(input$readxMap_study_accession),
+      selected_experiment = reactive(input$readxMap_experiment_accession),
+      currentuser()
+    )
+
+  } else {
+    # If switching away, destroy any existing SC module
+    try(destroyModule(paste0("standard_curve_fit_mod_", reload_sc_fit_mod_count)), silent = TRUE)
+    output$sc_fit_module_ui <- renderUI({ NULL })
+   # gc(verbose = TRUE)
+  }
+  # ----- Standard Curve Summary Module -----
+  # if (input$qc_component == "Standard Curve Summary" &&
+  #     input$readxMap_study_accession != "" &&
+  #     input$readxMap_study_accession != "Click here" &&
+  #     input$readxMap_experiment_accession != "" &&
+  #     input$readxMap_experiment_accession != "Click here") {
+  #
+  #   # Destroy previous module (if exists)
+  #   prev_sc_summary_mod_id <- paste0("standard_curve_sum_mod_", reload_sc_summary_mod_count)
+  #   try(destroyModule(prev_sc_summary_mod_id), silent = TRUE)
+  #
+  #   # Increment counter and build new ID
+  #   reload_sc_summary_mod_count <<- reload_sc_summary_mod_count + 1
+  #   new_sc_sum_mod_id <- paste0("standard_curve_sum_mod_", reload_sc_summary_mod_count)
+  #
+  #   # Render UI and load module
+  #   output$sc_summary_module_ui <- renderUI({
+  #     destroyableStandardCurveSummaryModuleUI(new_sc_sum_mod_id)
+  #   })
+  #
+  #   destroyableStandardCurveSummaryModuleServer(
+  #     id = new_sc_sum_mod_id,
+  #     selected_study = reactive(input$readxMap_study_accession),
+  #     selected_experiment = reactive(input$readxMap_experiment_accession),
+  #     currentuser()
+  #   )
+  #
+  # } else {
+  #   # If switching away, destroy any existing SC a module
+  #   try(destroyModule(paste0("standard_curve_sum_mod_", reload_sc_summary_mod_count)), silent = TRUE)
+  #   output$sc_summary_module_ui <- renderUI({ NULL })
+  #   gc(verbose = TRUE)
+  # }
+
+  # if (input$qc_component == "Test" &&
+  #     input$readxMap_study_accession != "" &&
+  #     input$readxMap_study_accession != "Click here" &&
+  #     input$readxMap_experiment_accession != "" &&
+  #     input$readxMap_experiment_accession != "Click here") {
+  #
+  #   # Destroy previous module (if exists)
+  #   prev_sc_summary_mod_id <- paste0("subgroup_mod_", reload_sg_count)
+  #   try(destroyModule(prev_sc_summary_mod_id), silent = TRUE)
+  #
+  #   # Increment counter and build new ID
+  #   reload_sg_count <<- reload_sg_count + 1
+  #   new_sc_sum_mod_id <- paste0("subgroup_mod_", reload_sg_count)
+  #
+  #   # Render UI and load module
+  #   output$sg_module_ui <- renderUI({
+  #     destroyableSubgroupDetectionModuleUI(new_sc_sum_mod_id)
+  #   })
+  #
+  #   destroyableSubgroupDetectionServer(
+  #     id = new_sc_sum_mod_id,
+  #     selected_study = reactive(input$readxMap_study_accession),
+  #     selected_experiment = reactive(input$readxMap_experiment_accession),
+  #     currentuser()
+  #   )
+  #
+  # } else {
+  #   # If switching away, destroy any existing SC a module
+  #   try(destroyModule(paste0("subgroup_mod_", reload_sg_count)), silent = TRUE)
+  #   output$sg_module_ui <- renderUI({ NULL })
+  #   gc(verbose = TRUE)
+  # }
+
+  gc(verbose = TRUE)
 })
+#
+# observeEvent(input$qc_component, {
+#  # req(input$qc_component)
+#  # req(input$qc_component != "Select Phase")
+#   cat("QC component\n")
+#   req(input$readxMap_study_accession)
+#   req(input$readxMap_experiment_accession)
+#   print(input$qc_component)
+#
+#  # cat("Standard Curve Collapse Status\n")
+#  # print(input$StandardCurveCollapse)
+#  # if (input$qc == "Bead Count") {
+#   # if (input$qc_component == "Bead Count" &&  !is.null(selected_studyexpplate$study_accession) &&
+#   #     selected_studyexpplate$study_accession != "" &&  !is.null(selected_studyexpplate$experiment_accession) &&  selected_studyexpplate$experiment_accession != ""
+#   #     && selected_studyexpplate$study_accession != "Click here" &&  selected_studyexpplate$experiment_accession != "Click here") {
+#   if (input$qc_component == "Bead Count" && input$readxMap_study_accession != "" && input$readxMap_study_accession != "Click here" &&
+#       input$readxMap_experiment_accession != "" && input$readxMap_experiment_accession != "Click here") {
+#        try(destroyModule("bead_count_mod"), silent = TRUE)
+#        #reload_bead_count(reload_bead_count() + 1)
+#         reload_bead_count <<- reload_bead_count + 1 # global to source counter outside of observeEvent
+#       output$bead_count_module_ui <- renderUI({
+#         #destroyableBeadCountModuleUI("bead_count_mod")
+#         destroyableBeadCountModuleUI(paste0("bead_count_mod_", reload_bead_count))
+#
+#       })
+#     destroyableBeadCountModuleServer(id = paste0("bead_count_mod_",  reload_bead_count), selected_study = reactive(input$readxMap_study_accession),
+#                                      selected_experiment = reactive(input$readxMap_experiment_accession), currentuser())
+#   } else {
+#     destroyModule("bead_count_mod")
+#     output$bead_count_module_ui <- renderUI({ NULL })  # Remove UI
+#     gc(verbose = TRUE)
+#   }
+#
+#   if (input$qc_component == "Standard Curve" && input$readxMap_study_accession != "" && input$readxMap_study_accession != "Click here" &&
+#       input$readxMap_experiment_accession != "" && input$readxMap_experiment_accession != "Click here") {
+#     try(destroyModule("standard_curve_fit_mod"), silent = TRUE)
+#     #reload_bead_count(reload_bead_count() + 1)
+#     reload_sc_fit_mod_count <<- reload_sc_fit_mod_count + 1 # global to source counter outside of observeEvent
+#     output$sc_fit_module_ui <- renderUI({
+#       #destroyableBeadCountModuleUI("bead_count_mod")
+#       destroyableStandardCurveFittingModuleUI(paste0("standard_curve_fit_mod_", reload_sc_fit_mod_count))
+#
+#     })
+#     destroyableStandardCurveFittingServer(id = paste0("standard_curve_fit_mod_",  reload_sc_fit_mod_count), selected_study = reactive(input$readxMap_study_accession),
+#                                      selected_experiment = reactive(input$readxMap_experiment_accession), currentuser())
+#   } else {
+#     destroyModule("standard_curve_fit_mod")
+#     output$sc_fit_module_ui <- renderUI({ NULL })  # Remove UI
+#     gc(verbose = TRUE)
+#   }
+# })
+  # all_outputs <- outputOptions(NULL)
+  # all_outputs_v <<- all_outputs
+  # output_ids <- ls(session$output)
+  # output_objects <- output
+  #
+  # output_ids <- ls(output)
+  #
+  # output_list <- lapply(output_ids, function(id) {
+  #   output[[id]]
+  # })
+  # output_list <<- output_list
+
+  # session_output <- session$output
+  #
+  # temp_outputs_v <<- output_ids
+  # session_output_v <<- session_output
+  # if (input$qc_component != "Data") {
+  #   cat("removing non related data output")
+  #   removeOutput("stored_header", session = session)
+  #   removeOutput("swide_standard", session = session)
+  #   removeOutput("swide_control", session = session)
+  #   removeOutput("swide_buffer", session = session)
+  #   removeOutput("swide_sample", session = session)
+  #   removeOutput("dynamic_data_ui", session = session)
+  #   # output$stored_header <- NULL
+  #   # output$swide_standard <- NULL
+  #   # output$swide_control <- NULL
+  #   # output$swide_buffer <- NULL
+  #   # output$swide_sample <- NULL
+  #   # output$dynamic_data_ui <- NULL
+  #
+  #   gc()
+  # }
+  # if (input$qc_component != "Bead Count") {
+  #   removeOutput("beadCountAnalysisUI", session = session)
+  #   removeOutput("plateSelection_bead_count_UI", session = session)
+  #   removeOutput("sample_data_antigenUI", session = session)
+  #   removeOutput("beadCountPlot", session = session)
+  #   removeOutput("sample_low_bead_count_table", session = session)
+  #   removeOutput("download_bead_gating", session = session)
+  #
+  #   gc(verbose = T)
+  # }
+
+#})
+
+
+# my_session_info <- reactive({
+#   session  # or any other relevant part
+# })
 
 # observeEvent(input$qc_component, {
 #   req(input$readxMap_experiment_accession)

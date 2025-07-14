@@ -127,7 +127,8 @@ observeEvent(input$readxMap_experiment_accession, {
   print(paste("selected study:", selected_studyexpplate$study_accession))
   selected_studyexpplate$experiment_accession <- input$readxMap_experiment_accession
   print(paste("selected experiment:", selected_studyexpplate$experiment_accession))
-
+  print(length( selected_studyexpplate$experiment_accession))
+  print(selected_studyexpplate$experiment_accession == "")
 
   req(selected_studyexpplate$experiment_accession,selected_studyexpplate$study_accession)
 

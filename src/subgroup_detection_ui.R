@@ -1,4 +1,80 @@
 #observeEvent(list(input$inLoadedData, input$readxMap_experiment_accession), {
+#
+# subgroupDetectionModuleUI <- function(id) {
+#   ns <- NS(id)
+#   tagList(
+#     fluidRow(
+#       br(),
+#       column(12,
+#              br(),
+#              bsCollapse(
+#                id = ns("subgroupDetectionMethods"),
+#                bsCollapsePanel(
+#                  title = "Subgroup Detection Methods",
+#                  tagList(
+#                    tags$p("Use the dropdown menu titled 'Response type' to choose the desired type of outcome measured.
+#                               Currently the options include MFI, Normalized MFI and Arbitrary Units.
+#                               Use the dropdown menu to select the desired transformation that is applied to the data.
+#                               Select the first and second visits of interest from the dropdown menu titled 'First Visit' and 'Second Visit respectively,  and the antigen of interest from the dropdown titled 'Antigen'.
+#                               To change the reference arm selection navigate to the 'Study Overview' tab and to the Set Reference Arm settings."),
+#                    tags$p(HTML("Unstandardized assay features are log<sub>2</sub> transformed")),
+#                    tags$p(HTML("Vaccinated assay distributions were classified into one or two distributions using a finite mixture model analysis.")),
+#                    tags$p(HTML("The difference plot with the two selected visits were classified as
+#                                    increasing, no change (an interval centered on zero; between -7.5% and +7.5% of the total range), and decreasing.")),
+#                    tags$p(HTML("To determine the optimal number of clusters (k) used for K-Means clustering, the silhouette score and the gap statistic are calculated and the maximum of the 2 are used.
+#                               We limit the number of clusters to be at most 4. If there less than 3 subjects, 1 cluster will be used.
+#                               Using the result of this algorithm K-Means clustering with k clusters is used.")),
+#                    tags$p(HTML("For a given antigen and visit specification in the selected experiment and study, if only one arm is present, that arm will be displayed in the figures.")),
+#                    tags$p(HTML("In the assay classification figure, each line connects a point representing a subject from the first visit to the second visit. The color of the line indicates the direction determined by the K-means clustering results.
+#                                    Each subject is colored by the classification of being normal or low at the first visit that is selected.
+#                                    These colors match the first figure."))
+#
+#
+#                  ), # end tagList
+#                  style = "success"
+#                ) # end bsCollapsePanel
+#              ),
+#              mainPanel(
+#                uiOutput(ns("parameter_subgroup_dependencies_UI")),
+#                fluidRow(
+#                  column(3, uiOutput(ns("selectedFeatureUI"))),
+#                ),
+#                fluidRow(
+#                  column(4,uiOutput(ns("response_class"))),
+#                  column(4, uiOutput(ns("transformation_type"))),
+#                  column(4, uiOutput(ns("selectedAntigenSampleUI"))),
+#
+#                ),
+#                plotlyOutput(ns("density_histogram_UI"),width = "75vw"),
+#                br(),
+#                uiOutput(ns("download_density_histogram_first_visit")),
+#                br(),
+#                uiOutput(ns("show_time_dependent_plots"))
+#              )# end main Panel
+#       ) # end column
+#     ) # end fluidRow
+#   ) # end outer tag list
+# }
+#
+# subgroupDetectionServer <-  function(id, selected_study, selected_experiment,currentuser) {
+#   moduleServer(id, function(input, output, session) {
+#     ns <- session$ns
+#
+#
+#     sample_data_sg <- fetch_db_samples(study_accession = selected_study(), experiment_accession = selected_experiment())
+#     standard_data_curve_sg <- fetch_db_standards(study_accession = selected_study(), experiment_accession = selected_experiment())
+#     buffer_data_sg <- fetch_db_buffer(study_accession = selected_study(), experiment_accession = selected_experiment())
+#
+#     output$test <- renderUI({
+#       "Testing"
+#     })
+#
+#   })
+# }
+# destroyableSubgroupDetectionModuleUI <- makeModuleUIDestroyable(subgroupDetectionModuleUI)
+# destroyableSubgroupDetectionServer <- makeModuleServerDestroyable(subgroupDetectionServer)
+
+
 observeEvent(list(
   input$readxMap_experiment_accession,
   input$readxMap_study_accession,

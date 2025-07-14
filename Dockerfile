@@ -45,6 +45,7 @@ RUN apt-get update && apt-get install -y \
     tcl-dev \
     tk-dev
 
+
 # Install R packages from CRAN
 RUN R -e "install.packages('aplpack')"
 
@@ -84,6 +85,10 @@ RUN R -e "install.packages('tmvtnorm')"
 
 RUN R -e "install.packages(c('httr2', 'jose', 'openssl', 'jsonlite', 'urltools'))"
 RUN R -e "install.packages(c('strex', 'purrr'))"
+RUN R -e "install.packages('shiny.destroy')"
+
+
+
 RUN rm -rf /srv/shiny-server/*
 
 # Copy the app directory into the image
