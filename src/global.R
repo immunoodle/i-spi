@@ -80,6 +80,8 @@ library(openssl) # For rand_bytes
 library(jsonlite)
 library(urltools)
 
+library(shiny.destroy)
+
 # Enable progressr with shiny
 handlers(global = TRUE)
 handlers("shiny")

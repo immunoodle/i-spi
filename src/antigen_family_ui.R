@@ -116,57 +116,58 @@ render_antigen_family <- reactive({
     )
   })
 
-  # And modify your renderDT to be more responsive:
-  output$antigen_family_table <- renderDT({
-    req(antigen_families_rv())
-    cat("Rendering datatable\n")
-    datatable(antigen_families_rv(),
-              options = list(
-                pageLength = 50,
-                scrollX = TRUE,
-                scrollY = "400px",
-                autoWidth = TRUE,  # Added this
-                responsive = TRUE, # Added this
-                order = list(list(0, 'asc')),
-                columnDefs = list(
-                  list(className = 'dt-center', targets = '_all')
-                )
-              ),
-              editable = list(
-                target = 'cell',
-                disable = list(columns = c(0:3))
-              ),
-              selection = 'none',
-              class = 'cell-border stripe hover'  # Added styling classes
-    ) %>%
-      formatStyle(columns = 1:ncol(antigen_families_rv()),  # Added column styling
-                  backgroundColor = 'white',
-                  borderBottom = '1px solid #ddd')
-  })
 })
-
-# Handle initial page load
-observe({
-  req(input$readxMap_study_accession)
-  if (input$study_level_tabs == "Study Overview") {
-    cat("Initial load of Study Overview tab\n")
-    render_antigen_family()
-  }
-})
-
-# Handle tab changes
-observeEvent(input$study_level_tabs, {
-  req(input$readxMap_study_accession)
-  if (input$study_level_tabs == "Study Overview") {
-    cat("Tab changed to Study Overview\n")
-    render_antigen_family()
-  }
-})
-
-# Handle study selection changes
-observeEvent(input$readxMap_study_accession, {
-  if (input$study_level_tabs == "Study Overview") {
-    cat("Study selection changed\n")
-    render_antigen_family()
-  }
-})
+#   # And modify your renderDT to be more responsive:
+#   output$antigen_family_table <- renderDT({
+#     req(antigen_families_rv())
+#     cat("Rendering datatable\n")
+#     datatable(antigen_families_rv(),
+#               options = list(
+#                 pageLength = 50,
+#                 scrollX = TRUE,
+#                 scrollY = "400px",
+#                 autoWidth = TRUE,  # Added this
+#                 responsive = TRUE, # Added this
+#                 order = list(list(0, 'asc')),
+#                 columnDefs = list(
+#                   list(className = 'dt-center', targets = '_all')
+#                 )
+#               ),
+#               editable = list(
+#                 target = 'cell',
+#                 disable = list(columns = c(0:3))
+#               ),
+#               selection = 'none',
+#               class = 'cell-border stripe hover'  # Added styling classes
+#     ) %>%
+#       formatStyle(columns = 1:ncol(antigen_families_rv()),  # Added column styling
+#                   backgroundColor = 'white',
+#                   borderBottom = '1px solid #ddd')
+#   })
+# })
+#
+# # Handle initial page load
+# observe({
+#   req(input$readxMap_study_accession)
+#   if (input$study_level_tabs == "Study Overview") {
+#     cat("Initial load of Study Overview tab\n")
+#     render_antigen_family()
+#   }
+# })
+#
+# # Handle tab changes
+# observeEvent(input$study_level_tabs, {
+#   req(input$readxMap_study_accession)
+#   if (input$study_level_tabs == "Study Overview") {
+#     cat("Tab changed to Study Overview\n")
+#     render_antigen_family()
+#   }
+# })
+#
+# # Handle study selection changes
+# observeEvent(input$readxMap_study_accession, {
+#   if (input$study_level_tabs == "Study Overview") {
+#     cat("Study selection changed\n")
+#     render_antigen_family()
+#   }
+# })

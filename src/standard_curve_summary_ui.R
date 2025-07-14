@@ -3,21 +3,227 @@ standard_curve_table_list <- list()
 data_summary <- list()
 
 #std_curve_tab_active <- reactiveVal(FALSE)
-
-# experiment_data <- reactive({
-#   selected_study <- selected_studyexpplate$study_accession
-#   selected_experiment <- selected_studyexpplate$experiment_accession
+# print("STARTING summary module source")
+# standardCurveSummaryModuleUI <- function(id) {
+#   ns <- NS(id)
+#   tagList(
+#     fluidRow(
+#       column(12,
+#              bsCollapse(
+#                id = ns("std_curve_summaryCollapse"),
+#                bsCollapsePanel(
+#                  title = "Standard Summary Methods",
+#                  tagList(
+#                    tags$p("Select an antigen family of interest using the dropdown menu titled 'Antigen Family'. To modify the family of any antigen, navigate to the 'Antigen Family Tab'. If no fitted standard curve models are available for the selected study, experiment and antigen family, the message 'There are no Standard Curve models saved by the algorithm in the Standard Curve Tab' will be displayed.
+#                If multiple sources are available, use the radio buttons to select the desired source."),
+#                    tags$p("If there are standard curve fits saved to the database, a dropdown menu under the antigen family allows for one antigen from that family to be selected.
+#                       When an antigen is selected, all of the standard curves for the selected antigen are plotted on the same figure with the coefficient of variation at each dilution factor.
+#                       Additionally, an aggregated standard curve is calculated and displayed. The standard curves are labeled by plate and model class.
+#                       In addition, the linetype of the standard curve indicates the class of model.
+#                       The correspondence between model class and the linetype is the following:"),
+#                    tags$ul(tags$li("drda five parameter logistic model: solid"),
+#                            tags$li("nls exponential model: dash"),
+#                            tags$li("nls five parameter logistic model: dot"),
+#                            tags$li("nls four parameter logistic model: dashdot")),
+#                    tags$p("Below the figure or the message that is displayed when there are no standard curve models retrieved by the standard curve algorithm,
+#                       there is a button which when clicked downloads a spreadsheet containing the standard curve fits from the database for the current experiment selected in the current study.
+#                        The second button below that downloads a spreadsheet containing the sample data from the database for the current experiment selected in the current study."),
+#                    tags$p("Following the download buttons for the standard curve model fits and the sample data there is a select box to select one or more antigens from the currently selected antigen family.
+#                       This selection generates a figure displaying the coefficient of variation as a percentage, plotted against the log of the dilution factor for the chosen antigens."),
+#                    tags$p("Beneath the figure of the coefficient of variation by the log of the dilution factor for the antigens selected, an additional download button is available.
+#                       When pressed, this download button downloads the coefficient of variation by each log dilution factor for the current experiment in the selected study as an excel file.
+#                       In addition to the  coefficient of variation, the mean log dilution and standard deviation of log dilution are found as columns in the spreadsheet since they are required for the coefficient of variation calculation.")
+#                  ), # end tagList
+#                  style = "success"
+#                )
+#              ) #end bsCollapse
+#              ,
+#              mainPanel(
+#                # Family Antigens
+#                fluidRow(
+#                  column(4 ,uiOutput(ns("antigenFamilySelectionUI"))),
+#                  column(4, uiOutput(ns("antigenSelectionUI2")))
+#                  #column(4, uiOutput(ns("sourceSelectionUI2")))
+#                ) #,
 #
-#   # Fetch the standard curves using the selected study and experiment
-#   if (!is.null(selected_study) && !is.null(selected_experiment)) {
-#     return(fetch_standard_curves(selected_study, selected_experiment))
-#   } else {
-#     return(NULL)
-#   }
-# })
+#
+#                # uiOutput(ns("infoSavedMesssage")),
+#                # br(),
+#                #
+#                # uiOutput(ns("standard_curve_antigenContainer")),
+#                # br(),
+#                # uiOutput(ns("download_button_ui")),
+#                # br(),
+#                # uiOutput(ns("download_sample_data_ui")),
+#                # br(),
+#                # uiOutput(ns("save_norm_mfiUI")),
+#                # br(),
+#                # # CV Plot Controls
+#                # br(),
+#                # uiOutput(ns("antigens_in_family_UI")),
+#                # br(),
+#                # plotlyOutput(ns("cv_log_dilution_plot"), width = "75vw"),
+#                # br(),
+#                # uiOutput(ns("download_cv_log_dilution_study_level"))
+#              ) # end mainPanel
+#       ) # end col
+#
+#     ) # end fluidRow
+#   ) # end tagList
+# }
+#
+# standardCurveSummaryModuleServer <- function(id, selected_study, selected_experiment, currentuser) {
+#   moduleServer(id, function(input, output, session) {
+#     ns <- session$ns
+#
+#     sample_data_sc_summary <- fetch_db_samples(study_accession = selected_study(), experiment_accession = selected_experiment())
+#     standard_data_curve_sc_summary <- fetch_db_standards(study_accession = selected_study(), experiment_accession = selected_experiment())
+#
+#     if (!is.null(selected_study()) && length(selected_study()) > 0 &&
+#         !is.null(selected_experiment()) && length(selected_experiment()) > 0 &&
+#         !is.null(sample_data_sc_summary) && length(sample_data_sc_summary > 0)){
+#
+#       # Filter sample data
+#       sample_data_sc_summary$selected_str <- paste0(sample_data_sc_summary$study_accession, sample_data_sc_summary$experiment_accession)
+#       sample_data_sc_summary <- sample_data_sc_summary[sample_data_sc_summary$selected_str == paste0(selected_study(), selected_experiment()), ]
+#
+#       # Summarize sample data
+#       cat("Viewing sample data fitting summary module")
+#       print(names(sample_data_sc_summary))
+#       print(table(sample_data_sc_summary$plateid))
+#       print(table(sample_data_sc_summary$antigen))
+#       cat("After summarizing sample data fitting summary module")
+#
+#
+#       # Rename columns
+#
+#       sample_data_sc_summary <- dplyr::rename(sample_data_sc_summary, arm_name = agroup)
+#       sample_data_sc_summary <- dplyr::rename(sample_data_sc_summary, visit_name = timeperiod)
+#
+#
+#       sample_data_sc_summary$subject_accession <- sample_data_sc_summary$patientid
+#
+#       sample_data_sc_summary <- dplyr::rename(sample_data_sc_summary, value_reported = antibody_mfi)
+#
+#       arm_choices <- unique(sample_data_sc_summary$arm_name)
+#       visits <- unique(sample_data_sc_summary$visit_name)
+#     }
+#
+#       antigen_families <- fetch_antigen_family_table(selected_study())
+#
+#       if (!is.null(selected_study()) && length(selected_study()) > 0 &&
+#           !is.null(selected_experiment()) && length(selected_experiment()) > 0 &&
+#           !is.null(standard_data_curve_sc_summary) && length(standard_data_curve_sc_summary) > 0){
+#
+#         # Filter sample data
+#         standard_data_curve_sc_summary$selected_str <- paste0(standard_data_curve_sc_summary$study_accession, standard_data_curve_sc_summary$experiment_accession)
+#         standard_data_curve_sc_summary <- standard_data_curve_sc_summary[standard_data_curve_sc_summary$selected_str == paste0(selected_study(), selected_experiment()), ]
+#
+#         # Summarize std curve data data
+#         cat("View Standard Curve data plateid")
+#         print(table(standard_data_curve_sc_summary$plateid))
+#         cat("View Standard Curve data antigen")
+#         print(table(standard_data_curve_sc_summary$antigen))
+#
+#         std_curve_data_sc_summary <- standard_data_curve_sc_summary
+#
+#         std_curve_data_sc_summary$subject_accession <- std_curve_data_sc_summary$patientid
+#
+#         std_curve_data_sc_summary <- calculate_log_dilution(std_curve_data_sc_summary)
+#         std_curve_data_sc_summary <- assign_antigen_families(standard_curve_study_data = std_curve_data_sc_summary, antigen_family_lookup = antigen_families )
+#       }
+#
+#       ## Load study configuration for the user
+#       study_configuration <- fetch_study_configuration(study_accession = selected_study(), user = currentuser())
+#       user_bkg_method <- study_configuration[study_configuration$param_name == "blank_option",]$param_character_value
+#       is_log_mfi <- as.logical(toupper(study_configuration[study_configuration$param_name == "is_log_mfi_axis",]$param_boolean_value))
+#
+#       fitted_curve_parameters <- fetch_standard_curves(selected_study(), selected_experiment(), bkg_method = user_bkg_method, is_log_mfi_axis = is_log_mfi)
+#       fitted_curve_parameters <- assign_antigen_families(standard_curve_study_data = fitted_curve_parameters, antigen_family_lookup = antigen_families)
+#
+#       fitted_curve_feature <- fetch_standard_curves_mse_feature(selected_study(), bkg_method = user_bkg_method)
+#       fitted_curve_feature <- assign_antigen_families(standard_curve_study_data = fitted_curve_feature, antigen_family_lookup = antigen_families)
+#
+#       ##Sample data to download
+#       sample_data_feature_download <- fetch_sample_data_feature(study_accession = selected_study(), experiment_accession = selected_experiment())
+#
+#       std_curve_data_sc_summary <- std_curve_data_sc_summary
+#
+#       if (nrow(fitted_curve_parameters) > 0) {
+#
+#         output$antigenFamilySelectionUI <- renderUI({
+#
+#           req(std_curve_data_sc_summary$antigen_family)
+#
+#           selectInput(ns("antigenFamilySelection"),
+#                       label = "Antigen Family",
+#                       choices = unique(std_curve_data_sc_summary$antigen_family))
+#
+#         })
+#         output$antigenSelectionUI2 <- renderUI({
+#           req(fitted_curve_parameters)
+#          # req(input$readxMap_study_accession, input$readxMap_experiment_accession)
+#           req(fitted_curve_parameters$study_accession, fitted_curve_parameters$experiment_accession)
+#           # require the antigen family
+#           req(input$antigenFamilySelection)
+#
+#           updateSelectInput(session, ns("antigenSelection2"), selected = NULL)
+#
+#           dat_antigen <- fitted_curve_parameters[fitted_curve_parameters$study_accession %in% selected_study() &
+#                                                    fitted_curve_parameters$experiment_accession %in% selected_experiment() &
+#                                                    fitted_curve_parameters$antigen_family %in% input$antigenFamilySelection, ]
+#           req(nrow(dat_antigen) > 0)
+#
+#           my_label <- paste0("Select a Single Antigen in ", input$antigenFamilySelection," for plotting Standard Curves")
+#           selectInput(ns("antigenSelection2"),
+#                       label = my_label,
+#                       choices = unique(dat_antigen$antigen)) #unique(dat_antigen$antigen)
+#           #}
+#         })
+#
+#       } else {
+#         output$standardCurveSummaryUI <- renderUI({
+#             br()
+#             uiOutput(ns("nofits"))
+#         })
+#            output$nofits <- renderUI({
+#             HTML(paste0("<span style='font-size:20px;'>There are no standard curves saved by the algorithm in the standard curve Fitting Panel for
+#                           ", selected_experiment()," in ", selected_study(),
+#                         " using the selected method for the blanks.</span>"))
+#
+#           })
+#       } # end else
+#   }) # end moduleServer
+# }
+#
+# cat("typeof:", typeof(standardCurveSummaryModuleServer), "\n")
+# cat("class:", class(standardCurveSummaryModuleServer), "\n")
+# cat("Function:")
+# print(is.function(standardCurveSummaryModuleServer))  # Should return TRUE
+#
+# # # --- Destroyable wrappers ---
+# destroyableStandardCurveSummaryModuleUI <- makeModuleUIDestroyable(standardCurveSummaryModuleUI)
+# print("Calling makeModuleServerDestroyable")
+# print(standardCurveSummaryModuleServer)
+# destroyableStandardCurveSummaryModuleServer <- makeModuleServerDestroyable(standardCurveSummaryModuleServer)
+# #
 
-observeEvent(input$inLoadedData, {
-  if (input$inLoadedData == "Standard Curve") {
+
+observeEvent(list(
+  input$readxMap_experiment_accession,
+  input$readxMap_study_accession,
+  input$qc_component,
+  input$study_level_tabs,
+  input$main_tabs), {
+
+# observeEvent(input$inLoadedData, {
+    req(input$qc_component == "Standard Curve Summary",
+        input$readxMap_study_accession != "Click here",
+        input$readxMap_experiment_accession != "Click here",
+        input$study_level_tabs == "Experiments",
+        input$main_tabs == "view_files_tab")
+
+  if (input$qc_component == "Standard Curve Summary") {
 
     selected_study <- selected_studyexpplate$study_accession
     selected_experiment <- selected_studyexpplate$experiment_accession
@@ -528,6 +734,8 @@ observeEvent(input$inLoadedData, {
                                       selected_antigen = input$antigenSelection2)
       })
 
+
+
       # download the coefficient of variation, log dilution at the study level.
       output$download_cv_log_dilution_study_level <- renderUI({
         req(cv_log_dilution_rv())
@@ -552,5 +760,20 @@ observeEvent(input$inLoadedData, {
       })
     } # end is standard curves avaliable in db check
   } # end is loaded data
+    else {
+      output$standardCurveSummaryUI <- renderUI(NULL)
+      output$antigenFamilySelectionUI <- renderUI(NULL)
+      output$antigenSelectionUI2 <- renderUI(NULL)
+      output$sourceSelectionUI2 <- renderUI(NULL)
+      output$infoSavedMesssage <- renderUI(NULL)
+      output$standard_curve_antigenContainer <- renderUI(NULL)
+      output$download_button_ui <- renderUI(NULL)
+      output$download_sample_data_ui <- renderUI(NULL)
+      output$save_norm_mfiUI <- renderUI(NULL)
+      output$antigens_in_family_UI <- renderUI(NULL)
+      output$cv_log_dilution_plot <- renderPlotly(NULL)
+      output$download_cv_log_dilution_study_level <- renderUI(NULL)
+
+    }
 }
 )# end observe event

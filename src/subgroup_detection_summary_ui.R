@@ -1,6 +1,19 @@
-observeEvent(list(input$inLoadedData, input$readxMap_experiment_accession), {
-  req(input$inLoadedData, input$readxMap_experiment_accession)
-  if (input$inLoadedData == "Subgroup Detection") {
+#observeEvent(list(input$inLoadedData, input$readxMap_experiment_accession), {
+ # req(input$inLoadedData, input$readxMap_experiment_accession)
+observeEvent(list(
+  input$readxMap_experiment_accession,
+  input$readxMap_study_accession,
+  input$qc_component,
+  input$study_level_tabs,
+  input$main_tabs), {
+
+    req(input$qc_component == "Subgroup Detection Summary",
+        input$readxMap_study_accession != "Click here",
+        input$readxMap_experiment_accession != "Click here",
+        input$study_level_tabs == "Experiments",
+        input$main_tabs == "view_files_tab")
+
+  if (input$qc_component == "Subgroup Detection Summary") {
 
     selected_study <- selected_studyexpplate$study_accession
     selected_experiment <- selected_studyexpplate$experiment_accession
@@ -17,11 +30,11 @@ observeEvent(list(input$inLoadedData, input$readxMap_experiment_accession), {
       sample_data <- sample_data[sample_data$selected_str == paste0(selected_study, selected_experiment), ]
 
       # Summarize sample data
-      cat("Viewing sample dat in subgroup tab ")
+      cat("Viewing sample dat in subgroup summary tab ")
       print(names(sample_data))
       print(table(sample_data$plateid))
       print(table(sample_data$antigen))
-      cat("After summarizing sample data in subgroup tab")
+      cat("After summarizing sample data in subgroup summary tab")
 
 
       # Rename columns
@@ -537,5 +550,14 @@ observeEvent(list(input$inLoadedData, input$readxMap_experiment_accession), {
 
   } else {
     output$subgroup_summary_UI <- NULL
+    output$parameter_subgroup_summary_dependencies_UI <- renderUI(NULL)
+    output$feature_selectionUI <- renderUI(NULL)
+    output$study_antigens <- renderText(NULL)
+    output$response_class_selection <- renderUI(NULL)
+    output$transformation_type_selection <- renderUI(NULL)
+    output$run_summarization_UI <- renderUI(NULL)
+    output$num_subgroups_option_UI <- renderUI(NULL)
+    output$hclust_heatmap_heatmaply <- renderPlotly(NULL)
+    output$download_combined_assay_classification_data <- renderUI(NULL)
   }
 })

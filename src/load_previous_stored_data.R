@@ -127,7 +127,8 @@ observeEvent(input$readxMap_experiment_accession, {
   print(paste("selected study:", selected_studyexpplate$study_accession))
   selected_studyexpplate$experiment_accession <- input$readxMap_experiment_accession
   print(paste("selected experiment:", selected_studyexpplate$experiment_accession))
-
+  print(length( selected_studyexpplate$experiment_accession))
+  print(selected_studyexpplate$experiment_accession == "")
 
   req(selected_studyexpplate$experiment_accession,selected_studyexpplate$study_accession)
 
@@ -304,7 +305,13 @@ observeEvent(input$readxMap_experiment_accession, {
                                      c("#D9EF8B", "#F9C7DE", "#C7EAE5"),
                                      default = NULL)
       )
-    output$stored_header = DT::renderDataTable(stored_header_dt, server = FALSE)
+   # output$stored_header = DT::renderDataTable(stored_header_dt, server = FALSE)
+    output$stored_header <- DT::renderDataTable({
+      req(input$dataCollapse == "Header")  # Only run if "Header" panel is open
+      stored_header_dt
+    }, server = TRUE)
+
+
     # print("Updating the stored_plates_data reactive for downloading")
     stored_plates_data$stored_header <- stored_header
     # selected_studyexpplate$stored_header <- stored_header
