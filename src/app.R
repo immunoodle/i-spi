@@ -50,6 +50,7 @@ authenticated_body_content <- function() {
       "))),
     tags$head(tags$style(HTML("
     #StandardCurveCollapse, #da_subject_level_inspection, #da_datasets, #da_linearity, #main_dilution_linearity_collapse, #linearity_stats, #standard_curve_model_fit, #gated_samples, .table-container {
+    #StandardCurveCollapse, #da_subject_level_inspection, #da_datasets, #main_dilution_linearity_collapse, #linearity_stats, #standard_curve_model_fit, #gated_samples, .table-container {
       width: 75vw;
       overflow-x: auto;
     }
@@ -720,7 +721,7 @@ server <- function(input, output, session) {
       reload_sc_fit_mod_count <- 0
       reload_sc_summary_mod_count <- 0
       reload_sg_count <- 0
-
+      reload_dil_lin_count <- 0
       #importing
       plate_data <- reactiveVal()
       unique_plate_types <- reactiveVal()
@@ -760,6 +761,7 @@ server <- function(input, output, session) {
       source("outliers.R", local = TRUE)
       source("outlier_ui1.R", local = TRUE)
       source("dilution_analysis_ui.R", local = TRUE)
+      source("dilutional_linearity_ui.R", local = TRUE)
       source("revised_dilution_analysis_functions.R", local = TRUE)
       source("dilution_analysis_parameters_ui.R", local = TRUE)
       source("dilution_linearity_functions.R", local = TRUE)

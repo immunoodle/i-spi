@@ -99,39 +99,6 @@ observeEvent(list(
                              "antigen", "n_pass_dilutions", "concentration_status", "au_treatment", "decision_nodes", "bkg_method", "processed_au")
 
 
-    output$dilutionalLinearityUI <- renderUI({
-      req(study_configuration)
-
-      mainPanel(
-        #bsCollapse(
-         # id = "da_linearity",
-         # bsCollapsePanel(
-          #  title = "Dilution Linearity",
-            fluidRow(column(4,
-                            uiOutput("response_selectionUI")),
-                     column(4, uiOutput("exclude_concentrated_samples_UI")),
-                     column(4,uiOutput("linear_correction_UI"))),
-          #  plotlyOutput("facet_lm_plot", width = "75vw"),
-          uiOutput("facet_tabs_ui"),
-
-            br(),
-           downloadButton("download_processed_lm_fit_data", "Download Processed Linear Model Data"),
-            br(),
-           # style = "primary"
-         # )
-        #),
-        bsCollapse(
-          id = "linearity_stats",
-          bsCollapsePanel(
-            title = "Summary Statistics",
-            div(class = "table-container", tableOutput("facet_model_glance")),
-            style = "primary"
-          )
-        ),
-        fluidRow(column(6,downloadButton("download_model_correction_glance", "Download Model Statistics with Linear Correction")),
-        column(6,downloadButton("download_model_uncorrected_glance", "Download Model Statistics without Linear Correction")))
-      )
-    })
 
 
     output$dilutionAnalysisUI <- renderUI({
@@ -175,14 +142,9 @@ observeEvent(list(
 
                     tags$p("Table 2, entitled 'Dilution Analysis Sample Output' displays the sample data for all timepoints for the selected antigen and includes a row for how the
                      processed AU is calculated (au_treatment) which corresponds to the color of the cell, the decision nodes used in the decision tree (decision_nodes),
-                     the background method which is selected from study overview in the standard curve options and the processed au (procesed_au)."),
+                     the background method which is selected from study overview in the standard curve options and the processed au (procesed_au).")
 
-                    tags$p("To assess dilutional linearity open the Dilutional Linearity section and select the response type which is either Arbritary Units or MFI (Median Fluorescence Intensity). The antigen from earlier in the dilution analysis is used in this section.
-                           A linear model for the selected antigen is fitted for each plate with the outcome being the response at one dilution and the predictor is the response at another dilution. The predictor is taken to be the response at the middle dilution in the dilution series and the responses are the other dilutions (one at a time).
-                           A correction is applied to adjust the response by fitting an initial linear model and subtracting the intercept of that model from the response and dividing by the slope of the model. A new linear model is then fit with the corrected response values.
-                           If the option is not selected the initial linear model is used. Model fit statistics are provided and can be downloaded with and without the correction and the processed data with the corrected response (new_y) can be dowbnloaded. To switch between plates, use the tabs associated with each plate.
-                           Figure 4, dipicts the responses from each dilution plotted against each other. Points are colored by the gate class of the linear region at each dilution by taking the combination of that sample at the x-axis serum dilution then the y-axis serum dilution.
-                           The first corresponds to the x axis serum dilution and the second part of the status cooresponds to the serum dilution on the y-axis and is labeled in the legend as (x-concentration status / y-concentration status)")
+
 
 
 
@@ -907,307 +869,216 @@ observeEvent(list(
     })
 
     ### Dilutional Linearity
-    output$response_selectionUI <- renderUI({
-      selectInput(
-        inputId = "dil_lin_response",
-        label = "Response type",
-        choices = c("Arbritary Units" = "au",
-                    "MFI" = "mfi")
-      )
-    })
-
-    output$linear_correction_UI <- renderUI({
-      checkboxInput(inputId = "apply_lm_corr",
-                    label = "Apply Linear Correction",
-                    value = T)
-    })
-
-    # output$plate_lm_selectionUI <- renderUI({
-    #   req(selected_study)
-    #   req(selected_experiment)
-    #   req(input$dil_lin_response)
-    #   req(is_log_mfi_axis)
-    #   avaliable_plates <- prepare_lm_sample_data(study_accession = selected_study, experiment_accession = selected_experiment ,
-    #                          is_log_mfi_axis = is_log_mfi_axis, response_type = input$dil_lin_response)[[2]]
+    # output$da_lin_antigenUI <- renderUI({
+    #     req(study_configuration)
+    #     req(nrow(study_configuration) > 0)
+    #     cat("in antigen lin selector")
+    #     antigen_choices <- strsplit(study_configuration[study_configuration$param_name == "antigen_order",]$param_character_value, ",")[[1]]
+    #     if (all(is.na(antigen_choices))) {
+    #       node_order_in <- strsplit(study_configuration[study_configuration$param_name == "node_order",]$param_character_value, ",")[[1]]
+    #
+    #       gated_data <- calculate_sample_concentration_status(study_accession = selected_study, experiment_accession = selected_experiment, node_order = node_order_in)
+    #
+    #       antigen_choices <-  unique(gated_data$antigen)
+    #     }
+    #
+    #     selectInput("antigen_da_lin_selector",
+    #                 label = "Select Antigen",
+    #                 choices = antigen_choices,
+    #                 multiple = F)
+    #   })
+    #
+    # output$response_selectionUI <- renderUI({
     #   selectInput(
-    #     inputId = "dil_lin_plates",
-    #     label = "Plate",
-    #     choices = avaliable_plates)
-    #
+    #     inputId = "dil_lin_response",
+    #     label = "Response type",
+    #     choices = c("Arbritary Units" = "au",
+    #                 "MFI" = "mfi")
+    #   )
     # })
-    # output$facet_lm_plot <- renderPlotly({
-    #   req(input$inLoadedData == "Dilution Analysis")
+    #
+    # output$linear_correction_UI <- renderUI({
+    #   checkboxInput(inputId = "apply_lm_corr",
+    #                 label = "Apply Linear Correction",
+    #                 value = T)
+    # })
+    #
+    # output$exclude_concentrated_samples_UI <- renderUI({
+    #   checkboxInput(inputId = "exclude_conc_samples",
+    #                 label = "Exclude Concentrated Samples from Model Fittting",
+    #                 value = F)
+    # })
+    #
+    # plate_lm_facets <- reactive({
+    #   req(input$qc_component == "Dilutional Linearity")
     #   req(selected_study)
     #   req(selected_experiment)
     #   req(input$dil_lin_response)
-    #   req(is_log_mfi_axis)
-    #   req(input$antigen_da_selector)
+    #   #req(is_log_mfi_axis)
+    #   req(input$antigen_da_lin_selector)
     #
-    #   distinct_samples <- prepare_lm_sample_data(study_accession = selected_study, experiment_accession = selected_experiment, is_log_mfi_axis = is_log_mfi_axis, response_type = input$dil_lin_response)
-    #   dil_lin_regress_list <- dil_lin_regress(distinct_samples, response_type = input$dil_lin_response)
-    #   produce_all_plate_facets(distinct_samples = distinct_samples, dil_lin_regress_list = dil_lin_regress_list, selected_antigen = input$antigen_da_selector,
-    #                            is_dil_lin_corr = input$apply_lm_corr, response_type =  input$dil_lin_response, is_log_mfi_axis = is_log_mfi_axis )[[1]]
+    #   distinct_samples <- prepare_lm_sample_data(
+    #     study_accession = selected_study,
+    #     experiment_accession = selected_experiment,
+    #     is_log_mfi_axis = is_log_mfi_axis,
+    #     response_type = input$dil_lin_response
+    #   )
+    #
+    #
+    #
+    #   dil_lin_regress_list <- dil_lin_regress(
+    #     distinct_samples,
+    #     response_type = input$dil_lin_response,
+    #     exclude_conc_samples = input$exclude_conc_samples
+    #   )
+    #
+    #
+    #
+    #  produce_all_plate_facets(
+    #     distinct_samples = distinct_samples,
+    #     dil_lin_regress_list = dil_lin_regress_list,
+    #     selected_antigen = input$antigen_da_lin_selector,
+    #     is_dil_lin_corr = input$apply_lm_corr,
+    #     response_type = input$dil_lin_response,
+    #     is_log_mfi_axis = is_log_mfi_axis
+    #   )
+    #
     # })
-    output$exclude_concentrated_samples_UI <- renderUI({
-      checkboxInput(inputId = "exclude_conc_samples",
-                    label = "Exclude Concentrated Samples from Model Fittting",
-                    value = F)
-    })
-
-    plate_lm_facets <- reactive({
-      req(input$qc_component == "Dilution Analysis")
-      req(selected_study)
-      req(selected_experiment)
-      req(input$dil_lin_response)
-      #req(is_log_mfi_axis)
-      req(input$antigen_da_selector)
-
-      distinct_samples <- prepare_lm_sample_data(
-        study_accession = selected_study,
-        experiment_accession = selected_experiment,
-        is_log_mfi_axis = is_log_mfi_axis,
-        response_type = input$dil_lin_response
-      )
-
-
-
-      dil_lin_regress_list <- dil_lin_regress(
-        distinct_samples,
-        response_type = input$dil_lin_response,
-        exclude_conc_samples = input$exclude_conc_samples
-      )
-
-
-
-     produce_all_plate_facets(
-        distinct_samples = distinct_samples,
-        dil_lin_regress_list = dil_lin_regress_list,
-        selected_antigen = input$antigen_da_selector,
-        is_dil_lin_corr = input$apply_lm_corr,
-        response_type = input$dil_lin_response,
-        is_log_mfi_axis = is_log_mfi_axis
-      )
-
-    })
-
-    observe({
-      req(plate_lm_facets())
-      for (i in seq_along(plate_lm_facets())) {
-        local({
-          my_i <- i
-          output[[paste0("facet_lm_plot_", my_i)]] <- renderPlotly({
-            plate_lm_facets()[[my_i]]
-          })
-        })
-      }
-    })
-
-    output$facet_tabs_ui <- renderUI({
-      req(plate_lm_facets())
-      plot_list <- plate_lm_facets()
-
-      # Create only non-NULL tabPanels
-      tab_list <- lapply(seq_along(plot_list), function(i) {
-        if (!is.null(plot_list[[i]])) {
-          tabPanel(
-            title = paste("Plate", i),
-            plotlyOutput(outputId = paste0("facet_lm_plot_", i), width = "75vw")
-          )
-        } else {
-          NULL
-        }
-      })
-
-      # Remove NULLs
-      tab_list <- tab_list[!sapply(tab_list, is.null)]
-
-
-      do.call(tabsetPanel, tab_list)
-    })
-
-
+    #
+    # observe({
+    #   req(plate_lm_facets())
+    #   for (i in seq_along(plate_lm_facets())) {
+    #     local({
+    #       my_i <- i
+    #       output[[paste0("facet_lm_plot_", my_i)]] <- renderPlotly({
+    #         plate_lm_facets()[[my_i]]
+    #       })
+    #     })
+    #   }
+    # })
+    #
     # output$facet_tabs_ui <- renderUI({
     #   req(plate_lm_facets())
-    #   tabsetPanel(
-    #     lapply(seq_along(plate_lm_facets()), function(i) {
+    #   plot_list <- plate_lm_facets()
+    #
+    #   # Create only non-NULL tabPanels
+    #   tab_list <- lapply(seq_along(plot_list), function(i) {
+    #     if (!is.null(plot_list[[i]])) {
     #       tabPanel(
     #         title = paste("Plate", i),
     #         plotlyOutput(outputId = paste0("facet_lm_plot_", i), width = "75vw")
     #       )
-    #     })
-    #   )
-    # })
-    # output$facet_lm_plot <- renderPlotly({
-    #   req(input$inLoadedData == "Dilution Analysis")
-    #   req(selected_study)
-    #   req(selected_experiment)
-    #   req(input$dil_lin_response)
-    #   req(is_log_mfi_axis)
-    #   req(input$dil_lin_plates)
-    #   req(input$antigen_da_selector)
-    #   t_sample_data <- prepare_lm_sample_data(study_accession = selected_study, experiment_accession = selected_experiment ,
-    #                                              is_log_mfi_axis = is_log_mfi_axis, response_type = input$dil_lin_response)[[1]]
-    #   produce_plotly_regression_facet(t_sample_data = t_sample_data, selected_plate = input$dil_lin_plates ,
-    #                                   selected_antigen = input$antigen_da_selector , response_type = input$dil_lin_response, is_log_mfi_axis)[[1]]
+    #     } else {
+    #       NULL
+    #     }
+    #   })
     #
+    #   # Remove NULLs
+    #   tab_list <- tab_list[!sapply(tab_list, is.null)]
+    #
+    #
+    #   do.call(tabsetPanel, tab_list)
     # })
-
+    #
+    #
+    #
     # output$facet_model_glance <- renderTable({
-    #   req(input$inLoadedData == "Dilution Analysis")
+    # req(input$qc_component == "Dilutional Linearity")
     #   req(selected_study)
     #   req(selected_experiment)
     #   req(input$dil_lin_response)
-    #   req(is_log_mfi_axis)
-    #   req(input$dil_lin_plates)
-    #   req(input$antigen_da_selector)
-    #   t_sample_data <- prepare_lm_sample_data(study_accession = selected_study, experiment_accession = selected_experiment ,
-    #                                           is_log_mfi_axis = is_log_mfi_axis, response_type = input$dil_lin_response)[[1]]
-    #   model_glance_df <- produce_plotly_regression_facet(t_sample_data = t_sample_data, selected_plate = input$dil_lin_plates ,
-    #                                   selected_antigen = input$antigen_da_selector , response_type = input$dil_lin_response, is_log_mfi_axis)[[2]]
+    #   #req(is_log_mfi_axis)
+    #   req(input$antigen_da_lin_selector)
     #
-    # })
-
-    output$facet_model_glance <- renderTable({
-    req(input$qc_component == "Dilution Analysis")
-      req(selected_study)
-      req(selected_experiment)
-      req(input$dil_lin_response)
-      #req(is_log_mfi_axis)
-      req(input$antigen_da_selector)
-
-
-      distinct_samples <- prepare_lm_sample_data(study_accession = selected_study, experiment_accession = selected_experiment, is_log_mfi_axis = is_log_mfi_axis, response_type = input$dil_lin_response)
-      dil_lin_regress_list <- dil_lin_regress(distinct_samples, response_type = input$dil_lin_response, exclude_conc_samples = input$exclude_conc_samples)
-
-      if (input$apply_lm_corr) {
-        glance_df <- dil_lin_regress_list$model_corr_glance_df
-      } else {
-        glance_df <- dil_lin_regress_list$glance_uncorrect_df
-      }
-
-      glance_df <- glance_df[glance_df$antigen == input$antigen_da_selector,]
-
-      return(glance_df)
-    }, caption = "Antigen Model Fit Statistics",
-    caption.placement = getOption("xtable.caption.placement", "top"))
-
-    # Download associated data for processed lm fits has corrected y value
-    output$download_processed_lm_fit_data <-  downloadHandler(
-      filename = function() {
-        paste(input$readxMap_study_accession, input$readxMap_experiment_accession, "processed_lm_fit_data.csv", sep = "_")
-      },
-      content = function(file) {
-        req(selected_study)
-        req(selected_experiment)
-        req(input$dil_lin_response)
-        req(is_log_mfi_axis)
-        req(input$antigen_da_selector)
-
-        distinct_samples <- prepare_lm_sample_data(study_accession = selected_study, experiment_accession = selected_experiment, is_log_mfi_axis = is_log_mfi_axis, response_type = input$dil_lin_response)
-        dil_lin_regress_list <- dil_lin_regress(distinct_samples, response_type = input$dil_lin_response, exclude_conc_samples = input$exclude_conc_samples)
-        proccessed_lm_fit_data <- dil_lin_regress_list$observed_data
-        # download data component (data frame)
-        write.csv(proccessed_lm_fit_data, file)
-      }
-    )
-
-    output$download_model_uncorrected_glance <- downloadHandler(
-      filename = function() {
-        paste(input$readxMap_study_accession, input$readxMap_experiment_accession, "lm_uncorrected_glance.csv", sep = "_")
-      },
-      content = function(file) {
-        req(selected_study)
-        req(selected_experiment)
-        req(input$dil_lin_response)
-        req(is_log_mfi_axis)
-        req(input$antigen_da_selector)
-
-
-        distinct_samples <- prepare_lm_sample_data(study_accession = selected_study, experiment_accession = selected_experiment, is_log_mfi_axis = is_log_mfi_axis, response_type = input$dil_lin_response)
-        dil_lin_regress_list <- dil_lin_regress(distinct_samples, response_type = input$dil_lin_response, exclude_conc_samples = input$exclude_conc_samples)
-
-        glance_df <- dil_lin_regress_list$glance_uncorrect_df
-
-
-        # download data component (data frame)
-        write.csv(glance_df, file)
-      }
-    )
-
-    output$download_model_correction_glance <- downloadHandler(
-      filename = function() {
-        paste(input$readxMap_study_accession, input$readxMap_experiment_accession, "lm_correction_glance.csv", sep = "_")
-      },
-      content = function(file) {
-        req(selected_study)
-        req(selected_experiment)
-        req(input$dil_lin_response)
-        req(is_log_mfi_axis)
-        req(input$antigen_da_selector)
-
-
-        distinct_samples <- prepare_lm_sample_data(study_accession = selected_study, experiment_accession = selected_experiment, is_log_mfi_axis = is_log_mfi_axis, response_type = input$dil_lin_response)
-        dil_lin_regress_list <- dil_lin_regress(distinct_samples, response_type = input$dil_lin_response, exclude_conc_samples = input$exclude_conc_samples)
-
-        glance_df <- dil_lin_regress_list$model_corr_glance_df
-
-
-        # download data component (data frame)
-        write.csv(glance_df, file)
-      }
-    )
-
-
+    #
+    #   distinct_samples <- prepare_lm_sample_data(study_accession = selected_study, experiment_accession = selected_experiment, is_log_mfi_axis = is_log_mfi_axis, response_type = input$dil_lin_response)
+    #   dil_lin_regress_list <- dil_lin_regress(distinct_samples, response_type = input$dil_lin_response, exclude_conc_samples = input$exclude_conc_samples)
+    #
+    #   if (input$apply_lm_corr) {
+    #     glance_df <- dil_lin_regress_list$model_corr_glance_df
+    #   } else {
+    #     glance_df <- dil_lin_regress_list$glance_uncorrect_df
+    #   }
+    #
+    #   glance_df <- glance_df[glance_df$antigen == input$antigen_da_lin_selector,]
+    #
+    #   return(glance_df)
+    # }, caption = "Antigen Model Fit Statistics",
+    # caption.placement = getOption("xtable.caption.placement", "top"))
+    #
+    # # Download associated data for processed lm fits has corrected y value
     # output$download_processed_lm_fit_data <-  downloadHandler(
     #   filename = function() {
     #     paste(input$readxMap_study_accession, input$readxMap_experiment_accession, "processed_lm_fit_data.csv", sep = "_")
     #   },
     #   content = function(file) {
-    #     req(input$inLoadedData == "Dilution Analysis")
     #     req(selected_study)
     #     req(selected_experiment)
     #     req(input$dil_lin_response)
     #     req(is_log_mfi_axis)
-    #     req(input$dil_lin_plates)
-    #     req(input$antigen_da_selector)
-    #     t_sample_data <- prepare_lm_sample_data(study_accession = selected_study, experiment_accession = selected_experiment ,
-    #                                             is_log_mfi_axis = is_log_mfi_axis, response_type = input$dil_lin_response)[[1]]
-    #     proccessed_lm_fit_data <- produce_plotly_regression_facet(t_sample_data = t_sample_data, selected_plate = input$dil_lin_plates ,
-    #                                                        selected_antigen = input$antigen_da_selector , response_type = input$dil_lin_response, is_log_mfi_axis)[[2]]
+    #     req(input$antigen_da_lin_selector)
     #
+    #     distinct_samples <- prepare_lm_sample_data(study_accession = selected_study, experiment_accession = selected_experiment, is_log_mfi_axis = is_log_mfi_axis, response_type = input$dil_lin_response)
+    #     dil_lin_regress_list <- dil_lin_regress(distinct_samples, response_type = input$dil_lin_response, exclude_conc_samples = input$exclude_conc_samples)
+    #     proccessed_lm_fit_data <- dil_lin_regress_list$observed_data
     #     # download data component (data frame)
     #     write.csv(proccessed_lm_fit_data, file)
     #   }
     # )
-
-    # output$download_model_glances <- downloadHandler(
+    #
+    # output$download_model_uncorrected_glance <- downloadHandler(
     #   filename = function() {
-    #     paste(input$readxMap_study_accession, input$readxMap_experiment_accession, "lm_glances.csv", sep = "_")
+    #     paste(input$readxMap_study_accession, input$readxMap_experiment_accession, "lm_uncorrected_glance.csv", sep = "_")
     #   },
     #   content = function(file) {
-    #     req(input$inLoadedData == "Dilution Analysis")
     #     req(selected_study)
     #     req(selected_experiment)
     #     req(input$dil_lin_response)
     #     req(is_log_mfi_axis)
-    #     req(input$dil_lin_plates)
     #     req(input$antigen_da_selector)
-    #     t_sample_data <- prepare_lm_sample_data(study_accession = selected_study, experiment_accession = selected_experiment ,
-    #                                             is_log_mfi_axis = is_log_mfi_axis, response_type = input$dil_lin_response)[[1]]
-    #     lm_glance_data <- produce_plotly_regression_facet(t_sample_data = t_sample_data, selected_plate = input$dil_lin_plates ,
-    #                                                               selected_antigen = input$antigen_da_selector , response_type = input$dil_lin_response, is_log_mfi_axis)[[3]]
+    #
+    #
+    #     distinct_samples <- prepare_lm_sample_data(study_accession = selected_study, experiment_accession = selected_experiment, is_log_mfi_axis = is_log_mfi_axis, response_type = input$dil_lin_response)
+    #     dil_lin_regress_list <- dil_lin_regress(distinct_samples, response_type = input$dil_lin_response, exclude_conc_samples = input$exclude_conc_samples)
+    #
+    #     glance_df <- dil_lin_regress_list$glance_uncorrect_df
+    #
     #
     #     # download data component (data frame)
-    #     write.csv(lm_glance_data, file)
+    #     write.csv(glance_df, file)
     #   }
     # )
     #
+    # output$download_model_correction_glance <- downloadHandler(
+    #   filename = function() {
+    #     paste(input$readxMap_study_accession, input$readxMap_experiment_accession, "lm_correction_glance.csv", sep = "_")
+    #   },
+    #   content = function(file) {
+    #     req(selected_study)
+    #     req(selected_experiment)
+    #     req(input$dil_lin_response)
+    #     req(is_log_mfi_axis)
+    #     req(input$antigen_da_selector)
     #
+    #
+    #     distinct_samples <- prepare_lm_sample_data(study_accession = selected_study, experiment_accession = selected_experiment, is_log_mfi_axis = is_log_mfi_axis, response_type = input$dil_lin_response)
+    #     dil_lin_regress_list <- dil_lin_regress(distinct_samples, response_type = input$dil_lin_response, exclude_conc_samples = input$exclude_conc_samples)
+    #
+    #     glance_df <- dil_lin_regress_list$model_corr_glance_df
+    #
+    #
+    #     # download data component (data frame)
+    #     write.csv(glance_df, file)
+    #   }
+    # )
+
+
+
 
 }
   else {
     output$dilutionAnalysisUI <- NULL  # remove UI if not on the tab
-    output$dilutionalLinearityUI <- NULL
+  #  output$dilutionalLinearityUI <- NULL
     output$dilutionAnalysisUI <- NULL
     output$dilutionalLinearityUI <- NULL
     output$dilution_summary_barplot <- NULL
