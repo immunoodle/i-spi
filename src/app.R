@@ -49,7 +49,6 @@ authenticated_body_content <- function() {
        }
       "))),
     tags$head(tags$style(HTML("
-    #StandardCurveCollapse, #da_subject_level_inspection, #da_datasets, #da_linearity, #main_dilution_linearity_collapse, #linearity_stats, #standard_curve_model_fit, #gated_samples, .table-container {
     #StandardCurveCollapse, #da_subject_level_inspection, #da_datasets, #main_dilution_linearity_collapse, #linearity_stats, #standard_curve_model_fit, #gated_samples, .table-container {
       width: 75vw;
       overflow-x: auto;
