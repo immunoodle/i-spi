@@ -571,10 +571,10 @@ observeEvent(list(
          if (nrow(fitted_curve_parameters) > 0) {
 
           experiment_fitted_df <- compute_fitted_df(fitted_curve_parameters, min_log_dilution)
-          # Account if log mfi is selected or not in user settings
-          if (is_log_mfi) {
-            experiment_fitted_df$fitted <- log10(experiment_fitted_df$fitted)
-          }
+          # Account if log mfi is selected or not in user settings - This will Take it 2x
+          # if (is_log_mfi) {
+          #   experiment_fitted_df$fitted <- log10(experiment_fitted_df$fitted)
+          # }
           #experiment_fitted_df_v <- experiment_fitted_df
         } else {
           experiment_fitted_df <- data.frame()
