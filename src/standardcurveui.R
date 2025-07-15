@@ -409,7 +409,7 @@ standardCurveFittingServer <- function(id, selected_study, selected_experiment, 
         print(selected_experiment())
         print(source_rv())
        # updateRadioButtons(session = session, "sourceSelection", initial_source)
-        std_curve_data_s <<- std_curve_data_sc
+        #std_curve_data_s <<- std_curve_data_sc
         filtered_data <- std_curve_data_sc[std_curve_data_sc$source == source_rv() &std_curve_data_sc$antigen == antigen_val
                                         & std_curve_data_sc$experiment_accession == selected_experiment() &
                                           std_curve_data_sc$plateid == plate_val,]

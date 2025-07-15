@@ -2548,15 +2548,28 @@ five_param_logistic_log_dilution <- function(sample_data, l_asy, r_asy, xmid, sc
  }
   #dilution_mfi_df_view <<- dilution_mfi_df
 
+  if (!"antibody_au" %in% names(dilution_mfi_df)) {
+    dilution_mfi_df$antibody_au <- NA_real_
+  }
    cat("\nIn 5 parameter logistic log dilution\n")
   # dilution_mfi_df_v <<- dilution_mfi_df
    print(dilution_mfi_df)
 
-   dilution_mfi_df$au_prep <- ifelse(dilution_mfi_df >= r_asy,
-                                         max_log_dilution,
-                                         ifelse(dilution_mfi_df$antibody_mfi <= l_asy,
-                                                min_log_dilution),
-                                         1)
+   # dilution_mfi_df$au_prep <- ifelse(dilution_mfi_df >= r_asy,
+   #                                       max_log_dilution,
+   #                                       ifelse(dilution_mfi_df$antibody_mfi <= l_asy,
+   #                                              min_log_dilution),
+   #                                       1)
+
+   dilution_mfi_df$au_prep <- ifelse(dilution_mfi_df$antibody_mfi >= r_asy,
+                                max_log_dilution,
+                                 ifelse(
+                                   dilution_mfi_df$antibody_mfi <= l_asy,
+                                   min_log_dilution,
+                                   1
+                                 )
+                               )
+
    dilution_mfi_df[dilution_mfi_df$au_prep == 1,]$antibody_au <- xmid + scal * log(((l_asy - r_asy) / (dilution_mfi_df[dilution_mfi_df$au_prep == 1,]$antibody_mfi - r_asy))^(1/g) - 1)
 
    dilution_mfi_df$antibody_au <- ifelse(dilution_mfi_df$au_prep == 1,

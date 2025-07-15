@@ -259,7 +259,7 @@ output$view_stored_experiments_ui <- renderUI({
           # Experiment Level Tab
           tabPanel("Experiments",
                    fluidRow(
-                     column(6,
+                    # column(6,
                             selectInput("readxMap_experiment_accession",
                                         "Choose Experiment Name",
                                         choices = c("Click here" = "Click here",
@@ -267,24 +267,26 @@ output$view_stored_experiments_ui <- renderUI({
                                                              reactive_df_study_exp()$experiment_name)),
                                         selected = "Click here",
                                         multiple = FALSE
-                            )
-                     ),
-                     column(6,
+                            ),
+                    # ),
+                     #column(6,
                      conditionalPanel(
                        condition = "input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
 
-                       selectInput(
+                       radioGroupButtons(
                          inputId = "qc_component",
                          label = "QC Phase",
                          choices = c("Data", "Bead Count", "Standard Curve","Standard Curve Summary", "Dilution Analysis", "Plate Normalization", "Outliers", "Subgroup Detection", "Subgroup Detection Summary"),
                          selected = "Data",
-                         multiple = FALSE
+                       #  justified = TRUE,
+                       #  multiple = FALSE
                        )
                       # verbatimTextOutput(paste(input$qc_component, input$readxMap_study_accession, input$readxMap_experiment_accession, input$study_level_tabs, input$main_tabs, sep = ", "))
 
 
                     )
-                   )),
+                   #)
+                   ),
 
                    # Experiment Level Content
                    # conditionalPanel(
@@ -920,7 +922,7 @@ observeEvent(input$qc_component, {
 
 observeEvent(input$study_level_tabs, {
   if (input$study_level_tabs == "Experiments") {
-    updateSelectInput(session, "qc_component", selected = "Data")
+    updateRadioGroupButtons(session, "qc_component", selected = "Data")
   }
 })
 
