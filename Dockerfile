@@ -69,7 +69,11 @@ RUN apt-get install cargo -y
 
 RUN R -e "install.packages(c('progressr','downloadthis', 'fracture'))"
 
-RUN R -e "install.packages(c('labelled', 'flexmix', 'factoextra', 'cluster', 'heatmaply', 'dendextend'))"
+RUN R -e "install.packages(c('labelled', 'flexmix', 'factoextra', 'cluster'))"
+
+RUN R -e "install.packages('dendextend', repos='https://cloud.r-project.org/')"
+
+RUN R -e "install.packages('heatmaply')"
 
 RUN R -e "install.packages(c('data.tree', 'DiagrammeR', 'tidyr'))"
 

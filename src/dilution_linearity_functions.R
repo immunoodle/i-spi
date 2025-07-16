@@ -2066,8 +2066,9 @@ fit_mfi_model <- function(sub_df) {
 
 }
 
-# Preform dilutional linearity regression
+# Preform dilutional linearity regression and checks if there are more than 1 unique dilution
 dil_lin_regress <- function(distinct_samples, response_type, exclude_conc_samples) {
+  if (length(unique(distinct_samples$dilution)) > 1) {
   distinct_samples <- distinct_samples[, c("study_accession", "experiment_accession", "antigen", "plate", "dilution", "antibody_mfi", "antibody_au", "patientid", "timeperiod", "gate_class_linear_region", "gate_class", "gate_class_loq", "quality_score")]
 
   dilutions <- sort(unique(distinct_samples$dilution))
@@ -2242,9 +2243,11 @@ dil_lin_regress <- function(distinct_samples, response_type, exclude_conc_sample
     # has_corrected_flags = tidy_results[, c("plate", "y_dilution", "antigen", "has_corrected_model")]
   ))
 
-  # } else {
- # return(NULL)
-  # }
+  }
+
+   else {
+ return(NULL)
+ }
 }
 # Plot one regression in the facet
 plot_single_regres <- function(distinct_samples, dil_lin_regress_list, plate, antigen, y_dil, is_dil_lin_corr, response_type, is_log_mfi_axis) {
@@ -2538,6 +2541,7 @@ dilution_lm_facet <- function(distinct_samples, dil_lin_regress_list, plate, ant
 
 # Produce all plate facets
 produce_all_plate_facets <- function(distinct_samples, dil_lin_regress_list, selected_antigen, is_dil_lin_corr, response_type, is_log_mfi_axis) {
+  if (!is.null(dil_lin_regress_list)) {
   available_plates <- sort(unique(distinct_samples$plate))
   #available_plates <- available_plates[order(as.numeric(gsub("\\D+", "", available_plates)))]
 
@@ -2558,6 +2562,10 @@ produce_all_plate_facets <- function(distinct_samples, dil_lin_regress_list, sel
   nested_results  <- nested_results[order(as.numeric(gsub("\\D+", "", names(nested_results))))]
 
   return(nested_results)
+  }
+  else {
+    return(NULL)
+  }
 }
 # prepare_lm_sample_data <- function(study_accession, experiment_accession, is_log_mfi_axis, response_type) {
 #   query_samples <- glue::glue("SELECT xmap_sample_id, study_accession, experiment_accession, plate_id, timeperiod, patientid, well, stype, sampleid, id_imi, agroup, dilution, pctaggbeads, samplingerrors, antigen, antibody_mfi, antibody_n, antibody_name, feature, gate_class, antibody_au, antibody_au_se, reference_dilution, gate_class_dil, norm_mfi, in_linear_region, gate_class_loq, in_quantifiable_range, gate_class_linear_region, quality_score

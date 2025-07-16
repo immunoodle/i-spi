@@ -16,7 +16,7 @@ dilutionalLinearityModuleUI <- function(id) {
       bsCollapse(
         id = ns("dilutional_linearity_methods"),
         bsCollapsePanel(
-          title = "Dilutional Lineaerity Methods",
+          title = "Dilutional Linearity Methods",
     tags$p("To assess dilutional linearity for an antigen select the antigen and the response type which is either Arbitrary Units or MFI (Median Fluorescence Intensity).
                            A linear model for the selected antigen is fitted for each plate with the outcome being the response at one dilution and the predictor is the response at another dilution. The predictor is taken to be the response at the middle dilution in the dilution series and the responses are the other dilutions (one at a time).
                            A correction is applied to adjust the response by fitting an initial linear model and subtracting the intercept of that model from the response and dividing by the slope of the model. A new linear model is then fit with the corrected response values.
@@ -35,22 +35,27 @@ dilutionalLinearityModuleUI <- function(id) {
       div(class = "dilution-linearity-plot-container",
         plotlyOutput(ns("selected_facet"))
       ),
+      uiOutput(ns("invalid_dilution_count_message")),
       br(),
-      downloadButton(ns("download_processed_lm_fit_data"), "Download Processed Linear Model Data"),
+      uiOutput(ns("download_processed_lm_fit_dataUI")),
       br(),
-      div(class = "dilutional_linearity-collapse-container",
-      bsCollapse(
-        id = ns("linearity_stats"),
-        bsCollapsePanel(
-          title = "Summary Statistics",
-          div(class = "table-container", tableOutput(ns("facet_model_glance"))),
-          style = "primary"
-        )
+      # div(class = "dilutional_linearity-collapse-container",
+      # bsCollapse(
+      #   id = ns("linearity_stats"),
+      #   bsCollapsePanel(
+      #     title = "Summary Statistics",
+      #     div(class = "table-container", tableOutput(ns("facet_model_glance"))),
+      #     style = "primary"
+      #   )
+      # )
+      # ),
+      uiOutput(ns("fit_collapse")),
+      fluidRow(column(6, uiOutput(ns("download_corrected_glanceUI"))),
+               column(6, uiOutput(ns("download_model_uncorrected_glanceUI"))))
+      # fluidRow(column(6,downloadButton(ns("download_model_correction_glance"), "Download Model Statistics with Linear Correction")),
+      #          column(6,downloadButton(ns("download_model_uncorrected_glance"), "Download Model Statistics without Linear Correction")))
+
       )
-      ),
-      fluidRow(column(6,downloadButton(ns("download_model_correction_glance"), "Download Model Statistics with Linear Correction")),
-               column(6,downloadButton(ns("download_model_uncorrected_glance"), "Download Model Statistics without Linear Correction")))
-    )
 
     )
   ) # end tagList
@@ -142,8 +147,11 @@ dilutionalLinearityServer <- function(id, selected_study, selected_experiment, c
       req(study_configuration)
       # req(selected_study)
       # req(selected_experiment)
+
       req(input$dil_lin_response)
       req(input$antigen_da_lin_selector)
+      cat("plate_lm_facets() called\n")
+
 
       distinct_samples <- prepare_lm_sample_data(
         study_accession = selected_study(),
@@ -152,6 +160,8 @@ dilutionalLinearityServer <- function(id, selected_study, selected_experiment, c
         response_type = input$dil_lin_response
       )
 
+      cat("dilutions:\n")
+      print(unique(distinct_samples$dilution))
 
       dil_lin_regress_list <- dil_lin_regress(
         distinct_samples,
@@ -170,6 +180,18 @@ dilutionalLinearityServer <- function(id, selected_study, selected_experiment, c
         is_log_mfi_axis = is_log_mfi_axis
       )
 
+    })
+
+    # output$n_dilution_greater_1 <- reactive({
+    #   !is.null(plate_lm_facets())
+    # })
+
+    output$invalid_dilution_count_message <- renderUI({
+      if (is.null(plate_lm_facets())) {
+        HTML(paste("<span style='font-size: 1.5em;'> There must be more than one serum dilution to access dilutional linearity.</span>"))
+      } else {
+        NULL  # or some other UI element
+      }
     })
 
     #cached_facets <- reactiveVal(NULL)
@@ -205,7 +227,8 @@ dilutionalLinearityServer <- function(id, selected_study, selected_experiment, c
 
     #
     output$facet_tabs_ui <- renderUI({
-      req(plate_lm_facets())
+     # req(plate_lm_facets())
+      if (!is.null(plate_lm_facets())) {
       plot_list <- plate_lm_facets()
 
       tab_list <- lapply(seq_along(plot_list), function(i) {
@@ -228,17 +251,25 @@ dilutionalLinearityServer <- function(id, selected_study, selected_experiment, c
       tab_list <- tab_list[!sapply(tab_list, is.null)]
       do_call_result <- do.call(tabsetPanel, c(tab_list, id = ns("facet_tabs_ui")))
       do_call_result
+      } else {
+        NULL
+      }
     })
 
 
     # The one currently selected
     output$selected_facet <- renderPlotly({
       req(input$facet_tabs_ui)
+      if(!is.null(plate_lm_facets())) { # if none it won't render the plot
       facets <- plate_lm_facets()
+
 
       req(facets[[input$facet_tabs_ui]])
 
       facets[[input$facet_tabs_ui]]
+      } else {
+        NULL
+      }
     })
     #
 
@@ -267,6 +298,47 @@ dilutionalLinearityServer <- function(id, selected_study, selected_experiment, c
     caption.placement = getOption("xtable.caption.placement", "top"))
 
     # Download associated data for processed lm fits has corrected y value
+    output$download_corrected_glanceUI <- renderUI({
+      if (is.null(plate_lm_facets())) {
+        return(NULL)
+      } else {
+        downloadButton(ns("download_model_correction_glance"), "Download Model Statistics with Linear Correction")
+
+      }
+    })
+    output$download_model_uncorrected_glanceUI <- renderUI({
+      if (is.null(plate_lm_facets())) {
+        return(NULL)
+      } else {
+        downloadButton(ns("download_model_uncorrected_glance"), "Download Model Statistics without Linear Correction")
+    }
+    })
+
+    output$download_processed_lm_fit_dataUI <- renderUI({
+      if (is.null(plate_lm_facets())) {
+        return(NULL)
+      } else {
+        downloadButton(ns("download_processed_lm_fit_data"), "Download Processed Linear Model Data")
+      }
+    })
+
+    output$fit_collapse <- renderUI({
+      if (is.null(plate_lm_facets())) {
+        return(NULL)
+      } else {
+      div(class = "dilutional_linearity-collapse-container",
+          bsCollapse(
+            id = ns("linearity_stats"),
+            bsCollapsePanel(
+              title = "Summary Statistics",
+              div(class = "table-container", tableOutput(ns("facet_model_glance"))),
+              style = "primary"
+            )
+          )
+      )
+      }
+    })
+
     output$download_processed_lm_fit_data <-  downloadHandler(
       filename = function() {
         paste(selected_study(), selected_experiment(), "processed_lm_fit_data.csv", sep = "_")
@@ -295,7 +367,7 @@ dilutionalLinearityServer <- function(id, selected_study, selected_experiment, c
         # req(selected_experiment)
         req(input$dil_lin_response)
       #  req(is_log_mfi_axis)
-        req(input$antigen_da_selector)
+        req(input$antigen_da_lin_selector)
 
 
         distinct_samples <- prepare_lm_sample_data(study_accession = selected_study(), experiment_accession = selected_experiment(), is_log_mfi_axis = is_log_mfi_axis, response_type = input$dil_lin_response)
@@ -318,7 +390,7 @@ dilutionalLinearityServer <- function(id, selected_study, selected_experiment, c
         # req(selected_experiment)
         req(input$dil_lin_response)
        # req(is_log_mfi_axis)
-        req(input$antigen_da_selector)
+        req(input$antigen_da_lin_selector)
 
 
         distinct_samples <- prepare_lm_sample_data(study_accession = selected_study(), experiment_accession = selected_experiment(), is_log_mfi_axis = is_log_mfi_axis, response_type = input$dil_lin_response)
@@ -330,7 +402,11 @@ dilutionalLinearityServer <- function(id, selected_study, selected_experiment, c
         # download data component (data frame)
         write.csv(glance_df, file)
       }
+
+
     )
+
+
 
 
 
