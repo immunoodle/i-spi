@@ -276,7 +276,7 @@ output$view_stored_experiments_ui <- renderUI({
                        radioGroupButtons(
                          inputId = "qc_component",
                          label = "QC Phase",
-                         choices = c("Data", "Bead Count", "Standard Curve","Standard Curve Summary", "Dilution Analysis", "Plate Normalization", "Outliers", "Subgroup Detection", "Subgroup Detection Summary"),
+                         choices = c("Data", "Bead Count", "Standard Curve","Standard Curve Summary", "Dilution Analysis", "Dilutional Linearity", "Plate Normalization", "Outliers", "Subgroup Detection", "Subgroup Detection Summary"),
                          selected = "Data",
                        #  justified = TRUE,
                        #  multiple = FALSE
@@ -359,8 +359,15 @@ output$view_stored_experiments_ui <- renderUI({
                      # uiOutput("beadCountAnalysisUI"),
                      # uiOutput("standard_curve_section"),
                      # uiOutput("outlierTab"),
-                     uiOutput("dilution_analysis_section")
+                     #uiOutput("dilution_analysis_section")
+                     uiOutput("dilutionAnalysisUI")
                    ),
+                   conditionalPanel(
+                     condition = "input.qc_component == 'Dilutional Linearity' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
+                    # uiOutput("dilutionalLinearityUI")
+                     uiOutput("dilutional_linearity_mod_ui")
+                   ),
+
                    conditionalPanel(
                      condition = "input.qc_component == 'Outliers'  && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
                      # uiOutput("subgroup_detection_section"),
@@ -518,31 +525,31 @@ output$dynamic_data_ui <- renderUI({
 #   }
 # })
 
-output$dilution_analysis_section <- renderUI({
-  req(input$readxMap_study_accession, input$readxMap_experiment_accession)
-
-  if (
-    input$qc_component == "Dilution Analysis" &&
-    input$readxMap_study_accession != "Click here" &&
-    input$readxMap_experiment_accession != "Click here" &&
-    input$study_level_tabs == "Experiments" &&
-    input$main_tabs == "view_files_tab"
-  ) {
-    tagList(
-      uiOutput("dilutionAnalysisUI"),
-      bsCollapse(
-        id = "main_dilution_linearity_collapse",
-        bsCollapsePanel(
-          title = "Dilutional Linearity",
-          uiOutput("dilutionalLinearityUI"),
-          style = "primary"
-        )
-      )
-    )
-  } else {
-    NULL
-  }
-})
+# output$dilution_analysis_section <- renderUI({
+#   req(input$readxMap_study_accession, input$readxMap_experiment_accession)
+#
+#   if (
+#     input$qc_component == "Dilution Analysis" &&
+#     input$readxMap_study_accession != "Click here" &&
+#     input$readxMap_experiment_accession != "Click here" &&
+#     input$study_level_tabs == "Experiments" &&
+#     input$main_tabs == "view_files_tab"
+#   ) {
+#     tagList(
+#       uiOutput("dilutionAnalysisUI"),
+#       bsCollapse(
+#         id = "main_dilution_linearity_collapse",
+#         bsCollapsePanel(
+#           title = "Dilutional Linearity",
+#           uiOutput("dilutionalLinearityUI"),
+#           style = "primary"
+#         )
+#       )
+#     )
+#   } else {
+#     NULL
+#   }
+# })
 
 # output$subgroup_detection_section <- renderUI({
 #   req(input$readxMap_study_accession, input$readxMap_experiment_accession)
@@ -755,6 +762,38 @@ observeEvent(input$qc_component, {
   #   output$sg_module_ui <- renderUI({ NULL })
   #   gc(verbose = TRUE)
   # }
+
+  if (input$qc_component == "Dilutional Linearity" &&
+      input$readxMap_study_accession != "" &&
+      input$readxMap_study_accession != "Click here" &&
+      input$readxMap_experiment_accession != "" &&
+      input$readxMap_experiment_accession != "Click here") {
+
+    # Destroy previous module (if exists)
+    prev_dil_lin_id <- paste0("dil_lin_mod_", reload_dil_lin_count)
+    try(destroyModule(prev_dil_lin_id), silent = TRUE)
+
+    # Increment counter and build new ID
+    reload_dil_lin_count <<- reload_dil_lin_count + 1
+    new_dil_lin_id <- paste0("dil_lin_mod_", reload_dil_lin_count)
+
+    # Render UI and load module
+    output$dilutional_linearity_mod_ui <- renderUI({
+      destroyableDilutionalLinearityModuleUI(new_dil_lin_id)
+    })
+
+    destroyableDilutionalLinearityServer(
+      id = new_dil_lin_id,
+      selected_study = reactive(input$readxMap_study_accession),
+      selected_experiment = reactive(input$readxMap_experiment_accession),
+      currentuser()
+    )
+
+  } else {
+    # If switching away, destroy any existing SC a module
+    try(destroyModule(paste0("dil_lin_mod_", reload_dil_lin_count)), silent = TRUE)
+    output$dilutional_linearity_mod_ui <- renderUI({ NULL })
+  }
 
   gc(verbose = TRUE)
 })
