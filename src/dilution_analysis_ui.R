@@ -435,26 +435,44 @@ observeEvent(list(
     })
 
     output$download_dilution_contingency_summary <- renderUI({
-      # req(input$inLoadedData == "Dilution Analysis")
-      # if (input$inLoadedData != "Dilution Analysis") {
-      #   return(NULL)
-      # }
       req(selected_study)
       req(selected_experiment)
-     # req(summary_gated_data_rv())
 
-      node_order_in <- strsplit(study_configuration[study_configuration$param_name == "node_order",]$param_character_value, ",")[[1]]
+      # node_order_in <- strsplit(study_configuration[study_configuration$param_name == "node_order",]$param_character_value, ",")[[1]]
+      #
+      # gated_data <- calculate_sample_concentration_status(study_accession = selected_study, experiment_accession = selected_experiment, node_order = node_order_in)
+      #
+      # contigency_summary_dilution <- produce_contigency_summary(gated_data)
+      # download_dilution_contigency_summary_fun(download_df = contigency_summary_dilution,
+      #                                          selected_study = selected_study,
+      #                                          selected_experiment = selected_experiment)
+      button_label <-  paste0("Download Dilution Summary ", selected_experiment, "-", selected_study)
 
-      gated_data <- calculate_sample_concentration_status(study_accession = selected_study, experiment_accession = selected_experiment, node_order = node_order_in)
-
-      contigency_summary_dilution <- produce_contigency_summary(gated_data)
-      download_dilution_contigency_summary_fun(download_df = contigency_summary_dilution,
-                                               selected_study = selected_study,
-                                               selected_experiment = selected_experiment)
+      downloadButton("download_dilution_contingency_summary_handle", button_label)
     })
 
+    output$download_dilution_contingency_summary_handle <-  downloadHandler(
+      filename = function() {
+        paste(input$readxMap_study_accession, input$readxMap_experiment_accession, "dilution_summary.csv", sep = "_")
+      },
+      content = function(file) {
+        req(selected_study)
+        req(selected_experiment)
+        node_order_in <- strsplit(study_configuration[study_configuration$param_name == "node_order",]$param_character_value, ",")[[1]]
 
-    ##### Narow down on dilutions
+        gated_data <- calculate_sample_concentration_status(study_accession = selected_study, experiment_accession = selected_experiment, node_order = node_order_in)
+
+        contigency_summary_dilution <- produce_contigency_summary(gated_data)
+
+        # download data component (data frame)
+        write.csv(contigency_summary_dilution, file, row.names = FALSE)
+      }
+    )
+
+
+
+
+    ##### Narrow down on dilutions
     # Dilution Selection
     output$dilution_selector_UI <- renderUI({
      # req(input$inLoadedData == "Dilution Analysis")
@@ -852,10 +870,28 @@ observeEvent(list(
       req(selected_study)
       req(selected_experiment)
 
-      download_classified_sample(download_df = classified_merged_rv(),
-                                 selected_study = selected_study,
-                                 selected_experiment = selected_experiment)
+      button_label <- paste0("Download Classified Sample Data: ", selected_experiment, "-", selected_study)
+
+      downloadButton("download_classifed_sample_handle", button_label)
+      # download_classified_sample(download_df = classified_merged_rv(),
+      #                            selected_study = selected_study,
+      #                            selected_experiment = selected_experiment)
     })
+
+    output$download_classifed_sample_handle <-  downloadHandler(
+      filename = function() {
+        paste(input$readxMap_study_accession, input$readxMap_experiment_accession, "dilution_summary.csv", sep = "_")
+      },
+      content = function(file) {
+
+        req(classified_merged_rv())
+        req(selected_study)
+        req(selected_experiment)
+
+        # download data component (data frame)
+        write.csv(classified_merged_rv(), file, row.names = FALSE)
+      }
+    )
 
     output$download_average_au_table_UI <- renderUI({
     #  req(input$inLoadedData == "Dilution Analysis")

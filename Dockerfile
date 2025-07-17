@@ -67,7 +67,7 @@ RUN R -e "devtools::install_github('hardikguptadartmouth/shinyjqui')"
 RUN apt-get install rustc -y
 RUN apt-get install cargo -y
 
-RUN R -e "install.packages(c('progressr','downloadthis', 'fracture'))"
+RUN R -e "install.packages(c('progressr', 'fracture'))"
 
 RUN R -e "install.packages(c('labelled', 'flexmix', 'factoextra', 'cluster'))"
 

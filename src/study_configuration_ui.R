@@ -1208,6 +1208,31 @@ output$user_parameter_download <- renderUI({
   download_user_parameters(study_accession = input$readxMap_study_accession, user = currentuser())
 })
 
+output$user_parameter_download <- renderUI({
+  req(input$readxMap_study_accession)
+  req(currentuser())
+  button_label <- paste0("Download ", input$readxMap_study_accession, " Configuration for ", currentuser())
+  downloadButton("user_parameter_download_handle", button_label)
+})
+
+
+output$user_parameter_download_handle <-  downloadHandler(
+  filename = function() {
+    paste(input$readxMap_study_accession, "study_config", currentuser(), ".csv", sep = "_")
+  },
+  content = function(file) {
+    req(input$main_tabs == "view_files_tab")
+    req(input$readxMap_study_accession)
+    req(currentuser())
+
+    user_config_table <- download_user_parameters(study_accession = input$readxMap_study_accession, user = currentuser())
+
+
+    # download data component (data frame)
+    write.csv(user_config_table, file)
+  }
+)
+
 
 ### Update Database Buttons
 observeEvent(input$save_bead_count_params, {

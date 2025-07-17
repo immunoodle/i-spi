@@ -711,18 +711,61 @@ observeEvent(list(
       output$download_button_ui <- renderUI({
         req(fitted_curve_feature)
         req(input$readxMap_study_accession, input$readxMap_experiment_accession)
-        download_fits_experiment(download_df = fitted_curve_feature, input$readxMap_study_accession, input$readxMap_experiment_accession)
+        #download_fits_experiment(download_df = fitted_curve_feature, input$readxMap_study_accession, input$readxMap_experiment_accession)
+        button_label <-  paste0("Download Standard Curve Fits Data for ", input$readxMap_experiment_accession, " in ", input$readxMap_study_accession)
+
+        downloadButton("download_standard_curve_data", button_label)
       })
+
+      output$download_standard_curve_data <-  downloadHandler(
+        filename = function() {
+          paste(input$readxMap_study_accession, input$readxMap_experiment_accession, "_fits_data", ".csv", sep = "_")
+        },
+        content = function(file) {
+          req(fitted_curve_feature)
+          req(input$readxMap_study_accession, input$readxMap_experiment_accession)
+
+          download_df <- fitted_curve_feature[fitted_curve_feature$experiment_accession == input$readxMap_experiment_accession,]
+
+          # download data component (data frame)
+          write.csv(download_df, file, row.names = FALSE)
+        }
+      )
+
+
 
       #download sample data with the bend line gating.
       output$download_sample_data_ui <- renderUI({
         req(sample_data_feature_download)
         req(input$readxMap_study_accession, input$readxMap_experiment_accession)
 
-        download_sample_data_experiment(download_df = sample_data_feature_download,
-                                        selected_study = input$readxMap_study_accession,
-                                        selected_experiment = input$readxMap_experiment_accession)
+        # download_sample_data_experiment(download_df = sample_data_feature_download,
+        #                                 selected_study = input$readxMap_study_accession,
+        #                                 selected_experiment = input$readxMap_experiment_accession)
+        button_label <-  paste0("Download Sample Data for ",input$readxMap_experiment_accession, " in ",input$readxMap_study_accession)
+
+        downloadButton("download_sample_data_handle", button_label)
       })
+
+
+      output$download_sample_data_handle <-  downloadHandler(
+        filename = function() {
+          paste(input$readxMap_study_accession, input$readxMap_experiment_accession, "sample_data", ".csv", sep = "_")
+        },
+        content = function(file) {
+          req(sample_data_feature_download)
+          req(input$readxMap_study_accession, input$readxMap_experiment_accession)
+
+
+          download_df <- sample_data_feature_download[sample_data_feature_download$experiment_accession == input$readxMap_experiment_accession,]
+
+
+          # download data component (data frame)
+          write.csv(download_df, file, row.names = FALSE)
+        }
+      )
+
+
 
       # download the coefficient of variation, log dilution df at the antigen level
       output$download_cv_log_dilution_antigen <- renderUI({
@@ -740,11 +783,43 @@ observeEvent(list(
       output$download_cv_log_dilution_study_level <- renderUI({
         req(cv_log_dilution_rv())
         req(input$readxMap_study_accession, input$readxMap_experiment_accession)
-        download_cv_log_dilution_data(download_df = cv_log_dilution_rv(),
-                                      selected_study = input$readxMap_study_accession,
-                                      selected_experiment = input$readxMap_experiment_accession,
-                                      selected_antigen = NULL)
+        # download_cv_log_dilution_data(download_df = cv_log_dilution_rv(),
+        #                               selected_study = input$readxMap_study_accession,
+        #                               selected_experiment = input$readxMap_experiment_accession,
+        #                               selected_antigen = NULL)
+       collapse_antigens<- ifelse(!is.null(input$selected_familial_antigen), paste(input$selected_familial_antigen, collapse = ", "), "")
+
+        button_label <- ifelse(is.null(input$selected_familial_antigen),
+                               paste0("Download Coefficent of Variation by Log Dilution and Log Dilution Data for ", input$readxMap_experiment_accession, " in ", input$readxMap_study_accession),
+                               paste0("Download Coefficent of Variation by Log Dilution and Log Dilution Data for ", collapse_antigens, " ", input$readxMap_experiment_accession, " in ", input$readxMap_study_accession))
+
+        downloadButton("download_cv_log_dilution_study_level_handle", button_label)
+
       })
+
+
+      output$download_cv_log_dilution_study_level_handle <- downloadHandler(
+        filename = function() {
+          collapse_antigens <- ifelse(!is.null(input$selected_familial_antigen), paste(input$selected_familial_antigen, collapse = "_"), "")
+
+          ifelse(is.null(input$selected_familial_antigen),paste0(input$readxMap_study_accession, "_",input$readxMap_experiment_accession, "_cv_log_dilution_data.csv"),
+                 paste0(input$readxMap_study_accession, "_",input$readxMap_experiment_accession, "_", collapse_antigens, "_cv_log_dilution_data.csv"))
+
+
+        },
+        content = function(file) {
+          req(cv_log_dilution_rv())
+          req(input$readxMap_study_accession, input$readxMap_experiment_accession)
+
+          if (!is.null(input$selected_familial_antigen)) {
+            download_df <- cv_log_dilution_rv()[cv_log_dilution_rv()$antigen == input$selected_familial_antigen,]
+
+          }
+          write.csv(download_df, file, row.names = FALSE)
+        }
+      )
+
+
 
 
     } else {

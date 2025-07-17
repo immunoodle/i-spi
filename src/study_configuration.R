@@ -250,15 +250,16 @@ download_user_parameters <- function(study_accession, user) {
 	AND param_user = '", user,"';")
   downlaod_df <- dbGetQuery(conn, query)
 
-	download_plot_data <- download_this(
-	  downlaod_df,
-    output_name = paste0(study_accession, "_study_config", user),
-    output_extension = ".xlsx",
-    button_label = paste0("Download ", study_accession, " Configuration for ", user),
-    button_type = "warning",
-    icon = "fa fa-save",
-    class = "hvr-sweep-to-left"
-  )
+  return(downlaod_df)
+# 	download_plot_data <- download_this(
+# 	  downlaod_df,
+#     output_name = paste0(study_accession, "_study_config", user),
+#     output_extension = ".xlsx",
+#     button_label = paste0("Download ", study_accession, " Configuration for ", user),
+#     button_type = "warning",
+#     icon = "fa fa-save",
+#     class = "hvr-sweep-to-left"
+#   )
 
 }
 

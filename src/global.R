@@ -42,7 +42,6 @@ library(drda)
 library(tmvtnorm)
 
 # For standard curve Summary
-library(downloadthis)
 library(fracture)
 
 library(mgcv)
