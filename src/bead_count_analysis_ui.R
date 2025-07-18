@@ -82,7 +82,7 @@ beadCountModuleUI <- function(id) {
               tags$li("is_low_bead_count: A Boolean column where true indicates a low bead count and false indicates a sufficient bead count.")
             ),
 
-            tags$p("To download the bead count gate class for all samples in the currently selected experiment within the selected study, click the orange download button below the table."),
+            tags$p("To download the bead count gate class for all samples in the currently selected experiment within the selected study, click the download button below the table."),
             tags$h3("References"),
             tags$p("Matson, Zachary et al. “shinyMBA: a novel R shiny application for quality control of the multiplex bead assay for serosurveillance studies.” Scientific reports vol. 14,1 7442. 28 Mar. 2024, doi:10.1038/s41598-024-57652-4")
           ), #end tagList

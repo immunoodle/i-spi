@@ -513,13 +513,33 @@ observeEvent(list(
       req(n_unique_clusters_reactive())
       req(input$antigenSampleSelection)
       req(input$transformationTypeSelection)
-      first_visit_data <- finite_mixture_model()[finite_mixture_model()$visit_name == visit1,]
-
-      download_first_visit_class(download_df = first_visit_data,
-                                 selected_transformation = input$transformationTypeSelection,
-                                 selected_antigen = input$antigenSampleSelection,
-                                 selected_feature = input$featureSelection)
+      # first_visit_data <- finite_mixture_model()[finite_mixture_model()$visit_name == visit1,]
+      #
+      # download_first_visit_class(download_df = first_visit_data,
+      #                            selected_transformation = input$transformationTypeSelection,
+      #                            selected_antigen = input$antigenSampleSelection,
+      #                            selected_feature = input$featureSelection)
+      button_label <-  paste0("Download ", input$transformationTypeSelection," First Visit Class Data for ",input$antigenSampleSelection, " in ",input$featureSelection)
+      downloadButton("download_density_histogram_first_visit_handle", button_label)
     })
+
+    output$download_density_histogram_first_visit_handle <- downloadHandler(
+      filename = function() {
+        paste0(input$antigenSampleSelection, "_",input$featureSelection, "-", input$transformationTypeSelection, "_first_visit_class_data.csv")
+      },
+      content = function(file) {
+        req(finite_mixture_model())
+        req(visit1)
+        req(n_unique_clusters_reactive())
+        req(input$antigenSampleSelection)
+        req(input$transformationTypeSelection)
+        first_visit_data <- finite_mixture_model()[finite_mixture_model()$visit_name == visit1,]
+
+
+        # download data component (data frame)
+        write.csv(first_visit_data, file, row.names = FALSE)
+      }
+    )
 
 
 
@@ -542,16 +562,39 @@ observeEvent(list(
       req(visit1, visit2)
       req(input$featureSelection, input$antigenSampleSelection)
       req(input$transformationTypeSelection)
-      res <- difres_reactive()[[1]]$res_wide
-      download_visit_difference(download_df = res,
-                                selected_transformation = input$transformationTypeSelection,
-                                selected_antigen = input$antigenSampleSelection ,
-                                selected_feature = input$featureSelection,
-                                t0 = visit1,
-                                t1 = visit2
-      )
+
+      button_label <-  paste0("Download ", input$transformationTypeSelection," Visit difference (",visit1, " - ",visit2, ") Data for ",input$antigenSampleSelection, " in ", input$featureSelection)
+      downloadButton("download_visit_difference_handle", button_label)
+
+      # res <- difres_reactive()[[1]]$res_wide
+      # download_visit_difference(download_df = res,
+      #                           selected_transformation = input$transformationTypeSelection,
+      #                           selected_antigen = input$antigenSampleSelection ,
+      #                           selected_feature = input$featureSelection,
+      #                           t0 = visit1,
+      #                           t1 = visit2
+      # )
 
     })
+
+    output$download_visit_difference_handle <- downloadHandler(
+      filename = function() {
+        paste0(input$antigenSampleSelection, "_",input$featureSelection, "-", input$transformationTypeSelection, "visit_difference", visit1, "_", visit2, ".csv")
+      },
+      content = function(file) {
+        req(difres_reactive())
+        req(visit1, visit2)
+        req(input$featureSelection, input$antigenSampleSelection)
+        req(input$transformationTypeSelection)
+        res <- difres_reactive()[[1]]$res_wide
+
+        # download data component (data frame)
+        write.csv(res, file, row.names = FALSE)
+      }
+    )
+
+
+
 
     # Difference histogram
     output$difference_histogram_UI <- renderPlotly({
@@ -569,12 +612,32 @@ observeEvent(list(
       req(difres_reactive())
       req(input$featureSelection, input$antigenSampleSelection)
       req(input$transformationTypeSelection)
-      res <- difres_reactive()[[1]]$res_wide
-      download_difference_histogram_data(download_df = res,
-                                         selected_transformation = input$transformationTypeSelection ,
-                                         selected_antigen = input$antigenSampleSelection,
-                                         selected_feature = input$featureSelection)
+      button_label <-  paste0("Download ", input$transformationTypeSelection," K-Means Direction Data for ",input$antigenSampleSelection, " in ",input$featureSelection)
+      downloadButton("download_difference_histogram_data_handle", button_label)
+
+
+      # res <- difres_reactive()[[1]]$res_wide
+      # download_difference_histogram_data(download_df = res,
+      #                                    selected_transformation = input$transformationTypeSelection ,
+      #                                    selected_antigen = input$antigenSampleSelection,
+      #                                    selected_feature = input$featureSelection)
+
     })
+
+    output$download_difference_histogram_data_handle <- downloadHandler(
+      filename = function() {
+        paste0(input$antigenSampleSelection, "_",input$featureSelection, "-",input$transformationTypeSelection , "_visit_difference_kmeans_data.csv")
+      },
+      content = function(file) {
+        req(difres_reactive())
+        req(input$featureSelection, input$antigenSampleSelection)
+        req(input$transformationTypeSelection)
+        res <- difres_reactive()[[1]]$res_wide
+
+        # download data component (data frame)
+        write.csv(res, file, row.names = FALSE)
+      }
+    )
 
 
     # Assay Classification
@@ -601,11 +664,34 @@ observeEvent(list(
       #nput$readxMap_experiment_accession
       req(input$featureSelection, input$antigenSampleSelection)
 
-      download_assay_classification_data(download_df = datsub_reactive(),
-                                         selected_transformation = input$transformationTypeSelection,
-                                         selected_antigen = input$antigenSampleSelection,
-                                         selected_feature = input$featureSelection)
+      button_label <-  paste0("Download ", input$transformationTypeSelection," Visit Plot Data for ",input$antigenSampleSelection, " in ", input$featureSelection)
+      downloadButton("downlod_assay_classification_data_handle", button_label)
+
+      # download_assay_classification_data(download_df = datsub_reactive(),
+      #                                    selected_transformation = input$transformationTypeSelection,
+      #                                    selected_antigen = input$antigenSampleSelection,
+      #                                    selected_feature = input$featureSelection)
     })
+
+    output$downlod_assay_classification_data_handle <-  downloadHandler(
+      filename = function() {
+        clean_input <- trimws(input$transformation_type_selection)
+        safe_transformation <- gsub("[, ]+", "_", clean_input)
+
+        #safe_transformation  <- gsub("[, ]+", "_", input$transformation_type_selection)
+
+        paste0(input$antigenSampleSelection, "_",input$featureSelection, "_", safe_transformation, "_visit_plot_data.csv")
+      },
+      content = function(file) {
+        req(datsub_reactive())
+        req(input$responseSelection)
+        req(input$transformationTypeSelection)
+
+        # download data component (data frame)
+        write.csv(datsub_reactive(), file, row.names = FALSE)
+      }
+    )
+
 
   } else {# in Subgroup Detection tab
     output$subgroupDetectionUI <- NULL

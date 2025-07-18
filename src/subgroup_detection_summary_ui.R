@@ -405,22 +405,42 @@ observeEvent(list(
         req(input$transformation_type_selection)
         req(input$feature_selection)
         # Get the full combined dataset
-        download_df <- datsub_reactive_summary()
+        # download_df <- datsub_reactive_summary()
+        #
+        #
+        # # download button for the entire dataset
+        # download_plot_data <- download_this(
+        #   download_df,
+        #   output_name = paste0("combined_", input$transformation_type_selection,"_",input$feature_selection, "_visit_plot_data"),
+        #   output_extension = ".xlsx",
+        #   button_label = paste0("Download ",input$feature_selection, ",", input$transformation_type_selection, " Visit Data"),
+        #   button_type = "warning",
+        #   icon = "fa fa-save",
+        #   class = "hvr-sweep-to-left"
+        # )
 
+       # return(download_plot_data)
+        button_label <- paste0("Download ",input$feature_selection, ",", input$transformation_type_selection, " Visit Data")
+        downloadButton("download_combined_assay_classification_data_handle", button_label)
 
-        # download button for the entire dataset
-        download_plot_data <- download_this(
-          download_df,
-          output_name = paste0("combined_", input$transformation_type_selection,"_",input$feature_selection, "_visit_plot_data"),
-          output_extension = ".xlsx",
-          button_label = paste0("Download ",input$feature_selection, ",", input$transformation_type_selection, " Visit Data"),
-          button_type = "warning",
-          icon = "fa fa-save",
-          class = "hvr-sweep-to-left"
-        )
-
-        return(download_plot_data)
       })
+
+      output$download_combined_assay_classification_data_handle <- downloadHandler(
+        filename = function() {
+          paste0("combined_", input$transformation_type_selection,"_",input$feature_selection, "_visit_plot_data.csv")
+
+        },
+        content = function(file) {
+          req(datsub_reactive_summary())
+          req(input$transformation_type_selection)
+          req(input$feature_selection)
+
+          # download data component (data frame)
+          write.csv(datsub_reactive_summary(), file, row.names = FALSE)
+        }
+      )
+
+
       incProgress(1/6, detail = "Download button rendered")
 
       cat("Subgroup Summarization Completed")
