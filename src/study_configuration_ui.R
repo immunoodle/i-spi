@@ -125,9 +125,10 @@ render_study_parameters <- reactive({
 
  study_config <- fetch_study_configuration(study_accession = selected_study, user = currentuser())
   output$studyParameters_UI <- renderUI({
-    req(selected_study, currentuser())
+  #  req(selected_study, currentuser())
     tagList(
       HTML(paste0("<h4>", selected_study, " – Study Parameters for ", currentuser(), "</h4>")),
+      uiOutput("plate_management_UI"),
       uiOutput("antigen_family_config"),
       uiOutput("bead_count_config"),
       uiOutput("dilution_analysis_config"),

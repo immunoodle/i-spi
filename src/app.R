@@ -735,6 +735,8 @@ server <- function(input, output, session) {
       outlierJobStatus <- reactiveVal(list())
       outlierUIRefresher <- reactiveVal(0)
 
+
+
       ### Sourcing all the application logic files from `main`
       source("user.R", local = TRUE)
       source("user_management.R", local = TRUE)
@@ -742,6 +744,9 @@ server <- function(input, output, session) {
       source("ui_handler.R", local = TRUE)
       source("study_configuration.R", local = TRUE)
       source("study_configuration_ui.R", local = TRUE)
+      source("plate_management.R", local = TRUE)
+      source("study_overview_functions.R", local = TRUE)
+      source("study_overview_ui.R", local = TRUE)
       source("antigen_family_ui.R", local = TRUE)
       source("load_previous_stored_data.R", local=TRUE)
       source("import_lumifile.R", local = TRUE)

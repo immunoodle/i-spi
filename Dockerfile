@@ -91,7 +91,7 @@ RUN R -e "install.packages('tmvtnorm')"
 RUN R -e "install.packages(c('httr2', 'jose', 'openssl', 'jsonlite', 'urltools'))"
 RUN R -e "install.packages(c('strex', 'purrr'))"
 RUN R -e "install.packages('shiny.destroy')"
-
+RUN R -e "install.packages(c('viridis', 'htmltools'))"
 
 
 RUN rm -rf /srv/shiny-server/*
