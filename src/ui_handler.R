@@ -195,6 +195,9 @@ output$view_stored_experiments_ui <- renderUI({
                    id = "study_parameters_tab",
                    uiOutput("studyParameters_UI")
           ),
+          # tabPanel("Plate Management",
+          #          id = "plate_management_tab",
+          #          uiOutput("plate_management_UI")),
 
 
 
@@ -202,60 +205,8 @@ output$view_stored_experiments_ui <- renderUI({
           # Study Overview Tab
           tabPanel("Study Overview",
                    id = "study_overview_tab",
-                   "Study Overview Coming Soon."
-                   # bsCollapse(
-                   #   id = "studyOverviewCollapse",
-                   #     bsCollapsePanel(
-                   #       title = "Antigen Family",
-                   #       div(
-                   #         style = "padding: 15px; width: 100%; max-width: 100%; overflow-x: auto;",  # Added styling
-                   #         uiOutput("antigenFamilyUI")
-                   #       ),
-                   #       style = "primary"
-                   #     ),
-                   #   bsCollapsePanel(
-                   #     title = "Bead Count Options",
-                   #     div(
-                   #       style = "padding: 15px; width: 100%; max-width: 100%; overflow-x: auto;",  # Added styling
-                   #       uiOutput("bead_count_controls_UI")
-                   #     ),
-                   #     style = "primary"
-                   #   ),
-                   #   bsCollapsePanel(
-                   #     title = "Standard Curve Dilution Options",
-                   #     div(
-                   #       style = "padding: 15px; width: 100%; max-width: 100%; overflow-x: auto;",  # Added styling
-                   #        uiOutput("dilution_standards_controls")
-                   #     ),
-                   #     style = "primary"
-                   #   ),
-                   #     bsCollapsePanel(
-                   #       title = "Blank Controls",
-                   #       div(
-                   #         style = "padding: 15px; width: 100%; max-width: 100%; overflow-x: auto;",  # Added styling
-                   #         uiOutput("blankControlOptionUI")
-                   #       ),
-                   #       style = "primary"
-                   #     ),
-                   #     bsCollapsePanel(
-                   #       title = "Dilution Analysis Parameters",
-                   #       div(
-                   #         style = "padding: 15px; width: 100%; max-width: 100%; overflow-x: auto; overflow-y: auto;",
-                   #         uiOutput("dilution_paramatersUI")
-                   #       ),
-                   #       style = "primary"
-                   #     ),
-                   #     bsCollapsePanel(
-                   #       title = "Set Reference Arm",
-                   #       div(
-                   #         style = "padding: 15px; width: 100%; max-width: 100%; overflow-x: auto;",
-                   #         uiOutput("reference_arm_UI")
-                   #       ),
-                   #       style = "primary"
-                   #     )
-                   # )
+                   uiOutput("study_overview_page")
           ),
-
           # Experiment Level Tab
           tabPanel("Experiments",
                    fluidRow(
@@ -472,153 +423,6 @@ output$dynamic_data_ui <- renderUI({
   }
 })
 
-
-
-
-# output$standard_curve_section <- renderUI({
-#   req(input$readxMap_study_accession, input$readxMap_experiment_accession)
-#   #req(input$qc_component)
-#   if (
-#     input$qc_component == "Standard Curve" &&
-#     input$readxMap_study_accession != "Click here" &&
-#     input$readxMap_experiment_accession != "Click here" &&
-#     input$study_level_tabs == "Experiments" &&
-#     input$main_tabs == "view_files_tab"
-#   ) {
-#   num_plates_stored_std_curve <- count_n_std_curve_plates(input$readxMap_study_accession, input$readxMap_experiment_accession)
-#  # n_plates_standard_curve(num_plates_stored_std_curve)
-#
-#   n_dilutions_antigen_df <- count_n_dilutions_per_antigen(input$readxMap_study_accession, input$readxMap_experiment_accession)
-#   # check if all antigens have at minimum 5 points
-#   dilutions_per_antigen_boolean <- all(n_dilutions_antigen_df$num_dilutions >= 5)
-#
-#  # mininum_dilution_count_boolean(dilutions_per_antigen_boolean)
-#   bsCollapse(
-#     id = "StandardCurveCollapse",
-#     #multiple = TRUE,  # Also adding multiple = TRUE here for consistency
-#     if (dilutions_per_antigen_boolean){
-#       bsCollapsePanel(
-#         title = "Standard Curve Fitting",
-#         uiOutput("standardCurveUI"),
-#         style = "primary"
-#       )
-#     },
-#     bsCollapsePanel(
-#       title = "Standard Curve Summary",
-#       if (num_plates_stored_std_curve >= 2) {
-#         uiOutput("standardCurveSummaryUI")
-#       } else {
-#         output$invalidPlatesUI <- renderUI({
-#           req(input$readxMap_study_accession, input$readxMap_experiment_accession)
-#           HTML(paste("<span style='font-size:20px;'>There must be 2 or more plates in ",
-#                      input$readxMap_experiment_accession, "for ",
-#                      input$readxMap_study_accession," to access the standard curve summary<br></span>"))
-#         })
-#         uiOutput("invalidPlatesUI")
-#       },
-#       style = "primary"
-#     )
-#   )
-#   }
-#   else {
-#     NULL
-#   }
-# })
-
-# output$dilution_analysis_section <- renderUI({
-#   req(input$readxMap_study_accession, input$readxMap_experiment_accession)
-#
-#   if (
-#     input$qc_component == "Dilution Analysis" &&
-#     input$readxMap_study_accession != "Click here" &&
-#     input$readxMap_experiment_accession != "Click here" &&
-#     input$study_level_tabs == "Experiments" &&
-#     input$main_tabs == "view_files_tab"
-#   ) {
-#     tagList(
-#       uiOutput("dilutionAnalysisUI"),
-#       bsCollapse(
-#         id = "main_dilution_linearity_collapse",
-#         bsCollapsePanel(
-#           title = "Dilutional Linearity",
-#           uiOutput("dilutionalLinearityUI"),
-#           style = "primary"
-#         )
-#       )
-#     )
-#   } else {
-#     NULL
-#   }
-# })
-
-# output$subgroup_detection_section <- renderUI({
-#   req(input$readxMap_study_accession, input$readxMap_experiment_accession)
-#
-#   if (
-#     input$qc_component == "Subgroup Detection" &&
-#     input$readxMap_study_accession != "Click here" &&
-#     input$readxMap_experiment_accession != "Click here" &&
-#     input$study_level_tabs == "Experiments" &&
-#     input$main_tabs == "view_files_tab"
-#   ) {
-#     tagList(
-#       bsCollapse(
-#         id = "subgroupCollapse",
-#         bsCollapsePanel(
-#           title = "Subgroup Detection",
-#           uiOutput("subgroupDetectionUI"),
-#           style = "primary"
-#         ),
-#         bsCollapsePanel(
-#           title = "Subgroup Detection Summary",
-#           uiOutput("subgroup_summary_UI"),
-#           style = "primary"
-#         )
-#       )
-#     )
-#   } else {
-#     NULL
-#   }
-# })
-
-
-# Reactive flag to track if module is loaded
-# module_loaded <- reactiveVal(FALSE)
-#
-# observeEvent(input$qc_component, {
-#   req(input$readxMap_study_accession)
-#   req(input$readxMap_experiment_accession)
-#
-#   show_module <- input$qc_component == "Bead Count" &&
-#     input$readxMap_study_accession != "" &&
-#     input$readxMap_study_accession != "Click here" &&
-#     input$readxMap_experiment_accession != "" &&
-#     input$readxMap_experiment_accession != "Click here"
-#
-#   if (show_module && !module_loaded()) {
-#     output$bead_count_module_ui <- renderUI({
-#       destroyableBeadCountModuleUI("bead_count_mod")
-#     })
-#
-#     # Call module server once
-#     isolate({
-#       destroyableBeadCountModuleServer(
-#         id = "bead_count_mod",
-#         selected_study = reactive(input$readxMap_study_accession),
-#         selected_experiment = reactive(input$readxMap_experiment_accession),
-#         currentuser()
-#       )
-#     })
-#     module_loaded(TRUE)
-#
-#   } else if (!show_module && module_loaded()) {
-#     tryCatch({
-#       destroyModule("bead_count_mod")
-#     }, error = function(e) {})
-#     output$bead_count_module_ui <- renderUI({ NULL })
-#     module_loaded(FALSE)
-#   }
-# })
 
 
 observeEvent(input$qc_component, {

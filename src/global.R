@@ -23,6 +23,9 @@ library(ggplot2)
 ## For study parameters
 library(shinyFeedback)
 library(later)
+# For Study Overview
+library(viridis)
+library(htmltools)
 
 library(ks)     # For kernel density estimation
 library(scales) # For color scaling

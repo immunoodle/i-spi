@@ -2258,7 +2258,7 @@ plot_single_regres <- function(distinct_samples, dil_lin_regress_list, plate, an
     "Too Concentrated / Acceptable" = "#e78ac3",
     "Too Concentrated / Too Concentrated" = "#e6b800",
     "Too Concentrated / Too Diluted" = "#ffd92f",
-    "Too Diluted / Acceptable" = "#e5c494",
+    "Too Diluted / Acceptable" = "#5e4fa2",#"#e5c494",
     "Too Diluted / Too Concentrated" = "#b3b3b3",
     "Too Diluted / Too Diluted" = "#d46a6a"
   )
