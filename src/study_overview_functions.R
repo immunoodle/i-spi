@@ -12,7 +12,20 @@ gn <- function(x) {
   return(nrow(x))
 }
 
-pull_standard <- function(conn, selected_study, current_user) {
+# pull_standard <- function(conn, selected_study, current_user) {
+#   standard_query <- glue::glue_sql("
+#   SELECT DISTINCT study_accession, experiment_accession AS Analyte, plate_id, well, antigen,
+#         		antibody_mfi AS MFI, antibody_n AS bead_count, pctaggbeads
+#   	FROM madi_results.xmap_standard
+#   	WHERE study_accession = {selected_study}
+#   	ORDER BY experiment_accession, antigen, plate_id",
+#                                    .con = conn)
+#   standard_data <- dbGetQuery(conn, standard_query)
+#   standard_data$plate_id <- str_trim(str_replace_all(standard_data$plate_id, "\\s", ""), side = "both")
+#
+#   return(standard_data)
+# }
+pull_standard <- function(conn, selected_study, current_user, plates) {
   standard_query <- glue::glue_sql("
   SELECT DISTINCT study_accession, experiment_accession AS Analyte, plate_id, well, antigen,
         		antibody_mfi AS MFI, antibody_n AS bead_count, pctaggbeads
@@ -23,9 +36,17 @@ pull_standard <- function(conn, selected_study, current_user) {
   standard_data <- dbGetQuery(conn, standard_query)
   standard_data$plate_id <- str_trim(str_replace_all(standard_data$plate_id, "\\s", ""), side = "both")
 
+  # new
+  standard_data$plate_id <- toupper(standard_data$plate_id)
+  standard_data <- merge(standard_data[ , ! names(standard_data) %in% c("analyte")], plates, by="plate_id", all.x = TRUE)
+  standard_data <- distinct(standard_data)
+
+  cat("NAMES from pulled standard")
+  print(names(standard_data))
   return(standard_data)
 }
-pull_blank <- function(conn, selected_study, current_user) {
+
+pull_blank <- function(conn, selected_study, current_user, plates) {
   buffer_query <- glue::glue_sql("
   SELECT DISTINCT study_accession, experiment_accession AS Analyte, plate_id, well, antigen,
         		antibody_mfi AS MFI, antibody_n AS bead_count, pctaggbeads
@@ -35,9 +56,16 @@ pull_blank <- function(conn, selected_study, current_user) {
                                  .con = conn)
   blank_data <- dbGetQuery(conn, buffer_query)
   blank_data$plate_id <- str_trim(str_replace_all(blank_data$plate_id, "\\s", ""), side = "both")
+
+  # new
+  blank_data$plate_id <- toupper(blank_data$plate_id)
+  blank_data <- merge(blank_data[ , ! names(blank_data) %in% c("analyte")], plates, by="plate_id", all.x = TRUE)
+  blank_data <- distinct(blank_data)
+
   return(blank_data)
 }
-pull_control <- function(conn, selected_study, current_user){
+
+pull_control <- function(conn, selected_study, current_user, plates){
   control_query <- glue::glue_sql("
   SELECT DISTINCT study_accession, experiment_accession AS Analyte, plate_id, well, antigen,
         		antibody_mfi AS MFI, antibody_n AS bead_count, pctaggbeads
@@ -46,15 +74,20 @@ pull_control <- function(conn, selected_study, current_user){
   	ORDER BY experiment_accession, antigen, plate_id",
                                   .con = conn)
   control_data <- dbGetQuery(conn, control_query)
-  control_data$plate_id <- str_trim(control_data$plate_id, side = "both")
+  #control_data$plate_id <- str_trim(control_data$plate_id, side = "both")
   control_data$plate_id <- str_trim(str_replace_all(control_data$plate_id, "\\s", ""), side = "both")
+
+  # new
+  control_data$plate_id <- toupper(control_data$plate_id)
+  control_data <- merge(control_data[ , ! names(control_data) %in% c("analyte")], plates, by="plate_id", all.x = TRUE)
+  control_data <- distinct(control_data)
 
   return(control_data)
 }
-pull_samples <- function(conn, selected_study, current_user) {
+pull_samples <- function(conn, selected_study, current_user, plates) {
   select_query <- glue::glue_sql("
       		SELECT DISTINCT xmap_sample.study_accession, experiment_accession, plate_id,
-      		  well, antigen,
+      		  well, antigen, agroup, timeperiod,
         		antibody_mfi AS MFI, antibody_au AS AU,
         		dilution AS sample_dilution_factor,
         		CASE
@@ -93,7 +126,97 @@ pull_samples <- function(conn, selected_study, current_user) {
   active_samples <- dbGetQuery(conn, select_query)
   active_samples$analyte <- factor(active_samples$experiment_accession)
   active_samples$plate_id <- str_trim(str_replace_all(active_samples$plate_id, "\\s", ""), side = "both")
+
+  ## new
+  active_samples$plate_id <- toupper(active_samples$plate_id)
+  active_samples <- merge(active_samples[ , ! names(active_samples) %in% c("analyte")], plates[ , ! names(plates) %in% c("sample_dilution_factor")], by="plate_id", all.x = TRUE)
+  active_samples <- distinct(active_samples)
   return(active_samples)
+}
+
+pull_conc <- function(conn, selected_study, current_user){
+  query_stdcurve_conc <- glue::glue_sql("SELECT antigen, antigen_family, standard_curve_concentration
+	FROM madi_results.xmap_antigen_family
+	WHERE study_accession = {selected_study};", .con = conn)
+  stdcurve_undiluted_conc <- dbGetQuery(conn, query_stdcurve_conc)
+  stdcurve_undiluted_conc$standard_curve_concentration <- as.numeric(stdcurve_undiluted_conc[["standard_curve_concentration"]])
+  return(stdcurve_undiluted_conc)
+}
+
+
+pull_fits <- function(conn, selected_study, current_user, plates) {
+#   fit_query <- glue::glue_sql("
+# SELECT experiment_accession AS analyte, antigen, plateid,
+# bkg_method AS buffer_treatment, is_log_mfi_axis AS logMFI, crit, cv, llod, ulod,
+# bendlower AS llin, bendupper AS ulin, lloq, uloq, l_asy, r_asy, x_mid, scale, g
+# 	FROM madi_results.xmap_standard_fits
+# 	INNER JOIN madi_results.xmap_study_config ON xmap_standard_fits.study_accession = xmap_study_config.study_accession
+# 	WHERE xmap_standard_fits.study_accession = {selected_study} AND param_user = {current_user} AND param_name = 'default_source' AND source = param_character_value
+# 	ORDER BY experiment_accession, antigen, plateid",
+#                               .con = conn)
+ fit_query <- glue::glue_sql("SELECT
+  experiment_accession AS analyte,
+  antigen,
+  plateid,
+  bkg_method AS buffer_treatment,
+  is_log_mfi_axis AS logMFI,
+  crit, cv, llod, ulod,
+  bendlower AS llin,
+  bendupper AS ulin,
+  lloq, uloq,
+  l_asy, r_asy, x_mid, scale, g
+  FROM madi_results.xmap_standard_fits sf
+
+  -- Join for default source
+  INNER JOIN madi_results.xmap_study_config cfg_source
+  ON sf.study_accession = cfg_source.study_accession
+  AND cfg_source.param_user = {current_user}
+  AND cfg_source.param_name = 'default_source'
+  AND sf.source = cfg_source.param_character_value
+
+  -- Join for buffer treatment
+  INNER JOIN madi_results.xmap_study_config cfg_buffer
+  ON sf.study_accession = cfg_buffer.study_accession
+  AND cfg_buffer.param_user = {current_user}
+  AND cfg_buffer.param_name = 'blank_option'
+  AND sf.bkg_method = cfg_buffer.param_character_value
+
+  -- Join for log MFI axis (using boolean value)
+  INNER JOIN madi_results.xmap_study_config cfg_logmfi
+  ON sf.study_accession = cfg_logmfi.study_accession
+  AND cfg_logmfi.param_user = {current_user}
+  AND cfg_logmfi.param_name = 'is_log_mfi_axis'
+  AND sf.is_log_mfi_axis = cfg_logmfi.param_boolean_value
+
+  WHERE sf.study_accession = {selected_study}
+
+  ORDER BY experiment_accession, antigen, plateid;", .con = conn)
+
+  standard_fit <- dbGetQuery(conn, fit_query)
+  # standard_fit_result <<- standard_fit
+  # plates_v <<- plates
+
+  ## If it is in the form plate.num remove the .
+  standard_fit$plateid <- sub("\\.plate\\.(\\d+)", ".plate\\1", standard_fit$plateid)
+
+  standard_fit$plateid <- str_replace_all(standard_fit$plateid, fixed(".."),"_")
+  standard_fit$plateid <- str_replace_all(standard_fit$plateid, fixed("."),"_")
+  #standard_fit_v <<- standard_fit
+
+  standard_fit <- merge(standard_fit[ , ! names(standard_fit) %in% c("analyte")], plates, by = "plateid", all.y = TRUE)
+  standard_fit$plate_id <- toupper(standard_fit$plate_id)
+  names(standard_fit)[names(standard_fit) == "l_asy"] <- "a"
+  names(standard_fit)[names(standard_fit) == "r_asy"] <- "d"
+  names(standard_fit)[names(standard_fit) == "x_mid"] <- "c"
+  names(standard_fit)[names(standard_fit) == "scale"] <- "b"
+  standard_fit$g <- ifelse(is.na(standard_fit$g), 1, standard_fit$g)
+  unique(standard_fit$crit)
+
+  #standard_fit_f <<- standard_fit
+
+  standard_fit <- standard_fit %>% distinct()
+
+  return(standard_fit)
 }
 
 # function to summarize data with gmean, gsd and count (n)
@@ -104,11 +227,38 @@ summarise_data <- function(df) {
       gmean = gmean(mfi),
       gsd = gsd(mfi),
       n = dplyr::n(),
-      cv_mfi = (sd(mfi)/mean(mfi)) * 100,
+      intraplate_cv_mfi = (sd(mfi)/mean(mfi)) * 100,
       mp_mfi = mean(mfi),
       .groups = "drop"
     )
 }
+
+summarise_by_plate_id <- function(df) {
+  df %>%
+    group_by(analyte, antigen, plate_id) %>%
+    dplyr::summarise(
+      gmean = gmean(mfi),
+      gsd = gsd(mfi),
+      n = dplyr::n(),
+      intraplate_cv_mfi = (sd(mfi)/mean(mfi)) * 100,
+      mp_mfi = mean(mfi),
+      .groups = "drop"
+    )
+}
+
+summarise_by_timeperiod <- function(df) {
+  df %>%
+    dplyr::group_by(analyte, antigen, timeperiod) %>%
+    dplyr::summarise(
+      gmean = gmean(mfi),
+      gsd = gsd(mfi),
+      n = dplyr::n(),
+      intratime_cv_mfi = (sd(mfi)/mean(mfi)) * 100,
+      mp_mfi = mean(mfi),
+      .groups = "drop"
+    )
+}
+
 # mp = mean plate
 interplate_summarize <- function(df) {
   df %>%
@@ -117,7 +267,7 @@ interplate_summarize <- function(df) {
       gmean = gmean(mp_mfi),
       gsd = gsd(mp_mfi),
       n = dplyr::n(),
-      cv_mfi = (sd(mp_mfi)/mean(mp_mfi)) * 100,
+      interplate_cv_mfi = (sd(mp_mfi)/mean(mp_mfi)) * 100,
       .groups = "drop"
     )
 }
@@ -138,7 +288,7 @@ get_condition_counts <- function(data, condition_col, condition_val, count_col_n
 
 
 
-check_plate <- function(selected_study){
+check_plate <- function(conn, selected_study){
  # conn <- get_db_connection()
   query_sample_dilution_factor <- glue::glue_sql("SELECT experiment_accession, plate_id, feature, dilution AS sample_dilution_factord
   	FROM madi_results.xmap_sample
@@ -203,26 +353,50 @@ check_plate <- function(selected_study){
   return(plates)
 }
 
-load_specimens <- function(current_user, selected_study) {
+# load_specimens <- function(current_user, selected_study) {
+#   #conn <- get_db_connection()
+#   standard_data <- pull_standard(conn, selected_study, current_user)
+#   standard_data$specimen_type <- "standard"
+#   blank_data <- pull_blank(conn, selected_study, current_user)
+#   blank_data$specimen_type <- "blank"
+#   control_data <- pull_control(conn, selected_study, current_user)
+#   control_data$specimen_type <- "control"
+#   active_samples <- pull_samples(conn, selected_study, current_user)
+#   active_samples$specimen_type <- "sample"
+#
+#   #dbDisconnect(conn)
+#   return(list(standard_data, blank_data, control_data, active_samples))
+# }
+load_specimens <- function(conn, current_user, selected_study) {
   #conn <- get_db_connection()
-  standard_data <- pull_standard(conn, selected_study, current_user)
+  plates <- check_plate(conn = conn, selected_study = selected_study)
+  standard_data <- pull_standard(conn, selected_study, current_user, plates)
+  print(names(standard_data))
   standard_data$specimen_type <- "standard"
-  blank_data <- pull_blank(conn, selected_study, current_user)
+  blank_data <- pull_blank(conn, selected_study, current_user, plates)
   blank_data$specimen_type <- "blank"
-  control_data <- pull_control(conn, selected_study, current_user)
+  control_data <- pull_control(conn, selected_study, current_user, plates = plates)
   control_data$specimen_type <- "control"
-  active_samples <- pull_samples(conn, selected_study, current_user)
-  active_samples$specimen_type <- "sample"
-
+  sample_data <- pull_samples(conn, selected_study, current_user, plates)
+  sample_data$specimen_type <- "sample"
+ # plates_v <<- plates
+  standard_fit <- pull_fits(conn, selected_study, current_user, plates)
+  stdcurve_undiluted_conc <- pull_conc(conn, selected_study, current_user)
   #dbDisconnect(conn)
-  return(list(standard_data, blank_data, control_data, active_samples))
+  return(list(plates, standard_data, blank_data, sample_data, control_data, standard_fit, stdcurve_undiluted_conc))
 }
 
-make_summspec <- function(standard_data, blank_data, control_data, active_samples, plates) {
+make_summspec <- function(standard_data, blank_data, control_data, active_samples, low_bead_data, high_agg_bead_data, plates) {
 
   # Summarise buffer data and add specimen_type
   buffer_summ <- summarise_data(blank_data) %>%
     mutate(specimen_type = "blank")
+
+  low_bead_summ <- summarise_data(low_bead_data) %>%
+    mutate(specimen_type = "low_bead_count")
+
+  high_agg_bead_summ <- summarise_data(high_agg_bead_data) %>%
+    mutate(specimen_type = "high_aggregate_beads")
 
   cat("aftr summarise_data blank")
   # Summarize control data and add specimen_type
@@ -230,6 +404,7 @@ make_summspec <- function(standard_data, blank_data, control_data, active_sample
     mutate(specimen_type = "control")
 
   cat("aftr summarise_data control")
+  print(names(standard_data))
   # Summarize standard data and add specimen_type
   standard_summ <- summarise_data(standard_data) %>%
     mutate(specimen_type = "standard")
@@ -270,7 +445,7 @@ make_summspec <- function(standard_data, blank_data, control_data, active_sample
       nbelowlod = 0
     ))
 
-  summ_spec <- bind_rows(buffer_summ, control_summ, standard_summ, sample_summ)
+  summ_spec <- bind_rows(buffer_summ, control_summ, standard_summ, sample_summ, low_bead_summ, high_agg_bead_summ)
 
   summ_spec$plate_id <- toupper(summ_spec$plate_id)
   plates$plate_id <- toupper(plates$plate_id)
@@ -377,19 +552,218 @@ get_bg_color <- function(pctlin) {
   colors[ceiling(norm_val * 99) + 1]
 }
 
-preprocess_plate_data <- function(current_user, selected_study){
-  plates <- check_plate(selected_study)
+preprocess_plate_data <- function(conn, current_user, selected_study){
+  plates <- check_plate(conn = conn, selected_study = selected_study)
   cat("before load specimens\n")
-  loaded_data <- load_specimens(current_user, selected_study)
+  loaded_data <- load_specimens(conn, current_user, selected_study)
+  #return(list(plates, standard_data, blank_data, sample_data, control_data, standard_fit, stdcurve_undiluted_conc))
   cat("after loading specimens\n")
-  standard_data <- as.data.frame(loaded_data[[1]])
-  blank_data <- as.data.frame(loaded_data[[2]])
-  control_data <- as.data.frame(loaded_data[[3]])
+  standard_data <- as.data.frame(loaded_data[[2]]) # shift it up 1 index
+  blank_data <- as.data.frame(loaded_data[[3]])
   active_samples <- as.data.frame(loaded_data[[4]])
+  control_data <- as.data.frame(loaded_data[[5]])
+  standard_fit_data <- as.data.frame(loaded_data[[6]])
+
+  low_bead_data <- active_samples[active_samples$lowbeadn == "LowBeadN",]
+  high_agg_bead_data <- active_samples[active_samples$highbeadagg == "PctAggBeads",]
   cat("before make summspec\n")
-  summ_spec <- make_summspec(standard_data, blank_data, control_data, active_samples, plates)
+  print(head(standard_data))
+  summ_spec <- make_summspec(standard_data, blank_data, control_data, active_samples, low_bead_data, high_agg_bead_data, plates)
+  summ_spec$specimen_type_order <- case_when(
+    summ_spec$specimen_type == "blank" ~ 1,
+    summ_spec$specimen_type == "control" ~ 2,
+    summ_spec$specimen_type == "standard" ~ 3,
+    summ_spec$specimen_type == "sample" ~ 4,
+    summ_spec$specimen_type == "low_bead_count" ~5,
+    summ_spec$specimen_type == "high_aggregate_beads" ~6,
+
+    TRUE ~ 0
+  )
   cat("after make spec\n")
   count_set <- convert_vars(summ_spec)
   plates$plate <- paste(plates$plate, plates$sample_dilution_factor, sep = "_")
-  return(list(count_set, plates))
+  return(list(count_set, plates, active_samples, summ_spec, standard_fit_data))
 }
+
+## Cohort Overview
+fetch_study_participant_arms <- function(study_accession) {
+  query_participants <- glue::glue_sql("
+SELECT DISTINCT experiment_accession, TRIM(agroup) as agroup , COUNT( DISTINCT patientid) as num_patients
+FROM madi_results.xmap_sample
+WHERE study_accession = {study_accession}
+GROUP BY experiment_accession, TRIM(agroup)
+ORDER BY experiment_accession", .con = conn)
+  paricipant_arms <- dbGetQuery(conn, query_participants)
+  return(paricipant_arms)
+}
+
+plot_study_arm_distribution <- function(patients_arm) {
+  p <- plot_ly(patients_arm, x = ~experiment_accession, y = ~num_patients, color = ~agroup, type = 'bar',
+               #barmode = 'group',
+               text = ~paste0(
+                 "Experiment: ", experiment_accession, "<br>",
+                 "Arm: ", agroup, "<br>",
+                 "Number of Patients: ", num_patients
+               ),
+               hoverinfo = "text") %>%
+    layout(title = "Number of Patients by Experiment and Arm",
+           xaxis = list(title = "Experiment Accession"),
+           yaxis = list(title = "Number of Patients"))
+
+  return(p)
+
+}
+
+# Convert string to CamelCase
+camel_case_converter <- function(x) {
+  # Replace non-alphanumeric characters and capitalize the following letter
+  gsub("(^|[^[:alnum:]])([[:alnum:]])", "\\U\\2", x, perl = TRUE)
+}
+
+
+make_timeperiod_grid <- function(df, x_var, y_var, time_var, count_var, title_var, time_var_order, time_var_palette){
+
+  p <- ggplot(df, aes(x = reorder(get(time_var), -get(time_var_order)), y = get(count_var), fill = reorder(get(time_var), get(time_var_order)))) +
+    geom_bar(stat = "identity", position = position_dodge()) +
+    facet_grid(rows = vars(get(y_var)), cols = vars(get(x_var))) +
+    # geom_text(aes(label = get(count_var)),
+    #           position = position_dodge(width = 0.9),
+    #           hjust = -0.5) +
+    coord_flip() +
+    labs(x = camel_case_converter(y_var), y = camel_case_converter(x_var), fill = camel_case_converter(time_var),
+         title = title_var) +
+    theme_minimal() +
+    theme(legend.position = "bottom",
+          strip.text = element_text(face = "bold"),
+          strip.text.y = element_text(angle = 0, hjust = 0),
+          #axis.title.y= element_text(hjust = 0),
+          axis.text.y =element_blank(),
+          axis.ticks.y = element_blank()) +
+    scale_fill_manual(values = time_var_palette)
+
+  # legend.title = element_text())
+  return(p)
+}
+
+
+make_cv_scatterplot <- function(df, x_var, y_var, facet_var1, facet_var2, color_var, title_var, color_palette) {
+  p <- ggplot(df, aes(x = get(x_var), y = get(y_var), color = get(color_var))) +
+    geom_point(alpha = 0.7) +
+    facet_grid(rows = vars(get(facet_var1)), cols = vars(get(facet_var2))) +
+    labs(
+      x = camel_case_converter(x_var),
+      y = camel_case_converter(y_var),
+      color = camel_case_converter(color_var),
+      title = title_var
+    ) +
+    theme_minimal() +
+    theme(
+      legend.position = "bottom",
+      strip.text = element_text(face = "bold"),
+      strip.text.y = element_text(angle = 0, hjust = 0)
+    ) +
+    scale_color_manual(values = color_palette)
+
+
+  return(p)
+}
+
+
+prep_analyte_fit_summary <- function(summ_spec_in, standard_fit_res) {
+  merged_df <- merge(summ_spec_in,
+                     standard_fit_res[, c("plateid", "antigen", "analyte", "crit")],
+                     by = c("plateid", "antigen", "analyte"),
+                     all.x = TRUE)
+
+  merged_df$crit[is.na(merged_df$crit)] <- "No Model"
+
+  return(merged_df)
+}
+
+
+plot_preped_analyte_fit_summary <- function(preped_data, analyte_selector) {
+  failed_model_count <- preped_data %>%
+    filter(specimen_type == "standard", analyte == analyte_selector, crit == "No Model") %>%
+    distinct(plateid, antigen, analyte) %>%
+    nrow()
+
+  long_df <- preped_data[preped_data$specimen_type == "sample" & preped_data$analyte == analyte_selector,] %>%
+    pivot_longer(
+      cols = c(nlinear, nhighbeadagg, nlowbead, ntooconc, ntoodilut, nabovelod, nbelowlod),
+      names_to = "fit_category",
+      values_to = "count"
+    ) %>%
+    # Define a readable and ordered category
+    mutate(
+      fit_category = factor(fit_category,
+                            levels = c("nlinear", "nhighbeadagg", "nlowbead", "ntooconc", "ntoodilut", "nabovelod", "nbelowlod"),
+                            labels = c("In Linear Range", "High Bead Aggregation", "Low Bead Count",
+                                       "Too Concentrated", "Too Diluted", "Above ULOD", "Below LLOD")
+      )
+    ) %>%
+    mutate(
+      fit_category = if_else(crit == "No Model", "No Model", as.character(fit_category)),
+      count = if_else(fit_category == "No Model", failed_model_count, count),
+      fit_category = factor(fit_category,
+                            levels = c("No Model", "In Linear Range", "High Bead Aggregation",
+                                       "Low Bead Count", "Too Concentrated", "Too Diluted",
+                                       "Above ULOD", "Below LLOD"))
+    )
+
+  long_df_v <- long_df
+
+
+
+
+  plot <- ggplot(long_df, aes(x = plate, y = count, fill = fit_category)) +
+    geom_bar(stat = "identity", color = "black", linewidth = 0.3) +
+    facet_grid(rows = vars(antigen), cols = vars(crit), scales = "free_x", space = "free_x") +
+    scale_fill_manual(values = c(
+      "Below LLOD" = "#be0032",
+      "Low Bead Count" = "#e78ac3",
+      "In Linear Range" = "#6699cc",
+      "High Bead Aggregation" = "#fc8d62",
+      "Above ULOD" = "#313695",
+      "Too Concentrated" = "#ffd92f",
+      "Too Diluted" = "#8da0cb",
+      "No Model" = "black"
+    )) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+          strip.text.y = element_text(angle = 0, hjust = 0),
+          strip.text = element_text(face = "bold")) +
+    labs(
+      x = "Plate",
+      y = "Count",
+      fill = "Dilution Status",
+      title = paste(input$analyte_selector,"- Samples by Plate, Antigen, Model Type, and Dilution Status")
+    )
+
+  return(plot)
+
+}
+
+
+
+# prep_plate_content_summary <- function(summ_spec_df) {
+#   summ_spec_dup <- distinct(summ_spec_df, analyte, antigen, plate, specimen_type, .keep_all = TRUE)
+#
+#   summ_spec_dup$nlowbead <- ifelse(is.na(summ_spec_dup$nlowbead),0,summ_spec_dup$nlowbead)
+#
+#   summ_spec_dup$specimen_type <- ifelse(
+#     summ_spec_dup$nlowbead > 0,
+#     paste0(summ_spec_dup$specimen_type, "_low_bead_count"),
+#     summ_spec_dup$specimen_type
+#   )
+#
+#   summ_spec_dup$nhighbeadagg <- ifelse(is.na(summ_spec_dup$nhighbeadagg),0,summ_spec_dup$nhighbeadagg)
+#
+#   summ_spec_dup$specimen_type <- ifelse(
+#     summ_spec_dup$nhighbeadagg > 0,
+#     paste0(summ_spec_dup$specimen_type, "_high_bead_agg_count"),
+#     summ_spec_dup$specimen_type
+#   )
+#
+#   return(summ_spec_dup)
+# }
+
