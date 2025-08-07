@@ -87,7 +87,7 @@ pull_control <- function(conn, selected_study, current_user, plates){
 pull_samples <- function(conn, selected_study, current_user, plates) {
   select_query <- glue::glue_sql("
       		SELECT DISTINCT xmap_sample.study_accession, experiment_accession, plate_id,
-      		  well, antigen, agroup, timeperiod,
+      		  well, antigen, patientid, agroup, timeperiod,
         		antibody_mfi AS MFI, antibody_au AS AU,
         		dilution AS sample_dilution_factor,
         		CASE
@@ -646,6 +646,41 @@ make_timeperiod_grid <- function(df, x_var, y_var, time_var, count_var, title_va
 }
 
 
+make_timeperiod_grid_stacked <- function(df, x_var, y_var, time_var, count_var,
+                                         title_var, time_var_order, time_var_palette) {
+
+  names(df)[names(df) == "agroup"] <- "arm"
+
+  p <- ggplot(df, aes(
+    x = 1,  # Single bar per facet
+    y = get(count_var),
+    fill = reorder(get(time_var), get(time_var_order))
+  )) +
+    geom_bar(stat = "identity") +
+    facet_grid(rows = vars(get(y_var)), cols = vars(get(x_var))) +
+    geom_hline(yintercept = 0.5, linetype = "dashed", color = "black") +
+    coord_flip() +
+    labs(
+      x = camel_case_converter(y_var),
+      y = "Proportion",
+      fill = camel_case_converter(time_var),
+      title = title_var
+    ) +
+    theme_minimal() +
+    theme(
+      legend.position = "bottom",
+      strip.text = element_text(face = "bold"),
+      strip.text.y = element_text(angle = 0, hjust = 0),
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank()
+    ) +
+    scale_fill_manual(values = time_var_palette)
+
+
+  return(p)
+}
+
+
 make_cv_scatterplot <- function(df, x_var, y_var, facet_var1, facet_var2, color_var, title_var, color_palette) {
   p <- ggplot(df, aes(x = get(x_var), y = get(y_var), color = get(color_var))) +
     geom_point(alpha = 0.7) +
@@ -676,6 +711,11 @@ prep_analyte_fit_summary <- function(summ_spec_in, standard_fit_res) {
                      all.x = TRUE)
 
   merged_df$crit[is.na(merged_df$crit)] <- "No Model"
+
+  # group 5 param and 4 param models together
+  merged_df$crit[merged_df$crit %in% c("nls_5", "drda_5")] <- "5-parameter"
+  merged_df$crit[merged_df$crit %in% c("nls_4", "nlslm_4")] <- "4-parameter"
+  merged_df$crit[merged_df$crit %in% c("nls_exp")] <- "Exponential"
 
   return(merged_df)
 }
@@ -710,12 +750,16 @@ plot_preped_analyte_fit_summary <- function(preped_data, analyte_selector) {
                                        "Above ULOD", "Below LLOD"))
     )
 
-  long_df_v <- long_df
+
+  # filter out fit category of samples
+   long_df <- long_df[!(long_df$fit_category %in% c("High Bead Aggregation", "Low Bead Count")), ]
+   long_df_group <- long_df %>%
+         group_by(plate, antigen, crit) %>%
+         mutate(proportion = count / sum(count)) %>%
+         ungroup()
 
 
-
-
-  plot <- ggplot(long_df, aes(x = plate, y = count, fill = fit_category)) +
+  plot <- ggplot(long_df_group, aes(x = plate, y = proportion, fill = fit_category)) +
     geom_bar(stat = "identity", color = "black", linewidth = 0.3) +
     facet_grid(rows = vars(antigen), cols = vars(crit), scales = "free_x", space = "free_x") +
     scale_fill_manual(values = c(
@@ -734,17 +778,43 @@ plot_preped_analyte_fit_summary <- function(preped_data, analyte_selector) {
           strip.text = element_text(face = "bold")) +
     labs(
       x = "Plate",
-      y = "Count",
-      fill = "Dilution Status",
-      title = paste(input$analyte_selector,"- Samples by Plate, Antigen, Model Type, and Dilution Status")
+      y = "Proportion",
+      fill = "Quality",
+      title = paste(input$analyte_selector,"- Proportion of Samples by Plate, Antigen, Model Type, and Concentration Quality")
     )
 
-  return(plot)
+  return(list(plot, long_df_group))
 
 }
 
+# Produce table with number of samples by analyte, antigen, time period table
+create_timeperiod_table <- function(sample_spec_timeperiod) {
+sample_spec_timeperiod_v1 <- sample_spec_timeperiod[, c("analyte", "antigen", "timeperiod", "n", "timeperiod_order")]
+sample_spec_timeperiod_v1 <- sample_spec_timeperiod_v1[order(sample_spec_timeperiod_v1$timeperiod_order),]
+sample_spec_timeperiod_v1 <- sample_spec_timeperiod_v1[, c("analyte", "antigen", "timeperiod", "n")]
+
+return(sample_spec_timeperiod_v1)
+}
 
 
+prepare_arm_balance_data <- function(sample_specimen, sorted_arms) {
+  long_df_group <- sample_specimen %>%
+      dplyr::distinct(plate, analyte, agroup, patientid) %>%  # ensure 1 row per patient
+       dplyr::group_by(plate, analyte, agroup) %>%
+      dplyr::summarise(patient_count = dplyr::n(), .groups = "drop")
+
+    long_df_group <- long_df_group %>%
+      group_by(plate, analyte) %>%
+       mutate(proportion = patient_count / sum(patient_count),
+              median_proportion = median(proportion)) %>%
+       ungroup()
+
+
+     long_df_group$agroup_order <- match(long_df_group$agroup, sorted_arms)
+
+
+  return(long_df_group)
+}
 # prep_plate_content_summary <- function(summ_spec_df) {
 #   summ_spec_dup <- distinct(summ_spec_df, analyte, antigen, plate, specimen_type, .keep_all = TRUE)
 #

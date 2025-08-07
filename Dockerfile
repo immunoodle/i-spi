@@ -92,6 +92,7 @@ RUN R -e "install.packages(c('httr2', 'jose', 'openssl', 'jsonlite', 'urltools')
 RUN R -e "install.packages(c('strex', 'purrr'))"
 RUN R -e "install.packages('shiny.destroy')"
 RUN R -e "install.packages(c('viridis', 'htmltools'))"
+RUN R -e "install.packages(c('minpack.lm', 'Deriv'))"
 
 
 RUN rm -rf /srv/shiny-server/*

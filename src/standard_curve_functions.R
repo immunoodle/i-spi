@@ -1416,6 +1416,473 @@ compute_nls_4 <- function(dat, bkg, is_log_mfi_axis) {
   }
 }
 
+
+## Function to compute power four parameter function
+compute_power_4 <- function(dat, bkg, is_log_mfi_axis) {
+cat("\ncalculating power four param\n")
+  start_vals <- list(
+    l_asy = min(dat$mfi),       # lower asymptote
+    r_asy = max(dat$mfi),       # upper asymptote
+    xmid = median(dat$log_dilution), # inflection point
+    scal = 1                # slope (Hill slope)
+  )
+
+  #start_vals_v <- start_vals
+  dat <- dat[, !duplicated(names(dat))]
+  # dat_v <<- dat
+  # bkg_v <<- bkg
+  # is_log_mfi_axis_v <<- is_log_mfi_axis
+  # Y4 <- function(x,a,b,c,d) {
+  #   q <- exp((x - c) / b)
+  #   d + (a - d) / (1 + q)
+  # }
+
+  # Fit model with nlsLM (more robust than nls)
+  fit <- tryCatch({
+    minpack.lm::nlsLM(mfi ~ r_asy + (l_asy - r_asy) / (1 + (log_dilution / xmid)^scal),
+                      data = dat,
+                      start = start_vals,
+                      control = nls.lm.control(maxiter = 1000)) },
+    error = function(e) {
+      message("Error in nlsLM: ", e$message)
+      NULL  # Return NULL on error
+    })
+  # fit <- minpack.lm::nlsLM(mfi ~ r_asy + (l_asy - r_asy) / (1 + (log_dilution / xmid)^scal),
+  #              data = dat,
+  #              start = start_vals,
+  #              control = nls.lm.control(maxiter = 1000))
+#fit_v <<- fit
+    if (!is.null(fit)) {
+     glance_fit <-  nlsLM_glance(model = fit, data = dat, bkg = bkg, is_log_mfi_axis = is_log_mfi_axis)
+     fit_tab <- tidy.nlsLM(model = fit, dat = dat)
+
+
+    # glance_fit_v <<- glance_fit
+     # create copy to put into inflection point code
+     glance_fit_2 <- glance_fit
+     names(glance_fit_2)[names(glance_fit_2) == "l_asy"] <- "a"
+     names(glance_fit_2)[names(glance_fit_2) == "scale"] <- "b"
+     names(glance_fit_2)[names(glance_fit_2) == "x_mid"] <- "c"
+     names(glance_fit_2)[names(glance_fit_2) == "r_asy"] <- "d"
+
+     # obtain limits of detection and limits of quantification
+     inflect_glance <- inflection_point(glance_fit_2)
+     bendlower <- inflect_glance$y_inflectionL_3
+     bendupper <- inflect_glance$y_inflectionU_3
+
+     if (is_log_mfi_axis) {
+       bendlower <- round(bendlower,3)
+       bendupper <- round(bendupper,3)
+     } else {
+       bendlower <- round(bendlower,0)
+       bendupper <- round(bendupper,0)
+     }
+
+     uloq <- inflect_glance$x_inflectionU_3
+     lloq <- inflect_glance$x_inflectionL_3
+
+
+    # predictions <-  predictNLS(fit, newdata = data.frame(log_dilution = min(dat$log_dilution) * 1.1),
+    #             interval = "confidence")
+    # ulod <-  predictions$summary$`Prop.2.5%`
+    # llod <- predictions$summary$`Prop.97.5%`
+
+     llod_pred <- predictNLS(fit, newdata = data.frame(log_dilution = min(dat$log_dilution) * 1.1),
+                             interval = "confidence")
+     if (is_log_mfi_axis) {
+       llod <- round(llod_pred$summary$`Prop.97.5%`, 3)
+     } else {
+       llod <- round(llod_pred$summary$`Prop.97.5%`, 0)
+     }
+
+
+     # ULOD — predict at the highest dilution
+     ulod_pred <- predictNLS(fit, newdata = data.frame(log_dilution = max(dat$log_dilution) * 0.9),
+                             interval = "confidence")
+     if (is_log_mfi_axis) {
+       ulod <- round(ulod_pred$summary$`Prop.2.5%`,3)
+     } else {
+       ulod <- round(ulod_pred$summary$`Prop.2.5%`,0)
+     }
+
+
+     glance_fit$bendlower <- bendlower
+     glance_fit$bendupper <- bendupper
+     glance_fit$lloq <- lloq
+     glance_fit$uloq <- uloq
+     glance_fit$ulod <- ulod
+     glance_fit$llod <- llod
+     glance_fit$loq_method <- inflect_glance$used
+
+
+     final_list <- list(fit_tab, glance_fit, fit)
+
+     return(final_list)
+    } else {
+      return(NULL)
+    }
+}
+
+nlsLM_glance <- function(model, data, bkg, is_log_mfi_axis) {
+
+  s <- summary(model)
+
+  # Extract parameter estimates
+  coefs <- coef(s)
+
+  # Named vector to data frame row
+  coef_df <- as.data.frame(t(coefs[, "Estimate"]))
+ # names(coef_df) <- paste0("param_", names(coef_df))
+
+  # Residual stats
+  sigma <- s$sigma
+  df_resid <- s$df[2]
+
+  # Compute R-squared
+  response <- data$mfi
+  rss <- sum(residuals(model)^2)
+  tss <- sum((response - mean(response))^2)
+  r_squared <- 1 - rss / tss
+
+  # AIC and BIC
+  aic <- AIC(model)
+  bic <- BIC(model)
+  logLik_val <- as.numeric(logLik(model))
+  df  <- attr(logLik(model), "df")
+  converged <- model$convInfo$isConv
+  iter <- model$convInfo$finIter
+
+  crit <- "nlslm_4"
+
+  n_obs <- length(residuals(model))
+
+  # calculate mse
+  mse <- mean(resid(model)^2, na.rm = T)
+  # mean of observed mfi
+  mean_obs_mfi<- mean(data$mfi, na.rm = TRUE)
+  # coefficient of variation.
+  cv <- (sqrt(mse) / mean_obs_mfi) * 100
+
+
+  # Combine everything
+ glance_df <-  data.frame(
+   study_accession = unique(data$study_accession),
+   experiment_accession = unique(data$experiment_accession),
+   plateid = unique(data$plateid),
+   antigen = unique(data$antigen),
+    coef_df,
+    sigma = sigma,
+    dfresidual = df_resid,
+    r_squared = r_squared,
+    aic = aic,
+    bic = bic,
+    loglik = logLik_val,
+    df = df,
+    mse = mse,
+    cv = cv,
+    nobs = n_obs,
+    converged = converged,
+    iter = iter,
+    source = unique(data$source),
+    crit = crit,
+    bkg_method =  bkg,
+    is_log_mfi_axis = is_log_mfi_axis,
+    formula = " Y ~ d + (a - d) / (1 + (x / c)^b)"
+  )
+
+ names(glance_df)[names(glance_df) == "scal"] <- "scale"
+ names(glance_df)[names(glance_df) == "xmid"] <- "x_mid"
+
+ return(glance_df)
+}
+
+tidy.nlsLM <- function(model, dat) {
+  s <- summary(model)
+  out <- as.data.frame(s$coefficients)
+  tidy_df <- tibble::tibble(
+    term = rownames(out),
+    estimate = out[, "Estimate"],
+    std.error = out[, "Std. Error"],
+    statistic = out[, "t value"],
+    p.value = out[, "Pr(>|t|)"]
+  )
+
+  tidy_df$signif <- stars.pval(c(as.numeric(tidy_df$p.value)))
+  tidy_df$study_accession <- unique(dat$study_accession)
+  tidy_df$experiment_accession <- unique(dat$experiment_accession)
+  tidy_df$antigen <- unique(dat$antigen)
+  tidy_df$plateid <- unique(dat$plateid)
+  tidy_df$source <- unique(dat$source)
+
+
+  # rename standard error column And p-value column
+  names(tidy_df)[names(tidy_df) == "std.error"] <- "std_error"
+  names(tidy_df)[names(tidy_df) == "p.value"] <- "p_value"
+
+  return(tidy_df)
+}
+
+## Helper functions to get derivatives for Bend limits and quantification
+# functional form to get outcome
+Ylm4 <- function(log_dilution,l_asy,scal,xmid,r_asy) {
+  r_asy + (l_asy - r_asy) / (1 + (log_dilution / xmid)^scal)
+}
+
+dYlm4 <- Deriv(Ylm4, "log_dilution", nderiv = 1)
+d2Ylm4 <- Deriv(Ylm4, "log_dilution", nderiv = 2)
+d3Ylm4 <- Deriv(Ylm4, "log_dilution", nderiv = 3)
+
+get_functions <- function(crit) {
+  switch(crit,
+         "nlslm_4" = list(
+           Y = Ylm4,
+           dY = dYlm4,
+           d2Y = d2Ylm4
+         ),
+
+         "nls_4" = list(
+           Y = Y4,
+           dY = Y41,
+           d2Y = Y42
+         ),
+
+         "drda_5" = list(
+           Y = Y5,
+           dY = Y51,
+           d2Y = Y52
+         ),
+
+         "nls_5" = list(
+           Y = Y5,
+           dY = Y51,
+           d2Y = Y52
+         ),
+
+         "nls_exp" = list(
+           Y = Ye,
+           dY = Ye1,
+           d2Y = Ye2
+         ),
+
+         NULL
+  )
+}
+
+
+# linear root estimation between two points
+get_root <- function(xvec, yvec, index) {
+  x0 <- xvec[index]
+  x1 <- xvec[index + 1]
+  y0 <- yvec[index]
+  y1 <- yvec[index + 1]
+  x0 - y0 * (x1 - x0) / (y1 - y0)
+}
+
+# ULOQ = x_inflectionL_3
+# UpperBendLine = y_inflectionL_3
+# LLOQ = x_inflectionU_3
+# LowerBendLine = y_inflectionU_3
+# PASS in glance_fit
+inflection_point <- function(data, n_points = 1000, x_min = -6, x_max = -0.0001) {
+  results <- data.frame()
+  if (nrow(data) < 1) {
+    return(data)
+  }
+
+  x_seq <- seq(x_min, x_max, length.out = n_points)
+
+  for(i in seq_len(nrow(data))) {
+    row <- data[i, ]
+    crit <- as.character(row$crit)
+    fcts <- get_functions(crit)
+    if (is.null(fcts)) next
+
+    # Parameters (some models may not have g)
+    a <- row$a; b <- row$b; cpar <- row$c; d <- row$d
+    g <- if ("g" %in% names(row)) row$g else NA
+
+    # Compute derivatives and original function values across x_seq
+    if (crit %in% c("nlslm_4")) {
+      dy_values <- fcts$dY(x_seq, a, b, cpar, d)
+      d2y_values <- fcts$d2Y(x_seq, a, b, cpar, d)
+      y_values <- fcts$Y(x_seq, a, b, cpar, d)
+
+      # compute third derivative using Deriv for this model
+      d3Y_fn <- Deriv(fcts$Y, "log_dilution", nderiv = 3)
+      d3y_values <- d3Y_fn(x_seq, a, b, cpar, d)
+
+    } else if (crit == "nls_4") {
+      dy_values <- fcts$dY(x_seq, a, b, cpar, d)
+      d2y_values <- fcts$d2Y(x_seq, a, b, cpar, d)
+      y_values <- fcts$Y(x_seq, a, b, cpar, d)
+
+      # use your supplied functions for third derivative Y43
+      d3y_values <- Y43(x_seq, a, b, cpar, d)
+
+    } else if (crit %in% c("nls_5", "drda_5")) {
+      dy_values <- fcts$dY(x_seq, a, b, cpar, d, g)
+      d2y_values <- fcts$d2Y(x_seq, a, b, cpar, d, g)
+      y_values <- fcts$Y(x_seq, a, b, cpar, d, g)
+
+      # Third derivative: your Y53 function
+      d3y_values <- Y53(x_seq, a, b, cpar, d, g)
+
+    } else if (crit == "nls_exp") {
+      dy_values <- fcts$dY(x_seq, a, b, cpar)
+      d2y_values <- fcts$d2Y(x_seq, a, b, cpar)
+      y_values <- fcts$Y(x_seq, a, b, cpar)
+
+      # Third derivative using your Ye3
+      d3y_values <- Ye3(x_seq, a, b, cpar)
+
+    } else {
+      next
+    }
+
+    ## 1. Find zero crossings in the second derivative (d2y)
+    signs_2 <- sign(d2y_values)
+    sign_change_2 <- diff(signs_2)
+    zero_crossing_indices_2 <- which(sign_change_2 != 0)
+    roots_2 <- if (length(zero_crossing_indices_2) > 0) {
+      sapply(zero_crossing_indices_2, function(idx) get_root(x_seq, d2y_values, idx))
+    } else NA
+
+    ## 2. Find zero crossings in the third derivative (d3y)
+    signs_3 <- sign(d3y_values)
+    sign_change_3 <- diff(signs_3)
+    zero_crossing_indices_3 <- which(sign_change_3 != 0)
+    roots_3 <- if (length(zero_crossing_indices_3) > 0) {
+      sapply(zero_crossing_indices_3, function(idx) get_root(x_seq, d3y_values, idx))
+    } else NA
+
+    # 3. Pick inflection point candidate from d2y roots
+    inflect_x_2 <- NA_real_
+    inflect_y_2 <- NA_real_
+    if (length(zero_crossing_indices_2) > 0) {
+      # Select the root closest to peak first derivative (max slope)
+      max_dy_pos <- x_seq[which.max(dy_values)]
+      diffs_2 <- abs(roots_2 - max_dy_pos)
+      idx_2 <- which.min(diffs_2)
+      inflect_x_2 <- roots_2[idx_2]
+      inflect_y_2 <- approx(x_seq, y_values, xout = inflect_x_2)$y
+    }
+
+    # 4. Pick inflection point candidate from d3y roots (peak/valley of second derivative)
+    inflectmax_x_3 <- NA_real_
+    inflectmax_y_3 <- NA_real_
+    inflectmin_x_3 <- NA_real_
+    inflectmin_y_3 <- NA_real_
+    if (length(zero_crossing_indices_3) > 0) {
+      # Use root closest to x position of max of second derivative value (peak d2y)
+      max_d2y_pos <- x_seq[which.max(d2y_values)]
+      diffs_3 <- abs(roots_3 - max_d2y_pos)
+      idx_3 <- which.min(diffs_3)
+      inflectmax_x_3 <- roots_3[idx_3]
+      # Evaluate y-value at this x
+      inflectmax_y_3 <- approx(x_seq, y_values, xout = inflectmax_x_3)$y
+
+      # Use root closest to x position of min of second derivative value (valley d2y)
+      min_d2y_pos <- x_seq[which.min(d2y_values)]
+      diffs_3 <- abs(roots_3 - min_d2y_pos)
+      idx_3 <- which.min(diffs_3)
+      inflectmin_x_3 <- roots_3[idx_3]
+      # Evaluate y-value at this x
+      inflectmin_y_3 <- approx(x_seq, y_values, xout = inflectmin_x_3)$y
+    }
+
+    # 5. Peak of first derivative (max slope)
+    max_dy_index <- which.max(dy_values)
+    peak_dy_x <- x_seq[max_dy_index]
+    peak_dy_y <- y_values[max_dy_index]
+
+    # 6. Decide which inflection point to return with priority:
+    #   Prefer zero crossing of second derivative (usual inflection),
+    #   else zero crossing of third derivative (peak/valley of second derivative),
+    #   else fallback to slope peak
+    # ULOQ = x_inflectionL_3
+    # UpperBendLine = y_inflectionL_3
+    # LLOQ = x_inflectionU_3
+    # LowerBendLine = y_inflectionU_3
+    # USE
+    # geom_vline(data = inflect_points[inflect_points$analyte==analyte_selected & inflect_points$plate==plate_selected, ], aes(xintercept = exp10(x_inflection)*undiluted_concentration), color = "orangered", size = 1.2) +
+    #   geom_hline(data = inflect_points[inflect_points$analyte==analyte_selected & inflect_points$plate==plate_selected, ], aes(yintercept = exp10(y_inflection)), color = "orangered", size = 1.2) +
+    #   geom_rect(data = inflect_points[inflect_points$analyte==analyte_selected & inflect_points$plate==plate_selected, ], aes(
+    #     xmin = exp10(x_inflectionL_3) * undiluted_concentration,
+    #     xmax = exp10(x_inflectionU_3) * undiluted_concentration,
+    #     ymin = exp10(y_inflectionL_3),
+    #     ymax = exp10(y_inflectionU_3)
+
+    if (!is.na(inflect_x_2)) {
+      chosen <- "inflection_d2_zero"
+      result_row <- data.frame(
+        crit = crit,
+        index = i,
+        x_inflection = inflect_x_2,
+        y_inflection = inflect_y_2,
+        x_inflectionL_3 = inflectmax_x_3,
+        y_inflectionL_3 = inflectmax_y_3,
+        x_inflectionU_3 = inflectmin_x_3,
+        y_inflectionU_3 = inflectmin_y_3,
+        x_peak_dy = peak_dy_x,
+        y_peak_dy = peak_dy_y,
+        used = chosen
+      )
+    } else if (!is.na(inflect_x_3)) {
+      chosen <- "inflection_d3_zero"
+      result_row <- data.frame(
+        crit = crit,
+        index = i,
+        x_inflection = NA_real_,
+        y_inflection = NA_real_,
+        x_inflectionL_3 = inflectmax_x_3,
+        y_inflectionL_3 = inflectmax_y_3,
+        x_inflectionU_3 = inflectmin_x_3,
+        y_inflectionU_3 = inflectmin_y_3,
+        x_peak_dy = peak_dy_x,
+        y_peak_dy = peak_dy_y,
+        used = chosen
+      )
+    } else {
+      chosen <- "peak_dy"
+      result_row <- data.frame(
+        crit = crit,
+        index = i,
+        x_inflection = NA_real_,
+        y_inflection = NA_real_,
+        x_inflectionL_3 = NA_real_,
+        y_inflectionL_3 = NA_real_,
+        x_inflectionU_3 = NA_real_,
+        y_inflectionU_3 = NA_real_,
+        x_peak_dy = peak_dy_x,
+        y_peak_dy = peak_dy_y,
+        used = chosen
+      )
+    }
+
+    results <- rbind(results, result_row)
+  }
+
+  # Add temporary index to merge correctly
+  data$id_tmp <- seq_len(nrow(data))
+  results$id_tmp <- data$id_tmp[results$index]
+  out <- left_join(data, results, by = c("crit", "id_tmp"))
+  out$id_tmp <- NULL
+
+  return(out)
+}
+
+predict_log10_dilution_fraction <- function(log10_mfi_obs, log_dilution_vals, predicted_log10_mfi_vals) {
+  # Make sure inputs have at least 2 points and no NA
+  valid_idx <- which(!is.na(log_dilution_vals) & !is.na(predicted_log10_mfi_vals))
+  if(length(valid_idx) < 2) return(NA_real_)
+
+  approx_x <- approx(x = predicted_log10_mfi_vals[valid_idx],
+                     y = log_dilution_vals[valid_idx],
+                     xout = log10_mfi_obs,
+                     rule = 2)$y
+  return(approx_x)
+}
+
 # Compute 5/4 Parameter models
 compute_robust_curves_5_param <- function(dat, antigen, plate = "all", study_accession, experiment_accession, source, bkg, is_log_mfi_axis, g_value = 1){
   #dat_view <<- dat
@@ -1529,12 +1996,18 @@ compute_robust_curves_5_param <- function(dat, antigen, plate = "all", study_acc
         if (!is.null(mod_nls_4)) {
           return(mod_nls_4)
         } else {
+          cat("Fitting 4 paramater power function")
+          mod_power_4 <- compute_power_4(dat, bkg, is_log_mfi_axis)
+          if (!is.null(mod_power_4)) {
+            return(mod_power_4)
+          } else {
           cat("Fitting nls exponential")
           mod_exponential <- compute_exponential_fit(dat, bkg, is_log_mfi_axis)
           if (!is.null(mod_exponential)) {
             return(mod_exponential)
           }  else {
             return(NULL)
+          }
           } # end else exp3
         } # end else nls 4
       } #end else drda 5
@@ -1961,6 +2434,7 @@ obtain_fitted_curve <- function() {
 
 # Main Plotting code. Handles different model fits and fitted values and AUs.
 plot_curve_plotly <- function(model_list, dat, source_filter, antigen, plate, sample_data_au, is_log_mfi_axis){
+
   # Calculate dilution factor to display in dilution series trace.
   dat$dilution_factor_denominator <- exp10(dat$log_dilution)
   frac_parts <- frac_mat(dat$dilution_factor_denominator)
@@ -2063,6 +2537,24 @@ plot_curve_plotly <- function(model_list, dat, source_filter, antigen, plate, sa
       # Calculate the fitted y values
       fitted_y <- five_param_logistic(x_values, l_asy, r_asy, xmid, scal, g)
       model_type <-"4-Parameter"
+    } else if (model_list[[2]]$crit == "nlslm_4") {
+      l_asy <- as.numeric(model_list[[2]]$l_asy)
+      r_asy <- as.numeric(model_list[[2]]$r_asy)
+      xmid <- as.numeric(model_list[[2]]$x_mid)
+      scal <- as.numeric(model_list[[2]]$scale)
+      bend_lower <- as.numeric(model_list[[2]]$bendlower)
+      bend_upper <- as.numeric(model_list[[2]]$bendupper)
+      ulod <- as.numeric(model_list[[2]]$ulod)
+      llod <- as.numeric(model_list[[2]]$llod)
+      # limit of quantification
+      lloq <- as.numeric(model_list[[2]]$lloq)
+      uloq <- as.numeric(model_list[[2]]$uloq)
+
+      g <- 1
+      # Calculate the fitted y values
+      fitted_y <- Ylm4(x_values,l_asy,scal,xmid,r_asy)
+      model_type <- "4-Paramater Power"
+
     } else if (model_list[[2]]$crit == "nls_exp") {
       cat("In plot: Fitting nls exponential model")
       l_asy <- as.numeric(model_list[[2]]$l_asy)
@@ -2464,7 +2956,7 @@ compute_gate_class <- function(model_list, sample_data) {
 ### Functions for Back-substitution Logic
 
 # 4 Parameter function solve for log dilution
-four_param_logistic_log_dilution <- function(sample_data, l_asy, r_asy, xmid, scal, min_log_dilution, max_log_dilution, stype_val) {
+four_param_logistic_log_dilution <- function(sample_data, l_asy, r_asy, xmid, scal, min_log_dilution, max_log_dilution, stype_val, isPower) {
   cat("Min Log dilution in 4 parameter")
   print(min_log_dilution)
 
@@ -2509,7 +3001,37 @@ four_param_logistic_log_dilution <- function(sample_data, l_asy, r_asy, xmid, sc
     dilution_mfi_df$antibody_au <- NA_real_
   }
 
-  dilution_mfi_df[dilution_mfi_df$au_prep == 1,]$antibody_au <- xmid - scal * log(((r_asy - l_asy) / (dilution_mfi_df[dilution_mfi_df$au_prep == 1,]$antibody_mfi - l_asy)) - 1)
+  if (isPower) {
+    cat("4 param power func")
+    # range_width <- 4 * abs(scal)
+    # new_min <- max(min_log_dilution, xmid - range_width)
+    # new_max <- min(max_log_dilution, xmid + range_width)
+
+    log_dilution_vals <- seq(min_log_dilution, max_log_dilution, length.out = 500)
+    predicted_mfi <- Ylm4(log_dilution_vals, l_asy, scal, xmid, r_asy)
+    predicted_mfi <- predicted_mfi
+
+    dilution_mfi_df <- dilution_mfi_df
+
+    idx_au_prep <- which(dilution_mfi_df$au_prep == 1)
+
+    # Extract observed MFI values only for these rows
+    observed_mfi_subset <- dilution_mfi_df$antibody_mfi[idx_au_prep]
+
+    predicted_au_subset <- sapply(observed_mfi_subset, function(mfi) {
+      predict_log10_dilution_fraction(mfi, log_dilution_vals, predicted_mfi)
+    })
+
+    dilution_mfi_df$antibody_au[idx_au_prep] <- predicted_au_subset
+
+
+
+
+
+   # dilution_mfi_df[dilution_mfi_df$au_prep == 1,]$antibody_au <-  xmid * (((l_asy - r_asy) / (dilution_mfi_df[dilution_mfi_df$au_prep == 1,]$antibody_mfi - r_asy) - 1)^(1 / scal))
+  } else {
+    dilution_mfi_df[dilution_mfi_df$au_prep == 1,]$antibody_au <- xmid - scal * log(((r_asy - l_asy) / (dilution_mfi_df[dilution_mfi_df$au_prep == 1,]$antibody_mfi - l_asy)) - 1)
+  }
 
   dilution_mfi_df$antibody_au <- ifelse(dilution_mfi_df$au_prep == 1,
                                         dilution_mfi_df$antibody_au,
@@ -2759,8 +3281,8 @@ backsub_true_dilution_sample <- function(fitted_model, sample_data, dat){
  # fitted_model_v <<- fitted_model
   cat("Before if else blocks")
   print(fitted_model[[2]]$crit)
-  if (fitted_model[[2]]$crit == "nls_4") {
-    cat("in nls 4 ")
+  if (fitted_model[[2]]$crit == "nls_4" || fitted_model[[2]]$crit == "nlslm_4") {
+    cat("in nls4/ nlslm_4 ")
     parameter_table <- as.data.frame(summary(fitted_model[[3]])$coefficients)
     parameter_table$term <- rownames(parameter_table) # 4
     parameter_table <- parameter_table[, c("term", "Estimate")]
@@ -2800,16 +3322,33 @@ backsub_true_dilution_sample <- function(fitted_model, sample_data, dat){
   cat("\n std dat in back function\n")
   print(std_dat)
   if (n_terms == 4) {
+    # crit <<- fitted_model[[2]]$crit
+    # parameter_table_v <<- parameter_table
+    # sample_data_v <<- sample_data
+    # std_dat_v <<- std_dat
+    # min_log_dilution <<- min_log_dilution
+    # max_log_dilution <<- max_log_dilution
+
     l_asy_est <- parameter_table$Estimate[parameter_table$term == "l_asy"]
     r_asy_est <- parameter_table$Estimate[parameter_table$term == "r_asy"]
     xmid_est <- parameter_table$Estimate[parameter_table$term == "xmid"]
     scal_est <- parameter_table$Estimate[parameter_table$term == "scal"]
 
-    log_dilution <- four_param_logistic_log_dilution(sample_data, l_asy_est, r_asy_est, xmid_est, scal_est, min_log_dilution, max_log_dilution, "sample")
+    if (fitted_model[[2]]$crit == "nls_4") {
+      log_dilution <- four_param_logistic_log_dilution(sample_data, l_asy_est, r_asy_est, xmid_est, scal_est, min_log_dilution, max_log_dilution, "sample", isPower = F)
 
-    log_dilution_std <- four_param_logistic_log_dilution(std_dat, l_asy_est, r_asy_est, xmid_est, scal_est, min_log_dilution, max_log_dilution, "standard")
+      log_dilution_std <- four_param_logistic_log_dilution(std_dat, l_asy_est, r_asy_est, xmid_est, scal_est, min_log_dilution, max_log_dilution, "standard", isPower = F)
 
-    log_dilution_std$predicted_mfi <- fitted_model[[3]]$fitted.values
+      log_dilution_std$predicted_mfi <- fitted_model[[3]]$fitted.values
+    } else {
+      log_dilution <- four_param_logistic_log_dilution(sample_data, l_asy_est, r_asy_est, xmid_est, scal_est, min_log_dilution, max_log_dilution, "sample", isPower = T)
+
+      log_dilution_std <- four_param_logistic_log_dilution(std_dat, l_asy_est, r_asy_est, xmid_est, scal_est, min_log_dilution, max_log_dilution, "standard", isPower = T)
+
+      cat("before adding predicted mfi")
+      log_dilution_std$predicted_mfi <-  as.numeric(fitted_model[[3]]$m$fitted())
+      cat("after adding predicted mfi")
+    }
   } else if (n_terms == 3) {
     cat("3 terms")
     scal_est <- parameter_table$estimate[parameter_table$term == "scal"]
@@ -2862,6 +3401,8 @@ backsub_true_dilution_sample <- function(fitted_model, sample_data, dat){
   }
 
 
+
+
   names(dat)[names(dat) == "dilution_factor"] <- "dilution_fraction"
   #dat_v <<- dat
   #log_dilution_std_v <- log_dilution_std
@@ -2870,9 +3411,10 @@ backsub_true_dilution_sample <- function(fitted_model, sample_data, dat){
 
   log_dilution_std <- merge(log_dilution_std[, !(names(log_dilution_std) %in% c("xmap_sample_id", "subject_accession"))], dat[,c("sampleid", "source", "dilution_fraction")], by = c("sampleid"), all.x = TRUE)
 
-  log_dilution_std <- log_dilution_std
-  log_dilution <- log_dilution
-  log_dilution_v <- log_dilution
+  # log_dilution_std <<- log_dilution_std
+  # log_dilution <<- log_dilution
+  # log_dilution_v <<- log_dilution
+  # fitted_model <<- fitted_model
 
   log_dilution <- log_dilution[!is.na(log_dilution$antibody_au), ]
   log_dilution$antibody_au_se <- as.numeric(log_dilution$antibody_au_se)
@@ -2886,7 +3428,7 @@ backsub_true_dilution_sample <- function(fitted_model, sample_data, dat){
 
   # log_dilution_v <<- log_dilution
 
-  current_antigen <- unique(log_dilution_v$antigen)
+  current_antigen <- unique(log_dilution$antigen)
   current_study <- as.character(fitted_model[[2]]$study_accession)
   antigen_standard_curve_concentration <- obtain_standard_curve_concentration(study_accession = current_study, antigen = current_antigen)
 
@@ -2901,6 +3443,11 @@ backsub_true_dilution_sample <- function(fitted_model, sample_data, dat){
   # Calculate the scaled distance of MFI to linear center
   log_dilution$quality_score <- scale(log_dilution$antibody_mfi - as.numeric(fitted_model[[2]]$linear_center))
 
+  # log_dilution_std <<- log_dilution_std
+  # log_dilution_v <<- log_dilution_std
+  # crit <<- fitted_model[[2]]$crit
+
+cat("\nat end of backsub\n")
   return(list(log_dilution, log_dilution_std))
 }
 
