@@ -50,42 +50,32 @@ observeEvent(input$study_level_tabs, {
       tags$h4("Loaded data - % in Quantifiable Region"),
       tabsetPanel(
         tabPanel(
-          "Analyte-Plate by Antigen",
-          uiOutput("antigenSelectorUI"),
-          div(
-            style = "width: 75vw; overflow-x: auto;",
-          plotOutput("plate_legend_plot", height = 60, width = "75vw")),
-          div(
-            style = "width: 75vw; overflow-x: auto;",
-          uiOutput("plate_analyte_table"))
-        ),
-        tabPanel(
-          "Analyte-Antigen",
-          div(
-            style = "width: 75vw; overflow-x: auto;",
-            plotOutput("plate_legend_plotb", height = 60)
-          ),
-          div(
-            style = "width: 75vw; overflow-x: auto;",
-          uiOutput("analyte_antigen_heatmap", width = "75vw")
-          )
-        ),
-        tabPanel(
-          "Samples by Antigen, and Timeperiod",
+          "Samples by Timeperiod",
           plotOutput("analyte_antigen_timeperiod", height = "800px"),
           downloadButton("download_analyte_antigen_plot", "Download Plot"),
           downloadButton("download_analyte_antigen_plot_data", "Download Samples Summarized by Timeperiod"),
+          br(),
+          DTOutput("sample_spec_timeperiod_summary_table")
           #downloadablePlotUI("analyte_antigen_timeperiod"),
                              # downloadtypes = c("png"),
                              # download_hovertext = "Download analyte by antigen and timeperiod plot",
                              # height = "800px",
                              # btn_halign = "left"),
-        ), tabPanel(
-          "Samples by Plate, and Specimen Type",
+        ),
+        tabPanel(
+          "Samples by Arm",
+          plotOutput("arm_balance"),
+          downloadButton("download_arm_balance_plot", "Download Plot"),
+          DTOutput("arm_balance_table"),
+          downloadButton("download_arm_balance_sample", "Download Sample Proportions Across Study Arms, Analyte, and Plate")
+        ),
+        tabPanel(
+          "Blanks, Controls, and Standards",
           br(),
           plotOutput("analyte_plate_specimen", height = "800px"),
           downloadButton("download_analyte_plate_specimen_plot", "Download Plot"),
-          downloadButton("download_analyte_plate_specimen_data", "Downlaod Samples Summarized by Analyte, Plate, and Specimen")
+          downloadButton("download_analyte_plate_specimen_data", "Downlaod Samples Summarized by Analyte, Plate, and Specimen"),
+          DTOutput("sample_spec_plate_summary_table")
         #  plotlyOutput("study_arm_plot", width = "75vw")
           ),
         # tabPanel(
@@ -95,11 +85,34 @@ observeEvent(input$study_level_tabs, {
         #   downloadButton("download_inter_intra_cv_data", "Download Intraplate and Interplate CV Data")
         # ),
         tabPanel(
-          "Samples by Plate, Model Type, and Dilution Status",
+          "Samples by Plate, Model Type, and Concentration Quality",
           uiOutput("analyte_selectorUI"),
           plotOutput("analyte_dilution_assessment", height = "800px"),
           downloadButton("download_plot_dilution_assessment", "Download Plot"),
-          downloadButton("download_plot_dilution_assessment_data", "Download Samples by Plate, Model Type, and Dilution Status")
+          downloadButton("download_plot_dilution_assessment_data", "Download Samples by Plate, Model Type, and Concentration Quality"),
+          DTOutput("proportion_analyte_fit"),
+          downloadButton("download_proportion_dilution_assessment_data", "Download Proportion Summary")
+      ),
+      tabPanel(
+        "Sample Quality by Plate",
+        uiOutput("antigenSelectorUI"),
+        div(
+          style = "width: 75vw; overflow-x: auto;",
+          plotOutput("plate_legend_plot", height = 60, width = "75vw")),
+        div(
+          style = "width: 75vw; overflow-x: auto;",
+          uiOutput("plate_analyte_table"))
+      ),
+      tabPanel(
+        "Overall Sample Quality",
+        div(
+          style = "width: 75vw; overflow-x: auto;",
+          plotOutput("plate_legend_plotb", height = 60)
+        ),
+        div(
+          style = "width: 75vw; overflow-x: auto;",
+          uiOutput("analyte_antigen_heatmap", width = "75vw")
+        )
       )
       )
     ))})
@@ -481,8 +494,6 @@ observeEvent(input$study_level_tabs, {
         ~ index_named_vector[[.x]]
       )
 
-      # sample_spec_timeperiod_v <<- sample_spec_timeperiod
-
       make_timeperiod_grid(df = sample_spec_timeperiod, x_var = "analyte",
                            y_var = "antigen",
                            time_var = "timeperiod",
@@ -491,6 +502,24 @@ observeEvent(input$study_level_tabs, {
                            time_var_order = "timeperiod_order",
                            time_var_palette = microviz_kelly_pallete)
     }
+
+    output$sample_spec_timeperiod_summary_table <- renderDT({
+      req(input$readxMap_study_accession)
+      req(sample_specimen)
+
+      study_configuration <- fetch_study_configuration(study_accession = input$readxMap_study_accession , user = currentuser())
+      timeperiod_order <- strsplit(study_configuration[study_configuration$param_name == "timeperiod_order",]$param_character_value, ",")[[1]]
+      index_named_vector <- setNames(seq_along(timeperiod_order), timeperiod_order)
+      sample_spec_timeperiod <- summarise_by_timeperiod(sample_specimen)
+
+      # Map the number of the timeperiods
+      sample_spec_timeperiod$timeperiod_order <- purrr::map_int(
+        sample_spec_timeperiod$timeperiod,
+        ~ index_named_vector[[.x]]
+      )
+      dt <- create_timeperiod_table(sample_spec_timeperiod)
+      datatable(dt, caption = "Number of Samples by Analyte, Antigen, and Timeperiod", filter = "top")
+    })
 
     output$download_analyte_antigen_plot <- downloadHandler(
       filename = function() {
@@ -545,6 +574,10 @@ observeEvent(input$study_level_tabs, {
     plot_analyte_plate_specimen <- function() {
       req(input$readxMap_study_accession)
       req(summ_spec)
+
+      # Only show the blanks standard and controls
+      summ_spec <- summ_spec[summ_spec$specimen_type %in% c("blank", "standard", "control"), ]
+
       kelly_specimen_palette <-  c("blank" = "#f3c300",
                                    "control" = "#2b3d26",
                                    "standard" = "#a1caf1",
@@ -560,9 +593,18 @@ observeEvent(input$study_level_tabs, {
                            time_var = "specimen_type", count_var = "n",
                            time_var_order = "specimen_type_order",
                            time_var_palette = kelly_specimen_palette,
-                           title_var = "Number of Samples by Analyte, Plate and Specimen Type")
+                           title_var = "Summary of Non-Sample Specimen Types by Plate and Analyte")#"Number of Samples by Analyte, Plate and Specimen Type")
 
     }
+
+    output$sample_spec_plate_summary_table <- renderDT({
+      req(input$readxMap_study_accession)
+      req(summ_spec)
+     # Only show the blanks standard and controls
+      summ_spec <- summ_spec[summ_spec$specimen_type %in% c("blank", "standard", "control"), ]
+      summ_spec <- summ_spec[, c("analyte", "plate", "specimen_type", "n")]
+      datatable(summ_spec, caption = "Number of Non-Sample Specimen Types by Plate and Analyte", filter = "top")
+    })
 
     output$download_analyte_plate_specimen_plot <- downloadHandler(
       filename = function() {
@@ -710,9 +752,22 @@ observeEvent(input$study_level_tabs, {
       req(input$analyte_selector)
 
       #preped_data_v <- preped_data
-      plot_preped_analyte_fit_summary(preped_data =preped_data , analyte_selector = input$analyte_selector)
+     analyte_summary_plot <- plot_preped_analyte_fit_summary(preped_data =preped_data , analyte_selector = input$analyte_selector)
+
+     return(analyte_summary_plot[[1]])
 
     }
+
+    get_analyte_plate_proportion <- function() {
+      req(preped_data)
+      req(input$analyte_selector)
+
+      analyte_summary_plot <- plot_preped_analyte_fit_summary(preped_data = preped_data , analyte_selector = input$analyte_selector)
+
+      return(analyte_summary_plot[[2]])
+
+    }
+
     output$analyte_dilution_assessment <- renderPlot({
       plot_analyte_plate_model()
 
@@ -738,12 +793,135 @@ observeEvent(input$study_level_tabs, {
       },
       content = function(file) {
         req(preped_data)
-
         write.csv(preped_data, file)
 
       }
     )
 
+    output$download_proportion_dilution_assessment_data <- downloadHandler(
+      filename = function() {
+        paste(input$readxMap_study_accession, "analyte_fit_proportion_specimen_data.csv", sep = "_")
+      },
+      content = function(file) {
+
+        proportion_df <- get_analyte_plate_proportion()
+
+        write.csv(proportion_df, file)
+
+      }
+    )
+
+    output$proportion_analyte_fit <- renderDT({
+
+      proportion_df <- get_analyte_plate_proportion()
+      proportion_df <- proportion_df[, c("plate", "antigen", "analyte", "crit", "fit_category", "count", "n", "proportion")]
+      datatable(proportion_df, caption = "Proportion of Samples by Plate, Antigen, Model Type, and Concentration Quality", filter = "top")
+    })
+
+
+
+    plot_arm_balance  <- function() {
+      req(input$readxMap_study_accession)
+      microviz_kelly_pallete <-  c( "#a1caf1","#f38400", "#f3c300","#875692","#be0032","#c2b280","#848482",
+                                   "#008856","#e68fac","#0067a5","#f99379","#604e97", "#f6a600",  "#b3446c" ,
+                                   "#dcd300","#882d17","#8db600", "#654522", "#e25822","#2b3d26","lightgrey")
+
+      study_configuration <- fetch_study_configuration(study_accession = input$readxMap_study_accession , user = currentuser())
+      reference_arm <- strsplit(study_configuration[study_configuration$param_name == "reference_arm",]$param_character_value, ",")[[1]]
+      if (is.null(reference_arm)) {
+        reference_arm <- fetch_study_arms(study_accession =input$readxMap_study_accession)$agroup[1]
+      }
+      all_arms <- fetch_study_arms(study_accession = input$readxMap_study_accession)$agroup
+      other_arms <- all_arms[all_arms != reference_arm]
+
+      sorted_arms <- c(reference_arm, other_arms)
+
+      prepared_arm_data <- prepare_arm_balance_data(sample_specimen, sorted_arms)
+
+     plot <- make_timeperiod_grid_stacked(
+        df = prepared_arm_data,
+        x_var = "analyte",
+        y_var = "plate",
+        time_var = "arm",
+        count_var = "proportion",
+        time_var_order = "agroup_order",
+        time_var_palette = microviz_kelly_pallete,
+        title_var = paste(input$readxMap_study_accession, "- Proportion of Samples by Study Arms, Plate, and Analyte")
+      )
+
+     return(plot)
+    }
+
+    output$arm_balance <- renderPlot({
+      plot_arm_balance()
+
+    })
+
+    output$download_arm_balance_plot <- downloadHandler(
+      filename = function() {
+        paste(input$readxMap_study_accession, "arm_balance.pdf", sep = "_")
+      },
+      content = function(file) {
+        # Save the plot to the specified file
+        ggsave(file, plot = plot_arm_balance(),
+               device = "pdf",
+               width = 20,
+               height = 10,
+               units = "in") # Specify device type
+      }
+    )
+
+    output$arm_balance_table <- renderDT({
+      req(input$readxMap_study_accession)
+
+      study_configuration <- fetch_study_configuration(study_accession = input$readxMap_study_accession , user = currentuser())
+      reference_arm <- strsplit(study_configuration[study_configuration$param_name == "reference_arm",]$param_character_value, ",")[[1]]
+      if (is.null(reference_arm)) {
+        reference_arm <- fetch_study_arms(study_accession =input$readxMap_study_accession)$agroup[1]
+      }
+      all_arms <- fetch_study_arms(study_accession = input$readxMap_study_accession)$agroup
+      other_arms <- all_arms[all_arms != reference_arm]
+
+      sorted_arms <- c(reference_arm, other_arms)
+
+      prepared_arm_data <- prepare_arm_balance_data(sample_specimen, sorted_arms)
+
+      # initial order
+      prepared_arm_data <- prepared_arm_data[order(prepared_arm_data$agroup_order),]
+      prepared_arm_data <- prepared_arm_data[, c("plate", "analyte", "agroup", "proportion")]
+
+     names(prepared_arm_data)[names(prepared_arm_data) == "agroup"] <- "arm"
+
+      datatable(prepared_arm_data, caption = "Sample Proportions Across Study Arms Stratified by Analyte and Plate", filter = "top")
+
+    })
+
+    output$download_arm_balance_sample <- downloadHandler(
+      filename = function() {
+        paste(input$readxMap_study_accession, "analyte_arm_balance_sample_proportion.csv", sep = "_")
+      },
+      content = function(file) {
+        req(input$readxMap_study_accession)
+
+        study_configuration <- fetch_study_configuration(study_accession = input$readxMap_study_accession , user = currentuser())
+        reference_arm <- strsplit(study_configuration[study_configuration$param_name == "reference_arm",]$param_character_value, ",")[[1]]
+        if (is.null(reference_arm)) {
+          reference_arm <- fetch_study_arms(study_accession =input$readxMap_study_accession)$agroup[1]
+        }
+        all_arms <- fetch_study_arms(study_accession = input$readxMap_study_accession)$agroup
+        other_arms <- all_arms[all_arms != reference_arm]
+
+        sorted_arms <- c(reference_arm, other_arms)
+
+        prepared_arm_data <- prepare_arm_balance_data(sample_specimen, sorted_arms)
+
+        # initial order
+        prepared_arm_data <- prepared_arm_data[order(prepared_arm_data$agroup_order),]
+
+        write.csv(prepared_arm_data, file)
+
+      }
+    )
 
     output$study_arm_plot <- renderPlotly({
       req(input$readxMap_study_accession)

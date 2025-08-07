@@ -37,6 +37,8 @@ library(socviz) # round_df function here
 library(magrittr)
 library(car) # for VIF
 library(nlraa)
+library(minpack.lm)
+library(Deriv)
 library(nlstools)
 library(magrittr)
 library(shinyWidgets)
