@@ -1,0 +1,356 @@
+---
+title: "Untitled"
+output: html_document
+date: "2025-08-08"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+source("global.R")
+source("study_overview_functions.R")
+source("standard_curve_functions.R")
+
+```
+
+```{r}
+Ylm4 <- function(x,a,b,c,d) {
+  d + (a - d) / (1 + (x / c)^b)
+}
+
+dYlm4 <- Deriv(Ylm4, "x", nderiv = 1)
+d2Ylm4 <- Deriv(Ylm4, "x", nderiv = 2)
+d3Ylm4 <- Deriv(Ylm4, "x", nderiv = 3)
+
+Y4 <- function(x,a,b,c,d) {
+  d + (a - d) / (1 + exp((x - c) / b))
+}
+Y41 <- Deriv(Y4, "x", nderiv = 1)
+Y42 <- Deriv(Y4, "x", nderiv = 2)
+Y43 <- Deriv(Y4, "x", nderiv = 3)
+
+Ye <- function(x,a,b,c) {
+  a + (b - a) * exp(c * x)
+}
+Ye1 <- Deriv(Ye, "x", nderiv = 1)
+Ye2 <- Deriv(Ye, "x", nderiv = 2)
+Ye3 <- Deriv(Ye, "x", nderiv = 3)
+
+#mfi ~ d + ((a-d)/(1 + exp((x-c)/b))^g
+               
+Y5 <- function(x,a,b,c,d,g) {
+  d + (a-d)/(1 + exp((x-c)/b))^g
+ # a + (d - a) * (1 + g * exp(-b * (x - c)))^(-1/g)
+}
+
+Y51 <- Deriv(Y5, "x", nderiv = 1)
+Y52 <- Deriv(Y5, "x", nderiv = 2)
+Y53 <- Deriv(Y5, "x", nderiv = 3)
+
+# d = drda
+Yd5 <- function(x,a,b,c,d,g) {
+  a + (d - a) * (1 + g * exp(-b * (x - c)))^(-1/g)
+}
+
+Yd51 <- Deriv(Yd5, "x", nderiv = 1)
+Yd52 <- Deriv(Yd5, "x", nderiv = 2)
+Yd53 <- Deriv(Yd5, "x", nderiv = 3)
+
+
+# get function and derivatives based on crit
+get_functions <- function(crit) {
+  switch(crit,
+         "nlslm_4" = list(
+           Y = Ylm4,
+           dY = dYlm4,
+           d2Y = d2Ylm4
+         ),
+
+         "nls_4" = list(
+           Y = Y4,
+           dY = Y41,
+           d2Y = Y42
+         ),
+
+         "drda_5" = list(
+           Y = Yd5,
+           dY = Yd51,
+           d2Y = Yd52
+         ),
+
+         "nls_5" = list(
+           Y = Y5,
+           dY = Y51,
+           d2Y = Y52
+         ),
+
+         "nls_exp" = list(
+           Y = Ye,
+           dY = Ye1,
+           d2Y = Ye2
+         ),
+
+         NULL
+  )
+}
+
+# linear root estimation between two points
+get_root <- function(xvec, yvec, index) {
+  x0 <- xvec[index]
+  x1 <- xvec[index + 1]
+  y0 <- yvec[index]
+  y1 <- yvec[index + 1]
+
+  x0 - y0 * (x1 - x0) / (y1 - y0)
+}
+
+```
+
+```{r}
+conn <- get_db_connection()
+selected_study <- "MADI_01"
+current_user <-  "seamus.owen.stein@dartmouth.edu"
+plates <- check_plate(conn, selected_study = selected_study)
+```
+
+
+
+
+```{r}
+
+# is log_mfi axis for MADI_01 is false
+#blank_option is included
+
+fits <- pull_fits(conn, selected_study = selected_study, current_user = "seamus.owen.stein@dartmouth.edu", plates = plates)
+
+# fits <- fits[fits$crit == "nls_5",]
+# fits <- fits[!is.na(fits$antigen),]
+
+
+inflect_df <- inflection_point(fits, n_points = 1000, x_min = -1000, x_max = -0.0001)
+inflect_df
+```
+
+
+```{r}
+find_xmin_dynamic <- function(fit, x_scan_min = -20, x_scan_max = -0.0001, n_points = 2000) {
+  x_seq <- seq(x_scan_min, x_scan_max, length.out = n_points)
+  
+  # Compute 3rd derivative values at these x points
+  d3_vals <- Y53(x_seq, a = fit$a, b = fit$b, c = fit$c, d = fit$d, g = fit$g)
+  
+  sign_d3 <- sign(d3_vals)
+  zero_crossings <- which(diff(sign_d3) != 0)
+  
+  if(length(zero_crossings) == 0) {
+    # No bend detected, fallback to x_scan_min
+    return(x_scan_min)
+  } else {
+    # Pick leftmost zero crossing as bend start
+    bend_index <- zero_crossings[1]
+    # Return a bit earlier than the bend
+    return(max(x_scan_min, x_seq[bend_index] - 0.1))
+  }
+}
+
+x_min_dy <- find_xmin_dynamic(single_fit)
+```
+
+```{r}
+single_fit <- fits[fits$antigen == "b_austria_18" & fits$plateid == "IgG_plate1_16052024",]
+
+inflect_res <- inflection_point(single_fit, n_points = 2000, x_min = -10, x_max = -0.0001)
+bendlower <- inflect_res$y_inflectionL_3
+     bendupper <- inflect_res$y_inflectionU_3
+
+bendlower
+bendupper
+     uloq <- inflect_res$x_inflectionU_3
+     lloq <- inflect_res$x_inflectionL_3
+     
+     uloq
+     lloq
+```
+
+```{r}
+single_fit <- fits[fits$antigen == "b_austria_18" & fits$plateid == "IgG_plate1_16052024",]
+single_fit
+
+a <- single_fit$a
+b <- single_fit$b
+c <- single_fit$c
+d <- single_fit$d
+g <- single_fit$g
+
+cat (
+  "a = ", a,
+   "b = ",  b,
+  "c = ",c,
+  "d = ", d,
+  "g = ", g)
+  
+#inflection_point(single_fit, n_points = 2000, x_min = -10, x_max = -0.0001)
+```
+
+
+```{r}
+x_seq <- seq(-10, -0.0001, length.out = 1000)
+fx <- Y5(x_seq, a = single_fit$a, b = single_fit$b, c = single_fit$c, d = single_fit$d, g = single_fit$g)
+plot(x_seq, fx, type = "l")
+abline(h = 0, lty = 2)
+```
+
+```{r}
+ x_seq <- seq(-10, -0.0001, length.out = 1000)
+deriv3p <- Y53(x_seq, a = single_fit$a, b = single_fit$b, c = single_fit$c, d = single_fit$d, g = single_fit$g)
+plot(x_seq, deriv3p, type = "l")
+abline(h = 0, lty = 2)
+```
+
+
+
+## other 5
+```{r}
+fits_2 <- pull_fits(conn, selected_study = selected_study, current_user = "seamus.owen.stein@dartmouth.edu", plates = plates)
+fits_2 <- fits_2[fits_2$crit == "drda_5",]
+fits_2 <- fits_2[!is.na(fits_2$antigen),]
+fits_2
+```
+
+
+
+```{r}
+fit_drda <- fits_2[fits_2$antigen == "ipv1_38" &  fits_2$plateid == "IgG_plate1_16052024", ]
+fit_drda
+```
+
+
+```{r}
+x_seq <- seq(-10, -0.0001, length.out = 1000)
+deriv2p <- Yd52(x_seq, a = fit_drda$a, b = fit_drda$b, c = fit_drda$c, d = fit_drda$d, g = fit_drda$g)
+plot(x_seq, deriv2p, type = "l")
+```
+
+```{r}
+x_seq <- seq(-10, -0.0001, length.out = 1000)
+deriv3p <- Yd53(x_seq, a = fit_drda$a, b = fit_drda$b, c = fit_drda$c, d = fit_drda$d, g = fit_drda$g)
+plot(x_seq, deriv3p, type = "l")
+abline(h = 0, lty = 2)
+```
+
+
+```{r}
+fit_drda <- fits_2[fits_2$antigen == "s1_48" &  fits_2$plateid == "IgG_plate1_16052024", ]
+fit_drda
+x_seq <- seq(-10, 20, length.out = 1000)
+deriv3p <- Yd53(x_seq, a = fit_drda$a, b = fit_drda$b, c = fit_drda$c, d = fit_drda$d, g = fit_drda$g)
+plot(x_seq, deriv3p, type = "l")
+abline(h = 0, lty = 2)
+```
+
+```{r}
+inflection_point(fit_drda, n_points = 2000, x_min = -10, x_max = 10)
+
+```
+
+
+
+
+```{r}
+drda_inflect <- inflection_point(fit_drda)
+drda_inflect$y_inflectionL_3
+drda_inflect$y_inflectionU_3
+```
+
+
+### NLS 4
+```{r}
+nls_4_fit <- fits[fits$crit == "nls_4",]
+nls_4_fit <- nls_4_fit[!is.na(nls_4_fit$antigen),]
+nls_4_fit
+```
+
+```{r}
+a_darwin_fit <- nls_4_fit[nls_4_fit$antigen == "a_darwin_14" & nls_4_fit$plateid == "IgG_plate2_160524",]
+
+x_seq <- seq(-10, -0.0001, length.out = 1000)
+fx <- Y4(x_seq, a = a_darwin_fit$a, b = a_darwin_fit$b, c = a_darwin_fit$c, d = a_darwin_fit$d)
+plot(x_seq, fx, type = "l")
+abline(h = 0, lty = 2)
+```
+
+```{r}
+x_seq <- seq(-10, -0.0001, length.out = 1000)
+deriv2p <- Y42(x_seq, a = a_darwin_fit$a, b = a_darwin_fit$b, c = a_darwin_fit$c, d = a_darwin_fit$d)
+plot(x_seq, deriv2p, type = "l")
+```
+
+```{r}
+x_seq <- seq(-10, -0.0001, length.out = 1000)
+deriv3p <- Y43(x_seq, a = a_darwin_fit$a, b = a_darwin_fit$b, c = a_darwin_fit$c, d = a_darwin_fit$d)
+plot(x_seq, deriv3p, type = "l")
+```
+
+
+## Another antigen
+```{r}
+
+guangdong_fit <- fits[fits$antigen == "guangdong_53" & fits$plateid == "IgG_plate1_16052024",]
+guangdong_fit
+
+inflection_point(guangdong_fit, n_points = 2000, x_min = -10, x_max = -0.0001)
+
+x_seq <- seq(-10, -0.0001, length.out = 1000)
+deriv3p <- Y53(x_seq, a = guangdong_fit$a, b = guangdong_fit$b, c = guangdong_fit$c, d = guangdong_fit$d, g = guangdong_fit$g)
+plot(x_seq, deriv3p, type = "l")
+abline(h = 0, lty = 2)
+```
+
+
+
+
+```{r}
+x_min_dynamic <- find_xmin_by_asymptote(params, Y5, single_fit$a, single_fit$c, single_fit$d)
+```
+
+```{r}
+result <- inflection_point(single_fit, n_points = 2000, x_min = x_min_dynamic, x_max = 1)
+```
+
+```{r}
+inflect_df <- inflection_point(fits, n_points = 1000, x_min = -6, x_max = -0.0001)
+
+
+
+#nls_5_models <- inflect_df[inflect_df$crit == "nls_5",]
+```
+
+
+```{r}
+plates_b <- check_plate(conn, selected_study = "BK study")
+pertussis_Yiwei <- pull_fits(conn, selected_study = "BK study", current_user = "seamus.owen.stein@dartmouth.edu", plates = plates_b)
+
+pertussis_Yiwei
+```
+
+```{r}
+query <- "SELECT xmap_standard_fits, study_accession, experiment_accession, plateid, antigen, iter, status, crit, l_asy, r_asy, x_mid, scale, bendlower, bendupper, llod, ulod, loglik, aic, bic, deviance, dfresidual, nobs, rsquare_fit, source, g, mse, cv, lloq, uloq, loq_method, bkg_method, is_log_mfi_axis, linear_center, analyte, formula
+	FROM madi_results.xmap_standard_fits
+	WHERE study_accession = 'BK study';"
+
+BK_fits <- dbGetQuery(conn = conn, query)
+BK_fits_5 <- BK_fits[BK_fits$crit == "nls_5",]
+
+
+names(BK_fits_5)[names(BK_fits_5) == "l_asy"] <- "a"
+names(BK_fits_5)[names(BK_fits_5) == "scale"] <- "b"
+names(BK_fits_5)[names(BK_fits_5) == "x_mid"] <- "c"
+names(BK_fits_5)[names(BK_fits_5) == "r_asy"] <- "d"
+BK_fits_5
+
+ inflection_point(BK_fits_5, n_points = 1000, x_min = -6, x_max = -0.0001)
+```
+
