@@ -214,6 +214,7 @@ standardCurveFittingServer <- function(id, selected_study, selected_experiment, 
       std_curve_data_sc <- calculate_log_dilution(std_curve_data_sc)
       cat("Standard Curve data after calculating log dilutions")
       print(names(std_curve_data_sc))
+      std_curve_data_model_fit(std_curve_data_sc)
 
     }
 
@@ -233,7 +234,7 @@ standardCurveFittingServer <- function(id, selected_study, selected_experiment, 
     ## Load study configuration for the user
     study_configuration <- fetch_study_configuration(study_accession = selected_study() , user = currentuser())
     # Determine if standard curve data is available for study and experiment
-    is_standard_available <<- checkStandardCurves(std_curve_data_sc, selected_study(), selected_experiment())
+    is_standard_available <- checkStandardCurves(std_curve_data_sc, selected_study(), selected_experiment())
     cat("Standard Curve avaliablilty")
     print(is_standard_available)
 
@@ -875,11 +876,13 @@ standardCurveFittingServer <- function(id, selected_study, selected_experiment, 
       observeEvent(input$updateModelFit, {
         #if (input$updateModelFit == 0) return(NULL)
 
+        cat("\nin update model fit\n")
         #req(std_curve_data)
         #req(sample_data)
         req(std_curve_data_model_fit())
         req(sample_data_model_fit())
         req(buffer_data_model_fit())
+        cat("\after req data\n")
         std_curve_data <- std_curve_data_model_fit()
         sample_data <- sample_data_model_fit()
         buffer_data <- buffer_data_model_fit()
@@ -889,6 +892,7 @@ standardCurveFittingServer <- function(id, selected_study, selected_experiment, 
         #req(aggrigate_mfi_dilution())
         #   req(buffer_data)
         req(study_configuration)
+        cat("\after req config\n")
         bkg_method <- study_configuration[study_configuration$param_name == "blank_option",]$param_character_value
         is_log_mfi <- as.logical(toupper(study_configuration[study_configuration$param_name == "is_log_mfi_axis",]$param_boolean_value))
         aggregate_mfi_dilution <- study_configuration[study_configuration$param_name == "mean_mfi",]$param_boolean_value
@@ -896,9 +900,11 @@ standardCurveFittingServer <- function(id, selected_study, selected_experiment, 
         config_source <- study_configuration[study_configuration$param_name == "default_source",]$param_character_value
 
 
+
         reset_cols <- c("gc", "au", "au_se", "gate_class_loq", "gc", "gate_class_linear_region", "in_linear_region", "in_quantifiable_range", "quality_score")
         sample_data_in <- sample_data[,!names(sample_data) %in% reset_cols]
 
+        cat("\nbefore save fit au\n")
         save_fit_au(dat = std_curve_data, sample_data = sample_data_in, selectedExperiment = selected_experiment(),
                     selectedSource = config_source,
                     #plate_list = input$plateSelection, antigen_list_input = input$antigenSelection,
