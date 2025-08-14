@@ -90,19 +90,27 @@ observeEvent(input$study_level_tabs, {
           plotOutput("analyte_dilution_assessment", height = "800px"),
           downloadButton("download_plot_dilution_assessment", "Download Plot"),
           downloadButton("download_plot_dilution_assessment_data", "Download Samples by Plate, Model Type, and Concentration Quality"),
+          hr(style = "border: none; height: 1px; background-color: black; margin: 20px 0;"),
+          fluidRow(
+          column(6, uiOutput("plate_selectorUI")),
+          column(6, uiOutput("plate_id_selectorUI"))),
+          fluidRow(
+            column(6, uiOutput("plateid_selectorUI")),
+            column(6, br(), actionButton("delete_plate", label = "Delete Selected Plate"))),
+          hr(style = "border: none; height: 1px; background-color: black; margin: 20px 0;"),
           DTOutput("proportion_analyte_fit"),
           downloadButton("download_proportion_dilution_assessment_data", "Download Proportion Summary")
       ),
-      tabPanel(
-        "Sample Quality by Plate",
-        uiOutput("antigenSelectorUI"),
-        div(
-          style = "width: 75vw; overflow-x: auto;",
-          plotOutput("plate_legend_plot", height = 60, width = "75vw")),
-        div(
-          style = "width: 75vw; overflow-x: auto;",
-          uiOutput("plate_analyte_table"))
-      ),
+      # tabPanel(
+      #   "Sample Quality by Plate",
+      #   uiOutput("antigenSelectorUI"),
+      #   div(
+      #     style = "width: 75vw; overflow-x: auto;",
+      #     plotOutput("plate_legend_plot", height = 60, width = "75vw")),
+      #   div(
+      #     style = "width: 75vw; overflow-x: auto;",
+      #     uiOutput("plate_analyte_table"))
+      # ),
       tabPanel(
         "Overall Sample Quality",
         div(
@@ -143,6 +151,13 @@ observeEvent(input$study_level_tabs, {
         status = "success"
       )
     })
+
+
+
+
+
+
+
     output$plate_analyte_table <- renderUI({
       req(input$antigenSelector)
 
@@ -745,13 +760,73 @@ observeEvent(input$study_level_tabs, {
         )
     })
 
+    output$plate_selectorUI <- renderUI({
+      req(preped_data)
+      #preped_data_v <<- preped_data
+      shinyWidgets::radioGroupButtons(
+        inputId = "delete_plate_selector",
+        label = "Select Plate to Delete:",
+        choices = unique(preped_data$plate),
+        selected = unique(preped_data$plate)[1],
+        status = "success"
+      )
+    })
+
+    output$plate_id_selectorUI <- renderUI({
+      req(preped_data)
+      preped_data <- preped_data[preped_data$analyte == input$analyte_selector & preped_data$plate == input$delete_plate_selector, ]
+      shinyWidgets::radioGroupButtons(
+        inputId = "delete_plate_id_selector",
+        label = "plate_id to Delete:",
+        choices = unique(preped_data$plate_id),
+        selected = unique(preped_data$plate_id)[1],
+        status = "success"
+      )
+    })
+
+    output$plateid_selectorUI <- renderUI({
+      req(preped_data)
+      preped_data <- preped_data[preped_data$analyte == input$analyte_selector & preped_data$plate == input$delete_plate_selector, ]
+      shinyWidgets::radioGroupButtons(
+        inputId = "delete_plateid_selector",
+        label = "plateid to Delete:",
+        choices = unique(preped_data$plateid),
+        selected = unique(preped_data$plateid)[1],
+        status = "success"
+      )
+    })
+
+    observeEvent(input$delete_plate, {
+      # showNotification(paste("Delete clicked for analyte", analyte_list[row_idx], "plate", plate_list[col_idx]))
+      showModal(
+        modalDialog(
+          title = "Confirm Delete",
+          paste("Are you sure you want to delete count for analyte",
+                input$analyte_selector, "and plate", input$delete_plate_selector, "?. This will delete the header,
+                buffers, controls, stabdards, and standard fits."),
+          footer = tagList(
+            #actionButton("confirm_plate_delete", "Confirm Deletion"),
+            modalButton("Cancel")
+          ),
+          easyClose = TRUE
+        )
+      )
+
+
+    }, ignoreInit = TRUE)
+
+
+    observe({
+      shinyjs::disable("confirm_plate_delete")
+    })
+
+
 
 
     plot_analyte_plate_model <- function() {
       req(preped_data)
       req(input$analyte_selector)
 
-      #preped_data_v <- preped_data
      analyte_summary_plot <- plot_preped_analyte_fit_summary(preped_data =preped_data , analyte_selector = input$analyte_selector)
 
      return(analyte_summary_plot[[1]])
