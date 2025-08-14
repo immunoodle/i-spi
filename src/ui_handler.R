@@ -227,7 +227,9 @@ output$view_stored_experiments_ui <- renderUI({
                        radioGroupButtons(
                          inputId = "qc_component",
                          label = "QC Phase",
-                         choices = c("Data", "Bead Count", "Standard Curve","Standard Curve Summary", "Dilution Analysis", "Dilutional Linearity", "Plate Normalization", "Outliers", "Subgroup Detection", "Subgroup Detection Summary"),
+                         choices = c("Data", "Bead Count", "Standard Curve","Standard Curve Summary", "Dilution Analysis", "Dilutional Linearity",
+                                    # "Plate Normalization",
+                                     "Outliers", "Subgroup Detection", "Subgroup Detection Summary"),
                          selected = "Data",
                        #  justified = TRUE,
                        #  multiple = FALSE
@@ -383,41 +385,71 @@ output$dynamic_data_ui <- renderUI({
     input$study_level_tabs == "Experiments" &&
     input$main_tabs == "view_files_tab"
   ) {
-    bsCollapse(
+    tabsetPanel(
       id = "dataCollapse",
-      multiple = FALSE,
-      bsCollapsePanel(
+      tabPanel(
         title = "Header",
         DT::dataTableOutput("stored_header"),
         downloadButton("download_stored_header"),
-        uiOutput("header_actions"),
-        style = "primary"
+        uiOutput("header_actions")
       ),
-      bsCollapsePanel(
+      tabPanel(
         title = "Standards",
         DT::dataTableOutput("swide_standard"),
-        downloadButton("download_stored_standard"),
-        style = "primary"
+        downloadButton("download_stored_standard")
       ),
-      bsCollapsePanel(
+      tabPanel(
         title = "Controls",
         DT::dataTableOutput("swide_control"),
-        downloadButton("download_stored_control"),
-        style = "primary"
+        downloadButton("download_stored_control")
       ),
-      bsCollapsePanel(
+      tabPanel(
         title = "Buffer",
         DT::dataTableOutput("swide_buffer"),
-        downloadButton("download_stored_buffer"),
-        style = "primary"
+        downloadButton("download_stored_buffer")
       ),
-      bsCollapsePanel(
+      tabPanel(
         title = "Sample",
         DT::dataTableOutput("swide_sample"),
-        downloadButton("download_stored_sample"),
-        style = "primary"
+        downloadButton("download_stored_sample")
       )
     )
+
+    # bsCollapse(
+    #   id = "dataCollapse",
+    #   multiple = FALSE,
+    #   bsCollapsePanel(
+    #     title = "Header",
+    #     DT::dataTableOutput("stored_header"),
+    #     downloadButton("download_stored_header"),
+    #     uiOutput("header_actions"),
+    #     style = "primary"
+    #   ),
+    #   bsCollapsePanel(
+    #     title = "Standards",
+    #     DT::dataTableOutput("swide_standard"),
+    #     downloadButton("download_stored_standard"),
+    #     style = "primary"
+    #   ),
+    #   bsCollapsePanel(
+    #     title = "Controls",
+    #     DT::dataTableOutput("swide_control"),
+    #     downloadButton("download_stored_control"),
+    #     style = "primary"
+    #   ),
+    #   bsCollapsePanel(
+    #     title = "Buffer",
+    #     DT::dataTableOutput("swide_buffer"),
+    #     downloadButton("download_stored_buffer"),
+    #     style = "primary"
+    #   ),
+    #   bsCollapsePanel(
+    #     title = "Sample",
+    #     DT::dataTableOutput("swide_sample"),
+    #     downloadButton("download_stored_sample"),
+    #     style = "primary"
+    #   )
+    # )
   } else {
     NULL  # Removes the bsCollapse completely
   }

@@ -193,7 +193,7 @@ pull_fits <- function(conn, selected_study, current_user, plates) {
   ORDER BY experiment_accession, antigen, plateid;", .con = conn)
 
   standard_fit <- dbGetQuery(conn, fit_query)
-  # standard_fit_result <<- standard_fit
+  # standard_fit_1 <<- standard_fit
   # plates_v <<- plates
 
   ## If it is in the form plate.num remove the .
@@ -759,18 +759,32 @@ plot_preped_analyte_fit_summary <- function(preped_data, analyte_selector) {
          ungroup()
 
 
+   long_df_group$fit_category <- factor(
+     long_df_group$fit_category,
+     levels = rev(c(
+       "Below LLOD",
+       "Low Bead Count",
+       "Too Diluted",
+       "In Linear Range",
+       "Too Concentrated",
+       "High Bead Aggregation",
+       "Above ULOD",
+       "No Model"
+     )
+   ))
+
   plot <- ggplot(long_df_group, aes(x = plate, y = proportion, fill = fit_category)) +
     geom_bar(stat = "identity", color = "black", linewidth = 0.3) +
     facet_grid(rows = vars(antigen), cols = vars(crit), scales = "free_x", space = "free_x") +
     scale_fill_manual(values = c(
-      "Below LLOD" = "#be0032",
-      "Low Bead Count" = "#e78ac3",
-      "In Linear Range" = "#6699cc",
-      "High Bead Aggregation" = "#fc8d62",
-      "Above ULOD" = "#313695",
-      "Too Concentrated" = "#ffd92f",
-      "Too Diluted" = "#8da0cb",
-      "No Model" = "black"
+      "Below LLOD"            = "#313695",
+      "Low Bead Count"        = "#4575b4",
+      "Too Diluted"           = "#91bfdb",
+      "In Linear Range"       = "#1a9850",  # green (center)
+      "Too Concentrated"      = "#fee08b",
+      "High Bead Aggregation" = "#fc8d59",
+      "Above ULOD"            = "#d73027",
+      "No Model"              = "black"
     )) +
     theme_minimal() +
     theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
@@ -815,6 +829,52 @@ prepare_arm_balance_data <- function(sample_specimen, sorted_arms) {
 
   return(long_df_group)
 }
+
+
+### Delete Plate from the SQL database and all associated data
+# delete_plate <- function(conn, selected_study, selected_plate_id, selected_plateid) {
+#   #conn <- get_db_connection()
+#
+#   delete_header_str <- glue::glue_sql("DELETE FROM madi_results.xmap_header
+#     WHERE study_accession = {selected_study} AND plate_id = {selected_plate_id};", .con = conn)
+#   RPostgres::dbExecute(conn, delete_header_str)
+#
+#   delete_buffer_str <- glue::glue_sql("DELETE FROM madi_results.xmap_buffer
+#     WHERE study_accession = {selected_study} AND plate_id = {selected_plate_id};", .con = conn)
+#   RPostgres::dbExecute(conn, delete_buffer_str)
+#
+#   delete_control_str <- glue::glue_sql("DELETE FROM madi_results.xmap_control
+#     WHERE study_accession = {selected_study} AND plate_id = {selected_plate_id};", .con = conn)
+#   RPostgres::dbExecute(conn, delete_control_str)
+#
+#   delete_sample_str <- glue::glue_sql("DELETE FROM madi_results.xmap_sample
+#     WHERE study_accession = {selected_study} AND plate_id = {selected_plate_id};", .con = conn)
+#   RPostgres::dbExecute(conn, delete_sample_str)
+#
+#   delete_standard_str <- glue::glue_sql("DELETE FROM madi_results.xmap_standard
+#     WHERE study_accession = {selected_study} AND plate_id = {selected_plate_id};", .con = conn)
+#   RPostgres::dbExecute(conn, delete_standard_str)
+#
+#   delete_fits_str <- glue::glue_sql("DELETE FROM madi_results.xmap_standard_fits
+#     WHERE study_accession = {selected_study} AND plate_id = {selected_plateid};", .con = conn)
+#   RPostgres::dbExecute(conn, delete_fits_str)
+#
+#   delete_fit_tab_str <- glue::glue_sql("DELETE FROM madi_results.xmap_standard_fit_tab
+#     WHERE study_accession = {selected_study} AND plate_id = {selected_plateid};", .con = conn)
+#   RPostgres::dbExecute(conn, delete_fit_tab_str)
+#
+# # dbDisconnect(conn)
+# }
+
+
+
+
+
+
+
+
+
+
 # prep_plate_content_summary <- function(summ_spec_df) {
 #   summ_spec_dup <- distinct(summ_spec_df, analyte, antigen, plate, specimen_type, .keep_all = TRUE)
 #
