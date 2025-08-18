@@ -866,8 +866,9 @@ compute_nls_5 <- function(dat, g_value, bkg, is_log_mfi_axis){
     names(glance_fit_2)[names(glance_fit_2) == "r_asy"] <- "d"
 
     # Use large negative value
-    inflect_glance <- inflection_point(glance_fit_2)
-
+    inflect_glance <- inflection_point(glance_fit_2, dat, x_min = -50)
+    x_inflection <- inflect_glance$x_inflection
+    y_inflection <- inflect_glance$y_inflection
     bendlower <- inflect_glance$y_inflectionL_3
     bendupper <- inflect_glance$y_inflectionU_3
 
@@ -895,6 +896,8 @@ compute_nls_5 <- function(dat, g_value, bkg, is_log_mfi_axis){
     glance_fit$bendupper <- bendupper
     glance_fit$lloq <- lloq
     glance_fit$uloq <- uloq
+    glance_fit$x_inflection <- x_inflection
+    glance_fit$y_inflection <- y_inflection
     glance_fit$loq_method <- "Derivative"
 #### Older below
     # Limits of Quantification
@@ -1388,10 +1391,11 @@ compute_nls_4 <- function(dat, bkg, is_log_mfi_axis) {
     names(glance_fit_nls_4)[names(glance_fit_nls_4) == "x_mid"] <- "c"
     names(glance_fit_nls_4)[names(glance_fit_nls_4) == "r_asy"] <- "d"
 
-    inflect_glance <- inflection_point(glance_fit_nls_4)
+    inflect_glance <- inflection_point(glance_fit_nls_4, dat, x_min = -50)
     bendlower <- inflect_glance$y_inflectionL_3
     bendupper <- inflect_glance$y_inflectionU_3
-
+    x_inflection <- inflect_glance$x_inflection
+    y_inflection <- inflect_glance$y_inflection
      if (is_log_mfi_axis) {
        bendlower <- round(bendlower,3)
        bendupper <- round(bendupper,3)
@@ -1413,6 +1417,8 @@ compute_nls_4 <- function(dat, bkg, is_log_mfi_axis) {
     glance_fit$bendupper <- bendupper
     glance_fit$lloq <- lloq
     glance_fit$uloq <- uloq
+    glance_fit$x_inflection <- x_inflection
+    glance_fit$y_inflection <- y_inflection
     glance_fit$loq_method <- "Derivative"
 
     # background/blank method
@@ -1538,9 +1544,11 @@ cat("\ncalculating power four param\n")
      names(glance_fit_2)[names(glance_fit_2) == "r_asy"] <- "d"
 
      # obtain limits of detection and limits of quantification
-     inflect_glance <- inflection_point(glance_fit_2)
+     inflect_glance <- inflection_point(glance_fit_2, dat, x_min = -50)
      bendlower <- inflect_glance$y_inflectionL_3
      bendupper <- inflect_glance$y_inflectionU_3
+     x_inflection <- inflect_glance$x_inflection
+     y_inflection <- inflect_glance$y_inflection
 
      if (is_log_mfi_axis) {
        bendlower <- round(bendlower,3)
@@ -1606,6 +1614,8 @@ cat("\ncalculating power four param\n")
      glance_fit$uloq <- uloq
      glance_fit$ulod <- ulod
      glance_fit$llod <- llod
+     glance_fit$x_inflection <- x_inflection
+     glance_fit$y_inflection <- y_inflection
      glance_fit$loq_method <- "Derivative"
 
 
@@ -1832,7 +1842,7 @@ get_root <- function(xvec, yvec, index) {
 # LLOQ = x_inflectionU_3
 # LowerBendLine = y_inflectionU_3
 # PASS in glance_fit
-inflection_point <- function(data, n_points = 1000, x_min = -6, x_max = -0.0001) {
+inflection_point <- function(data, std_curve_data = NULL, n_points = 1000, x_min = -6, x_max = -0.0001) {
   results <- data.frame()
   if (nrow(data) < 1) {
     return(data)
@@ -2030,6 +2040,21 @@ inflection_point <- function(data, n_points = 1000, x_min = -6, x_max = -0.0001)
   results$id_tmp <- data$id_tmp[results$index]
   out <- left_join(data, results, by = c("crit", "id_tmp"))
   out$id_tmp <- NULL
+
+  # bendlower <- out$y_inflectionL_3
+   # bendupper <<- out$y_inflectionU_3
+   # uloq <<- out$x_inflectionU_3
+   #if (!is.null(std_curve_data)) {
+  # if (is.infinite(bendupper)) {
+  #   out$y_inflectionU_3 <-  max(std_curve_data$mfi) * 0.9
+  # }
+  # if (is.infinite(bendlower)) {
+  #   out$y_inflectionL_3 <- min(std_curve_data$mfi) * 1.1
+  # }
+   #}
+
+
+#  upper_bound <- max(sc_data$antibody_mfi) * 0.9
 
   return(out)
 }
@@ -2304,10 +2329,19 @@ compute_exponential_fit <- function(data, bkg, is_log_mfi_axis) {
     glance_fit_exp
 
     # Limits of quantification
-    loq_der <- loq_derivitives(fit = mod_exponential, glance_fit = glance_fit_exp)
-    glance_fit_exp$lloq <- loq_der$lloq
-    glance_fit_exp$uloq <- loq_der$uloq
-    glance_fit_exp$loq_method <- loq_der$method
+    inflect_glance <- inflection_point(glance_fit_exp, data, x_min = -50)
+    uloq <- inflect_glance$x_inflectionU_3
+    lloq <- inflect_glance$x_inflectionL_3
+
+    # Limits of quantification
+    # loq_der <- loq_derivitives(fit = mod_exponential, glance_fit = glance_fit_exp)
+    # glance_fit_exp$lloq <- loq_der$lloq
+    # glance_fit_exp$uloq <- loq_der$uloq
+    glance_fit_exp$lloq <- lloq
+    glance_fit_exp$uloq <- uloq
+    glance_fit_exp$x_inflection <- NA
+    glance_fit_exp$y_inflection <- NA
+    glance_fit_exp$loq_method <- "Derivative"
 
     # background/blank method
     glance_fit_exp$bkg_method <- bkg
@@ -2564,14 +2598,14 @@ compute_drda_5_param <- function(data, bkg, is_log_mfi_axis ) {
 
     glance_fit_2 <- glance_fit_2
 
-    inflect_glance <- inflection_point(glance_fit_2, x_min = -10, x_max = 20 )
+    inflect_glance <- inflection_point(glance_fit_2, data, x_min = -50) #, x_max = 20 )
     bendlower <- inflect_glance$y_inflectionL_3
     bendupper <- inflect_glance$y_inflectionU_3
 
     y_inflection <-  inflect_glance$y_inflection
-
-     llod <- inflect_glance$llod
-     ulod <- inflect_glance$ulod
+    x_inflection <- inflect_glance$x_inflection
+    llod <- inflect_glance$llod
+    ulod <- inflect_glance$ulod
 
     # if (is.na(bendupper) || is.na(bendlower) || bendupper == bendlower) {
     #   bendupper <- max_mfi
@@ -2636,6 +2670,21 @@ compute_drda_5_param <- function(data, bkg, is_log_mfi_axis ) {
      bendupper <- top_plateau *0.90
     # bendupper <- max_mfi
    }
+
+
+
+  if ((bendlower == bendupper) & (bendlower > llod)) {
+    if (!is.na(geom_blank)) {
+      if (is_log_mfi_axis) {
+        bendlower <- geom_blank + log10(3)
+      } else {
+        bendlower <- 3 * geom_blank
+      }
+    } else {
+      bendlower <- 0
+    }
+  }
+
 
 
 
@@ -2712,6 +2761,8 @@ compute_drda_5_param <- function(data, bkg, is_log_mfi_axis ) {
     glance_fit$bendupper <- bendupper
     glance_fit$lloq <- lloq
     glance_fit$uloq <- uloq
+    glance_fit$x_inflection <- x_inflection
+    glance_fit$y_inflection <- y_inflection
     glance_fit$loq_method <- "Derivative"
 
     # # Limits of Quantification
@@ -2814,6 +2865,9 @@ plot_curve_plotly <- function(model_list, dat, source_filter, antigen, plate, sa
       # limit of quantification
       lloq <- as.numeric(model_list[[2]]$lloq)
       uloq <- as.numeric(model_list[[2]]$uloq)
+      # Inflection point
+      x_inflection <- as.numeric(model_list[[2]]$x_inflection)
+      y_inflection <- as.numeric(model_list[[2]]$y_inflection)
       # g is not NA
       fitted_y <- five_param_logistic(x_values, l_asy, r_asy, xmid, scal, g)
       model_type <-"5-Parameter"
@@ -2835,6 +2889,9 @@ plot_curve_plotly <- function(model_list, dat, source_filter, antigen, plate, sa
       # limit of quantification
       lloq <- as.numeric(model_list[[2]]$lloq)
       uloq <- as.numeric(model_list[[2]]$uloq)
+      # Inflection point
+      x_inflection <- as.numeric(model_list[[2]]$x_inflection)
+      y_inflection <- as.numeric(model_list[[2]]$y_inflection)
 
       predictions <- predict(model_list[[3]], newdata = data.frame(log_dilution = x_values)) #p5_mod[3][[1]]
       theta <- coef(model_list[[3]])
@@ -2853,6 +2910,9 @@ plot_curve_plotly <- function(model_list, dat, source_filter, antigen, plate, sa
       # limit of quantification
       lloq <- as.numeric(model_list[[2]]$lloq)
       uloq <- as.numeric(model_list[[2]]$uloq)
+      # Inflection point
+      x_inflection <- as.numeric(model_list[[2]]$x_inflection)
+      y_inflection <- as.numeric(model_list[[2]]$y_inflection)
 
       # g is NA in 4 parameter form so we set to 1 (NO Asymmetry)
       g <- 1
@@ -2871,7 +2931,9 @@ plot_curve_plotly <- function(model_list, dat, source_filter, antigen, plate, sa
       # limit of quantification
       lloq <- as.numeric(model_list[[2]]$lloq)
       uloq <- as.numeric(model_list[[2]]$uloq)
-
+      # Inflection point
+      x_inflection <- as.numeric(model_list[[2]]$x_inflection)
+      y_inflection <- as.numeric(model_list[[2]]$y_inflection)
       g <- 1
       # Calculate the fitted y values
       fitted_y <- Ylm4(x_values,l_asy,scal,xmid,r_asy)
@@ -2883,6 +2945,9 @@ plot_curve_plotly <- function(model_list, dat, source_filter, antigen, plate, sa
       scal <- as.numeric(model_list[[2]]$scale)
       xmid <- as.numeric(model_list[[2]]$x_mid)
       llod <- as.numeric(model_list[[2]]$llod)
+      # Inflection point
+      x_inflection <- as.numeric(model_list[[2]]$x_inflection)
+      y_inflection <- as.numeric(model_list[[2]]$y_inflection)
 
       fitted_y <- exponential_fit(x_values, scal, xmid, l_asy)
       model_type <- "Exponential"
@@ -3005,21 +3070,21 @@ plot_curve_plotly <- function(model_list, dat, source_filter, antigen, plate, sa
         add_lines(x = x_values, y = ulod, name = paste("Upper LOD:", ulod), line = list(color = "orangered", dash = "dash"))%>%
         add_lines(x = x_values, y = llod, name = paste("Lower LOD:", llod), line = list(color = "orangered", dash = "dash")) %>%
         # bend lines
-        add_lines(x = x_values, y = bend_upper, name = paste("Upper Bend", bend_upper), line = list(color = "purple")) %>%
-        add_lines(x = x_values, y = bend_lower, name = paste("Lower Bend", bend_lower), line = list(color = "purple"))
+        add_lines(x = x_values, y = bend_upper, name = paste("Upper Bend:", bend_upper), line = list(color = "purple")) %>%
+        add_lines(x = x_values, y = bend_lower, name = paste("Lower Bend:", bend_lower), line = list(color = "purple"))
         # LOQs
         if (!is.na(lloq)) {
           if (is_log_mfi_axis) {
             p <- p %>%
               add_lines(x = c(lloq), y = c(min(plot_data$mfi, na.rm = T), max(plot_data$mfi, na.rm = T)),
-                        name = paste("Lower LOQ", round(lloq, 3)),
+                        name = paste("Lower LOQ:", round(lloq, 3)),
                         line = list(color = "#f3c300"),
                         hoverinfo = "text",
                         hovertext = paste("Lower Limit of Quantification (LLOQ):", round(lloq,2)))
           } else {
             p <- p %>%
               add_lines(x = c(lloq), y = c(0, max(plot_data$mfi, na.rm = T)),
-                        name = paste("Lower LOQ", round(lloq, 2)),
+                        name = paste("Lower LOQ:", round(lloq, 2)),
                         line = list(color = "#f3c300"),
                         hoverinfo = "text",
                         hovertext = paste("Lower Limit of Quantification (LLOQ):", round(lloq,2)))
@@ -3030,19 +3095,21 @@ plot_curve_plotly <- function(model_list, dat, source_filter, antigen, plate, sa
             if (is_log_mfi_axis) {
             p <- p %>%
               add_lines(x = c(uloq), y = c(min(plot_data$mfi, na.rm = T), max(plot_data$mfi, na.rm = T)),
-                        name = paste("Upper LOQ", round(uloq, 3)),
+                        name = paste("Upper LOQ:", round(uloq, 3)),
                         line = list(color = "#f3c300"),
                         hoverinfo = "text",
                         hovertext = paste("Upper Limit of Quantification (ULOQ):", round(uloq,2)))
             } else {
               p <- p %>%
                 add_lines(x = c(uloq), y = c(0, max(plot_data$mfi, na.rm = T)),
-                          name = paste("Upper LOQ", round(uloq,2)),
+                          name = paste("Upper LOQ:", round(uloq,2)),
                           line = list(color = "#f3c300"),
                           hoverinfo = "text",
                           hovertext = paste("Upper Limit of Quantification (ULOQ):", round(uloq,2)))
             }
           }
+
+
       # if (!is.na(lloq)) {
       #   p <- p %>%
       #     add_segments(x = lloq, xend = lloq, y = 0, yend = max(plot_data$mfi),
@@ -3073,9 +3140,18 @@ plot_curve_plotly <- function(model_list, dat, source_filter, antigen, plate, sa
                                 "<br>In Linear Region:", in_linear_region,
                                 "<br>In Quantifiable Range:",in_quantifiable_range),
                                  #"<br>Timeperiod:", timeperiod),
-                  hovertemplate = "%{text}<extra></extra>") %>%
+                  hovertemplate = "%{text}<extra></extra>")
+
+          if (!is.na(x_inflection) && !is.na(y_inflection)) {
+            p <- p %>% add_trace(x = x_inflection, y = y_inflection, type = "scatter",
+                                 mode = "markers",
+                                 name = paste("Inflection Point: (", round(x_inflection,3), ",",round(y_inflection,3), ")"),
+                                 marker = list(color = "#e377c2", symbol = 'circle'),
+                                 hoverinfo = "text",
+                                 text = paste("Inflection Point (", round(x_inflection,3), ",",round(y_inflection,3), ")"))
+          }
         # Axis Labels
-        layout(
+       p <- p %>%  layout(
           title  = paste("Fitted", model_type, "Logistic Model"),#\nAntigen:", antigen, "Source:", source_filter, "Plate:", plate),
           xaxis = list(title = "Dilution log<sub>10</sub>"),
           yaxis = list(title = mfi_text),
@@ -3781,8 +3857,8 @@ backsub_true_dilution_sample <- function(fitted_model, sample_data, dat){
 
   # log_dilution_v <<- log_dilution
   # fitted_model <<- fitted_model
-  # Calculate the scaled distance of MFI to linear center
-  log_dilution$quality_score <- scale(log_dilution$antibody_mfi - as.numeric(fitted_model[[2]]$linear_center))
+  # Calculate the scaled distance of MFI to linear center (y_inflection)
+  log_dilution$quality_score <- scale(log_dilution$antibody_mfi - as.numeric(fitted_model[[2]]$y_inflection))
 
   # log_dilution_std <<- log_dilution_std
   # log_dilution_v <<- log_dilution_std
@@ -3924,42 +4000,42 @@ delete_model_fit <- function(conn, study_accession_in, experiment_accession_in, 
 }
 
 ## Account for bend lower to bend lower missing
-compute_linear_center <- function(mod_antigen, filtered_sc_data) {
-
-  if (!"antibody_mfi" %in% names(filtered_sc_data)) {
-    filtered_sc_data$antibody_mfi <- filtered_sc_data$mfi
-  }
-
-  #filtered_sc_data_v <<- filtered_sc_data
-
-  #mod_antigen_v <<- mod_antigen
-  model_fit_tab <- mod_antigen[[2]]
-  cat("names of filtered sc data linear center\n")
-  print(names(filtered_sc_data))
-  cat("Model fit tab linear center")
-  print(model_fit_tab[[2]])
-
-
-
-#  if (is.na(model_fit_tab["bendlower"])) {
-  if (is.na(model_fit_tab[["bendlower"]]) || is.null(model_fit_tab[["bendlower"]])) {
-    lower_bound <- min(filtered_sc_data$antibody_mfi) * 1.1
-  } else {
-    lower_bound <- as.numeric(model_fit_tab[["bendlower"]])
-  }
-
-#  if (is.na(model_fit_tab["bendupper"])) {
-  if (is.na(model_fit_tab[["bendupper"]]) || is.null(model_fit_tab[["bendupper"]])) {
-    upper_bound <- max(filtered_sc_data$antibody_mfi) * 0.9
-  } else {
-    upper_bound <- as.numeric(model_fit_tab[["bendupper"]])
-  }
-  model_fit_tab$linear_center <- (lower_bound + upper_bound)/2
-
-  mod_antigen[[2]] <- model_fit_tab
-
-  return(mod_antigen)
-}
+# compute_linear_center <- function(mod_antigen, filtered_sc_data) {
+#
+#   if (!"antibody_mfi" %in% names(filtered_sc_data)) {
+#     filtered_sc_data$antibody_mfi <- filtered_sc_data$mfi
+#   }
+#
+#   #filtered_sc_data_v <<- filtered_sc_data
+#
+#   #mod_antigen_v <<- mod_antigen
+#   model_fit_tab <- mod_antigen[[2]]
+#   cat("names of filtered sc data linear center\n")
+#   print(names(filtered_sc_data))
+#   cat("Model fit tab linear center")
+#   print(model_fit_tab[[2]])
+#
+#
+#
+# #  if (is.na(model_fit_tab["bendlower"])) {
+#   if (is.na(model_fit_tab[["bendlower"]]) || is.null(model_fit_tab[["bendlower"]])) {
+#     lower_bound <- min(filtered_sc_data$antibody_mfi) * 1.1
+#   } else {
+#     lower_bound <- as.numeric(model_fit_tab[["bendlower"]])
+#   }
+#
+# #  if (is.na(model_fit_tab["bendupper"])) {
+#   if (is.na(model_fit_tab[["bendupper"]]) || is.null(model_fit_tab[["bendupper"]])) {
+#     upper_bound <- max(filtered_sc_data$antibody_mfi) * 0.9
+#   } else {
+#     upper_bound <- as.numeric(model_fit_tab[["bendupper"]])
+#   }
+#   model_fit_tab$linear_center <- (lower_bound + upper_bound)/2
+#
+#   mod_antigen[[2]] <- model_fit_tab
+#
+#   return(mod_antigen)
+# }
 
 ### Function for saving the model fit when button is clicked
 saveModelFit <- function(conn, mod, filtered_sc_data) {
@@ -3995,15 +4071,18 @@ saveModelFit <- function(conn, mod, filtered_sc_data) {
     model_fit_tab["loq_method"] <- NULL
     model_fit_tab["bkg_method"] <- NULL
     model_fit_tab["is_log_mfi_axis"] <- NULL
-    model_fit_tab["linear_center"] <- NULL
+    #model_fit_tab["linear_center"] <- NULL
     model_fit_tab["formula"] <- NULL
+    model_fit_tab["x_inflection"] <- NULL
+    model_fit_tab["y_inflection"] <- NULL
   }
   if (as.character(model_fit_tab["crit"]) == "drda_5") {
     model_fit_tab <- model_fit_tab[,c("study_accession", "experiment_accession","plateid","antigen","iter",
                                       "status","alpha","eta","phi",
                                       "nu","r_asy","bendlower","bendupper","llod",
                                       "ulod","loglik","dfresidual","nobs","rsquare_fit",
-                                      "source", "crit", "mse", "cv", "lloq", "uloq", "loq_method", "bkg_method", "is_log_mfi_axis", "linear_center", "formula")]
+                                      "source", "crit", "mse", "cv", "lloq", "uloq", "loq_method", "bkg_method", "is_log_mfi_axis",
+                                      "formula", "x_inflection", "y_inflection")]
 
     names(model_fit_tab)[names(model_fit_tab) == "alpha"] <- "l_asy"
     names(model_fit_tab)[names(model_fit_tab) == "phi"] <- "x_mid"
@@ -4023,9 +4102,8 @@ saveModelFit <- function(conn, mod, filtered_sc_data) {
       AND plateid = '{model_fit_tab$plateid}'
       AND source = '{model_fit_tab$source}'
       AND is_log_mfi_axis = {model_fit_tab$is_log_mfi_axis}
-      AND linear_center = {model_fit_tab$linear_center}
     );"
-  )
+  ) #AND linear_center = {model_fit_tab$linear_center}
   cat("after delete query")
   delete_outcome <- DBI::dbExecute(conn, delete_query)
   cat("after delete outcome")
@@ -4357,7 +4435,7 @@ save_fit_au <- function(dat, sample_data, selectedExperiment, selectedSource, bu
         cat("Before Save")
         print(length(mod_antigen))
         #print(mod_antigen[[2]])
-        mod_antigen <- compute_linear_center(mod_antigen, filtered_sc_data)
+        #mod_antigen <- compute_linear_center(mod_antigen, filtered_sc_data)
 
         saveModelFit(conn, mod_antigen, filtered_sc_data)
         model_count <- model_count + 1

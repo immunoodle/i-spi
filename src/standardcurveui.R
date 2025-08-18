@@ -616,7 +616,7 @@ standardCurveFittingServer <- function(id, selected_study, selected_experiment, 
             return(mod)
           } else {
             print("model not null")
-            mod <- compute_linear_center(mod, filtered_data_val)
+            #mod <- compute_linear_center(mod, filtered_data_val)
             # do not show message and raw dilution series if there is a model.
             output$dilution_message <- renderUI({
               NULL
