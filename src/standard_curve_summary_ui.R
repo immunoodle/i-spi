@@ -566,7 +566,7 @@ observeEvent(list(
         min_log_dilution <- round(min(std_curve_data_antigen$log_dilution), 0)
         # filter out models with NA crit value and to the selected bkg method.
         fitted_curve_parameters <- fitted_curve_parameters[!is.na(fitted_curve_parameters$crit),]
-        fitted_curve_parameters <<- fitted_curve_parameters[fitted_curve_parameters$bkg_method == bkg_method,]
+        fitted_curve_parameters <- fitted_curve_parameters[fitted_curve_parameters$bkg_method == bkg_method,]
 
          if (nrow(fitted_curve_parameters) > 0) {
 

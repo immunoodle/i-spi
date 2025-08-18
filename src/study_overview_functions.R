@@ -164,15 +164,15 @@ pull_fits <- function(conn, selected_study, current_user, plates) {
   bendlower AS llin,
   bendupper AS ulin,
   lloq, uloq,
-  l_asy, r_asy, x_mid, scale, g
+  l_asy, r_asy, x_mid, scale, g, source
   FROM madi_results.xmap_standard_fits sf
 
   -- Join for default source
-  INNER JOIN madi_results.xmap_study_config cfg_source
-  ON sf.study_accession = cfg_source.study_accession
-  AND cfg_source.param_user = {current_user}
-  AND cfg_source.param_name = 'default_source'
-  AND sf.source = cfg_source.param_character_value
+ -- INNER JOIN madi_results.xmap_study_config cfg_source
+  --ON sf.study_accession = cfg_source.study_accession
+  -- AND cfg_source.param_user = {current_user}
+  -- AND cfg_source.param_name = 'default_source'
+  --  AND sf.source = cfg_source.param_character_value
 
   -- Join for buffer treatment
   INNER JOIN madi_results.xmap_study_config cfg_buffer
@@ -706,7 +706,7 @@ make_cv_scatterplot <- function(df, x_var, y_var, facet_var1, facet_var2, color_
 
 prep_analyte_fit_summary <- function(summ_spec_in, standard_fit_res) {
   merged_df <- merge(summ_spec_in,
-                     standard_fit_res[, c("plateid", "antigen", "analyte", "crit")],
+                     standard_fit_res[, c("plateid", "antigen", "analyte", "crit", "source")],
                      by = c("plateid", "antigen", "analyte"),
                      all.x = TRUE)
 
