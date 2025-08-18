@@ -86,6 +86,7 @@ observeEvent(input$study_level_tabs, {
         # ),
         tabPanel(
           "Samples by Plate, Model Type, and Concentration Quality",
+          uiOutput("fit_source_selectorUI"),
           uiOutput("analyte_selectorUI"),
           plotOutput("analyte_dilution_assessment", height = "800px"),
           downloadButton("download_plot_dilution_assessment", "Download Plot"),
@@ -746,23 +747,37 @@ observeEvent(input$study_level_tabs, {
     )
 
 
+    output$fit_source_selectorUI <- renderUI({
+      study_sources <- fetch_study_sources(study_accession = input$readxMap_study_accession)
+      radioButtons(
+        inputId = "pull_fit_source",
+        label = "Select Source:",
+        choices = study_sources$source,
+        selected = study_sources$source[1]
+      )
+    })
 
 
     output$analyte_selectorUI <- renderUI({
       req(preped_data)
+      req(input$pull_fit_source)
+      preped_data <- preped_data[preped_data$source == input$pull_fit_source,]
+      analyte_choices <- unique(preped_data$analyte[!is.na(preped_data$analyte)])
 
         shinyWidgets::radioGroupButtons(
           inputId = "analyte_selector",
           label = "Select Analyte:",
-          choices = unique(preped_data$analyte),
-          selected = unique(preped_data$analyte)[1],
+          choices = analyte_choices,
+          selected = analyte_choices[1],
           status = "success"
         )
     })
 
+
+
     output$plate_selectorUI <- renderUI({
       req(preped_data)
-      #preped_data_v <<- preped_data
+      preped_data_v <- preped_data
       shinyWidgets::radioGroupButtons(
         inputId = "delete_plate_selector",
         label = "Select Plate to Delete:",
@@ -771,6 +786,8 @@ observeEvent(input$study_level_tabs, {
         status = "success"
       )
     })
+
+
 
     output$plate_id_selectorUI <- renderUI({
       req(preped_data)
@@ -803,7 +820,7 @@ observeEvent(input$study_level_tabs, {
           title = "Confirm Delete",
           paste("Are you sure you want to delete count for analyte",
                 input$analyte_selector, "and plate", input$delete_plate_selector, "?. This will delete the header,
-                buffers, controls, stabdards, and standard fits."),
+                buffers, controls, standards, and standard fits."),
           footer = tagList(
             #actionButton("confirm_plate_delete", "Confirm Deletion"),
             modalButton("Cancel")

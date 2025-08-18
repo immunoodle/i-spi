@@ -1593,6 +1593,11 @@ cat("\ncalculating power four param\n")
 
      ulod <- ulod_pred$summary$`Prop.2.5%`
 
+     # in summary this occurs
+     if (is.nan(ulod)) {
+       ulod <- bendupper
+     }
+
      if (ulod < llod) {
         ulod <- coef_d - 1.96*se
      }
@@ -4670,6 +4675,7 @@ compute_fitted_df <- function(standard_curve_study_data, min_log_dilution) {
 
   param_df <- standard_curve_study_data[,c("study_accession","experiment_accession", "source", "antigen","plateid", "crit", "l_asy", "r_asy", "x_mid", "scale", "g")]
 
+
   for (i in 1:nrow(param_df)) {
     if (param_df$crit[i] == "drda_5") {
       params <- param_df[i,]
@@ -4716,6 +4722,21 @@ compute_fitted_df <- function(standard_curve_study_data, min_log_dilution) {
 
       # Append to the overall results
       fitted_df <- rbind(fitted_df, row_results)
+    } else if (param_df$crit[i] == "nlslm_4") {
+      params <- param_df[i, ]
+      # Calculate fitted values for nlslm_4
+      fitted <- numeric(length(x_values))
+      for (j in seq_along(x_values)) {
+        fitted[j] <- Ylm4(x_values[j], params$l_asy, params$scale, params$x_mid, params$r_asy)
+      }
+
+      # Create a data frame for the current row's results
+      row_results <- data.frame(study_accession = param_df$study_accession[i], experiment_accession = param_df$experiment_accession[i],
+                                antigen = param_df$antigen[i], model_id = param_df$plateid[i], source = param_df$source[i], x = x_values, fitted = fitted, crit = "nlslm_4")
+
+      # Append to the overall results
+      fitted_df <- rbind(fitted_df, row_results)
+
     } else if (param_df$crit[i] == "nls_exp") {
       params <- param_df[i, ]
 
@@ -4822,6 +4843,28 @@ aggregate_standard_curves <- function(experiment_fitted_data, antigen_selection,
 
       if (length(nls_4_models) == 0) {
         cat("nls_4 models are null\n")
+        nls_power4_models <- compute_power_4(experiment_fitted_data, bkg = bkg, is_log_mfi_axis = is_log_mfi_axis)
+        refit_fit_df <- rbind(refit_fit_df, nls_power4_models[[2]])
+        if (nrow(refit_fit_df) == 1) {
+          predicted_mfi_agg <- Ylm4(
+            x_values,
+            l_asy = as.numeric(refit_fit_df["l_asy"]),
+            scal = as.numeric(refit_fit_df["scale"]),
+            xmid = as.numeric(refit_fit_df["x_mid"]),
+            r_asy = as.numeric(refit_fit_df["r_asy"])
+          )
+
+          predicted_agg_df <- data.frame(
+            mod_class = "nlslm_4",
+            study_accesssion = rep(unique(experiment_fitted_data$study_accession), length(x_values)),
+            experiment_accession = rep(unique(experiment_fitted_data$experiment_accession), length(x_values)),
+            antigen = rep(unique(experiment_fitted_data$antigen), length(x_values)),
+            log_dilution = x_values,
+            norm_mfi = predicted_mfi_agg
+          )
+        }
+
+        if (length(nls_power4_models) == 0) {
         exp_models <- compute_exponential_fit(experiment_fitted_data, bkg = bkg, is_log_mfi_axis = is_log_mfi_axis )
         refit_fit_df <- rbind(refit_fit_df, exp_models[[2]])
 
@@ -4846,6 +4889,7 @@ aggregate_standard_curves <- function(experiment_fitted_data, antigen_selection,
         if (length(exp_models) == 0) {
           predicted_agg_df <- data.frame()
         }
+      }
       }
     }
   } else {

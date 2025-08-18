@@ -195,7 +195,7 @@ observeEvent(list(
                       title = "Dilution Analysis Output Dataset",
                      DT::dataTableOutput("final_average_au_table"),
                       br(),
-                      uiOutput("download_average_au_table_UI"),
+                      downloadButton("download_average_au_table_UI", label = "Download Processed Dilution Data"),
                       style = "primary"
                     )
                   )
@@ -893,16 +893,28 @@ observeEvent(list(
       }
     )
 
-    output$download_average_au_table_UI <- renderUI({
-    #  req(input$inLoadedData == "Dilution Analysis")
-      req(final_average_au_table_rv())
-      req(selected_study)
-      req(selected_experiment)
-      download_processed_dilution_data(download_df = final_average_au_table_rv(),
-                                       selected_study = selected_study,
-                                       selected_experiment = selected_experiment)
+    # output$download_average_au_table_UI <- renderUI({
+    # #  req(input$inLoadedData == "Dilution Analysis")
+    #   req(final_average_au_table_rv())
+    #   req(selected_study)
+    #   req(selected_experiment)
+    #   download_processed_dilution_data(download_df = final_average_au_table_rv(),
+    #                                    selected_study = selected_study,
+    #                                    selected_experiment = selected_experiment)
+    #
+    # })
 
-    })
+    output$download_average_au_table_UI <-  downloadHandler(
+      filename = function() {
+        paste(input$readxMap_study_accession, input$readxMap_experiment_accession, "_sample_data", ".csv", sep = "_")
+      },
+      content = function(file) {
+        req(final_average_au_table_rv())
+        req(selected_study)
+        req(selected_experiment)
+        write.csv(final_average_au_table_rv(), file, row.names = FALSE)
+      }
+    )
 
     ### Dilutional Linearity
     # output$da_lin_antigenUI <- renderUI({
