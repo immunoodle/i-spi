@@ -779,8 +779,7 @@ plot_patient_dilution_series  <- function(sample_data, selectedAntigen, selected
             text = paste(
               "Color represents Passing Classification (blue) or not passing Classification (red). <br>
                If there are multiple overlapping points the point will appear black.<br>
-               An Arbitrary Unit of 1000 corresponds to completely saturated bead detection and are above the upper asymptote of the
-              standard curve.
+              The highest concentration values (Arbitrary Units) correspond to samples with MFI values above the upper asymptote of the standard curve.
               "
             ),
             showarrow = FALSE,

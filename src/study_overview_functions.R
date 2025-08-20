@@ -246,6 +246,43 @@ summarise_by_plate_id <- function(df) {
     )
 }
 
+summarise_by_fit_category_plate <- function(df) {
+  df <- df %>%
+    group_by(analyte, antigen, fit_category) %>%
+    dplyr::summarise(
+      count = sum(count),
+      .groups = "drop"
+    ) %>%
+    mutate(
+      plate = "plates_all"
+    )
+
+  df_tot <- df %>%
+     group_by(analyte, antigen, plate) %>%
+     dplyr::summarise(
+       total = sum(count),
+       .groups = "drop"
+     )
+
+  df <- merge(df, df_tot, by = c("analyte", "antigen", "plate"), all.x = T)
+  df$proportion <- df$count/df$total
+  df$crit = "Model"
+  df$model_class <- "Model"
+
+  #%>%
+    # mutate(
+    #   proportion = count / total
+    # )
+
+  df <- df[,!names(df) %in% ("total")]
+
+
+    # ) %>%
+    #   group_by(antigen) %>%
+  return(df)
+
+}
+
 summarise_by_timeperiod <- function(df) {
   df %>%
     dplyr::group_by(analyte, antigen, timeperiod) %>%
@@ -712,10 +749,18 @@ prep_analyte_fit_summary <- function(summ_spec_in, standard_fit_res) {
 
   merged_df$crit[is.na(merged_df$crit)] <- "No Model"
 
-  # group 5 param and 4 param models together
-  merged_df$crit[merged_df$crit %in% c("nls_5", "drda_5")] <- "5-parameter"
-  merged_df$crit[merged_df$crit %in% c("nls_4", "nlslm_4")] <- "4-parameter"
-  merged_df$crit[merged_df$crit %in% c("nls_exp")] <- "Exponential"
+  merged_df$model_class <- merged_df$crit
+  # # group 5 param and 4 param models together
+  # merged_df$crit[merged_df$crit %in% c("nls_5", "drda_5")] <- "5-parameter"
+  # merged_df$crit[merged_df$crit %in% c("nls_4", "nlslm_4")] <- "4-parameter"
+  # merged_df$crit[merged_df$crit %in% c("nls_exp")] <- "Exponential"
+
+  # group all models together
+  # Group all the model types
+  merged_df$crit[merged_df$crit %in% c("nls_5", "drda_5",
+                                       "nls_4", "nlslm_4",
+                                       "nls_exp")] <- "Model"
+
 
   return(merged_df)
 }
@@ -773,9 +818,14 @@ plot_preped_analyte_fit_summary <- function(preped_data, analyte_selector) {
      )
    ))
 
+   long_df_group <- long_df_group
+   long_df_group <- long_df_group[, c("analyte", "plate", "antigen", "model_class", "crit", "fit_category", "count", "proportion")]
+   plates_all <- summarise_by_fit_category_plate(long_df_group)[, c("analyte", "plate", "antigen", "model_class", "crit", "fit_category", "count", "proportion")]
+   long_df_group <- rbind(long_df_group, plates_all)
+
   plot <- ggplot(long_df_group, aes(x = plate, y = proportion, fill = fit_category)) +
     geom_bar(stat = "identity", color = "black", linewidth = 0.3) +
-    facet_grid(rows = vars(antigen), cols = vars(crit), scales = "free_x", space = "free_x") +
+    facet_grid(rows = vars(antigen), scales = "free_x", space = "free_x") + #cols = vars(crit),
     scale_fill_manual(values = c(
       "Below LLOD"            = "#313695",
       "Low Bead Count"        = "#4575b4",
@@ -794,7 +844,7 @@ plot_preped_analyte_fit_summary <- function(preped_data, analyte_selector) {
       x = "Plate",
       y = "Proportion",
       fill = "Quality",
-      title = paste(input$analyte_selector,"- Proportion of Samples by Plate, Antigen, Model Type, and Concentration Quality")
+      title = paste(input$analyte_selector,"- Sample Estimate Quality by Plate and Antigen (Proportion).")
     )
 
   return(list(plot, long_df_group))

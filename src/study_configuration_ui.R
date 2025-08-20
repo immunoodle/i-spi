@@ -129,11 +129,18 @@ render_study_parameters <- reactive({
     tagList(
       HTML(paste0("<h4>", selected_study, " – Study Parameters for ", currentuser(), "</h4>")),
       uiOutput("plate_management_UI"),
-      uiOutput("antigen_family_config"),
       uiOutput("bead_count_config"),
       uiOutput("dilution_analysis_config"),
       uiOutput("standard_curve_config"),
-      uiOutput("subgroup_config"),
+      bsCollapse(
+        id = "advanced_parameters",
+        bsCollapsePanel(
+        title = "Advanced Parameters",
+        uiOutput("antigen_family_config"),
+        uiOutput("dilution_analysis_config"),
+        uiOutput("subgroup_config"),
+        style = "primary")
+      ),
       actionButton(inputId = "reset_user_config", label = "Reset Study Parameters"),
       uiOutput("user_parameter_download")
     )
@@ -483,6 +490,18 @@ render_study_parameters <- reactive({
     id = "standard_curve_config",
     bsCollapsePanel(
       title = "Standard Curve Parameters",
+      bsCollapse(
+        id = "standard_curve_parameters_info",
+        bsCollapsePanel(
+          title = "Standard Curve Parameters Methods",
+          tagList(
+           tags$p("The Prozone correction which is recomended, accounts for the prozone effect in stndard curve data in which
+                  '...the concentration of the analyte becomes so high that it exceeds the capacity of the antibodies in the assay' (Bradley and Bhalla)"),
+           tags$p("Including the geometric mean of the MFI of the blanks and subtracting the geometric mean of the blanks from each standard are adapted from Sanz et al.")
+
+          ), # end taglist
+          style = "success"
+        )),
   #  HTML("<h4><strong>Standard Curve</strong></h4>"),
     # Mean MFI at each dilution factor
     switchInput(mean_mfi_params$param_name,

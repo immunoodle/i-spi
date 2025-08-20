@@ -50,6 +50,33 @@ observeEvent(input$study_level_tabs, {
       tags$h4("Loaded data - % in Quantifiable Region"),
       tabsetPanel(
         tabPanel(
+          "Blanks, Controls, and Standards",
+          br(),
+          plotOutput("analyte_plate_specimen", height = "800px"),
+          downloadButton("download_analyte_plate_specimen_plot", "Download Plot"),
+          downloadButton("download_analyte_plate_specimen_data", "Downlaod Samples Summarized by Analyte, Plate, and Specimen"),
+          DTOutput("sample_spec_plate_summary_table")
+          #  plotlyOutput("study_arm_plot", width = "75vw")
+        ),
+        # tabPanel(
+        #   "Overall Sample Quality",
+        #   div(
+        #     style = "width: 75vw; overflow-x: auto;",
+        #     plotOutput("plate_legend_plotb", height = 60)
+        #   ),
+        #   div(
+        #     style = "width: 75vw; overflow-x: auto;",
+        #     uiOutput("analyte_antigen_heatmap", width = "75vw")
+        #   )
+        # ),
+        tabPanel(
+          "Samples by Arm",
+          plotOutput("arm_balance"),
+          downloadButton("download_arm_balance_plot", "Download Plot"),
+          DTOutput("arm_balance_table"),
+          downloadButton("download_arm_balance_sample", "Download Sample Proportions Across Study Arms, Analyte, and Plate")
+        ),
+        tabPanel(
           "Samples by Timeperiod",
           plotOutput("analyte_antigen_timeperiod", height = "800px"),
           downloadButton("download_analyte_antigen_plot", "Download Plot"),
@@ -62,22 +89,8 @@ observeEvent(input$study_level_tabs, {
                              # height = "800px",
                              # btn_halign = "left"),
         ),
-        tabPanel(
-          "Samples by Arm",
-          plotOutput("arm_balance"),
-          downloadButton("download_arm_balance_plot", "Download Plot"),
-          DTOutput("arm_balance_table"),
-          downloadButton("download_arm_balance_sample", "Download Sample Proportions Across Study Arms, Analyte, and Plate")
-        ),
-        tabPanel(
-          "Blanks, Controls, and Standards",
-          br(),
-          plotOutput("analyte_plate_specimen", height = "800px"),
-          downloadButton("download_analyte_plate_specimen_plot", "Download Plot"),
-          downloadButton("download_analyte_plate_specimen_data", "Downlaod Samples Summarized by Analyte, Plate, and Specimen"),
-          DTOutput("sample_spec_plate_summary_table")
-        #  plotlyOutput("study_arm_plot", width = "75vw")
-          ),
+
+
         # tabPanel(
         #   "Intraplate vs Interplate CV",
         #   plotOutput("inter_intra_cv", height = "800px"),
@@ -85,20 +98,21 @@ observeEvent(input$study_level_tabs, {
         #   downloadButton("download_inter_intra_cv_data", "Download Intraplate and Interplate CV Data")
         # ),
         tabPanel(
-          "Samples by Plate, Model Type, and Concentration Quality",
+          "Sample Estimate Quality by Plate and Antigen",
           uiOutput("fit_source_selectorUI"),
           uiOutput("analyte_selectorUI"),
           plotOutput("analyte_dilution_assessment", height = "800px"),
           downloadButton("download_plot_dilution_assessment", "Download Plot"),
-          downloadButton("download_plot_dilution_assessment_data", "Download Samples by Plate, Model Type, and Concentration Quality"),
-          hr(style = "border: none; height: 1px; background-color: black; margin: 20px 0;"),
-          fluidRow(
-          column(6, uiOutput("plate_selectorUI")),
-          column(6, uiOutput("plate_id_selectorUI"))),
-          fluidRow(
-            column(6, uiOutput("plateid_selectorUI")),
-            column(6, br(), actionButton("delete_plate", label = "Delete Selected Plate"))),
-          hr(style = "border: none; height: 1px; background-color: black; margin: 20px 0;"),
+          downloadButton("download_plot_dilution_assessment_data", "Download Sample Estimate Quality by Plate and Antigen"),
+         # hr(style = "border: none; height: 1px; background-color: black; margin: 20px 0;"),
+          # fluidRow(
+          # column(6, uiOutput("plate_selectorUI")),
+          # column(6, uiOutput("plate_id_selectorUI"))),
+          # #fluidRow(
+          #   column(6, uiOutput("plateid_selectorUI")),
+          #  # column(6, br(), actionButton("delete_plate", label = "Delete Selected Plate"))
+          #  ),
+          # hr(style = "border: none; height: 1px; background-color: black; margin: 20px 0;"),
           DTOutput("proportion_analyte_fit"),
           downloadButton("download_proportion_dilution_assessment_data", "Download Proportion Summary")
       ),
@@ -112,17 +126,7 @@ observeEvent(input$study_level_tabs, {
       #     style = "width: 75vw; overflow-x: auto;",
       #     uiOutput("plate_analyte_table"))
       # ),
-      tabPanel(
-        "Overall Sample Quality",
-        div(
-          style = "width: 75vw; overflow-x: auto;",
-          plotOutput("plate_legend_plotb", height = 60)
-        ),
-        div(
-          style = "width: 75vw; overflow-x: auto;",
-          uiOutput("analyte_antigen_heatmap", width = "75vw")
-        )
-      )
+
       )
     ))})
 
@@ -813,29 +817,29 @@ observeEvent(input$study_level_tabs, {
       )
     })
 
-    observeEvent(input$delete_plate, {
-      # showNotification(paste("Delete clicked for analyte", analyte_list[row_idx], "plate", plate_list[col_idx]))
-      showModal(
-        modalDialog(
-          title = "Confirm Delete",
-          paste("Are you sure you want to delete count for analyte",
-                input$analyte_selector, "and plate", input$delete_plate_selector, "?. This will delete the header,
-                buffers, controls, standards, and standard fits."),
-          footer = tagList(
-            #actionButton("confirm_plate_delete", "Confirm Deletion"),
-            modalButton("Cancel")
-          ),
-          easyClose = TRUE
-        )
-      )
+    # observeEvent(input$delete_plate, {
+    #   # showNotification(paste("Delete clicked for analyte", analyte_list[row_idx], "plate", plate_list[col_idx]))
+    #   showModal(
+    #     modalDialog(
+    #       title = "Confirm Delete",
+    #       paste("Are you sure you want to delete count for analyte",
+    #             input$analyte_selector, "and plate", input$delete_plate_selector, "?. This will delete the header,
+    #             buffers, controls, standards, and standard fits."),
+    #       footer = tagList(
+    #         #actionButton("confirm_plate_delete", "Confirm Deletion"),
+    #         modalButton("Cancel")
+    #       ),
+    #       easyClose = TRUE
+    #     )
+    #   )
+    #
+    #
+    # }, ignoreInit = TRUE)
 
 
-    }, ignoreInit = TRUE)
-
-
-    observe({
-      shinyjs::disable("confirm_plate_delete")
-    })
+    # observe({
+    #   shinyjs::disable("confirm_plate_delete")
+    # })
 
 
 
@@ -906,8 +910,8 @@ observeEvent(input$study_level_tabs, {
     output$proportion_analyte_fit <- renderDT({
 
       proportion_df <- get_analyte_plate_proportion()
-      proportion_df <- proportion_df[, c("plate", "antigen", "analyte", "crit", "fit_category", "count", "n", "proportion")]
-      datatable(proportion_df, caption = "Proportion of Samples by Plate, Antigen, Model Type, and Concentration Quality", filter = "top")
+      proportion_df <- proportion_df[, c("plate", "antigen", "analyte", "model_class", "crit", "fit_category", "count", "proportion")]
+      datatable(proportion_df, caption = "Sample Estimate Quality by Plate and Antigen", filter = "top")
     })
 
 
