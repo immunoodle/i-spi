@@ -183,13 +183,13 @@ update_sample_dilution_factor <- function(selected_study, selected_experiment, s
       bsCollapse(
         id = "plate_management_collapse",
         bsCollapsePanel(
-          title = "Plate Management",
+          title = "Plate Label Editor",
 
 
       bsCollapse(
         id = "plate_management_instructions",
         bsCollapsePanel(
-          title = "Plate Management Instructions",
+          title = "Plate Label Editor Instructions",
           tagList(
             tags$ol("1. Select a plate from an experiment by clicking the desired row in the table."),
             tags$ol("2. Rename that plate by typing its new name in the Edit Plate ID field."),
@@ -263,9 +263,17 @@ update_sample_dilution_factor <- function(selected_study, selected_experiment, s
                         ), # end div rename plate column
                         tags$div(style = "flex: 1;",
                                  uiOutput("update_sample_dilution_factorUI")
-                        ) # ed div update sample dilution factor
+                        ) # end div update sample dilution factor
                ) # end div outer flex tag
         ) # end column
+      ),
+      fluidRow(
+        column(12,
+               tags$div(style = "display: flex;",
+                tags$div(style = "flex: 1;",
+                         actionButton("delete_plate", label = "Delete Selected Plate"))
+              ) # end div outer flex tag
+        )
       ),
 
        style = "primary" )
@@ -451,8 +459,8 @@ observe({
   # if (input$edit_plate != no_space_plate) {
   #  updateTextInput(session, "edit_plate", value = no_space_plate)
   # }
-  # sample dilution factors can only be between 0 and 100,000 inclusive
-   if (input$edit_sample_dil_factor < 0 || input$edit_sample_dil_factor > 100000) {
+  # sample dilution factors can only be between 0 and 1,000,000  (10^6) inclusive
+   if (input$edit_sample_dil_factor < 0 || input$edit_sample_dil_factor > 1000000) {
      updateNumericInput(session, "edit_sample_dil_factor", value = -1)
    }
 
@@ -697,3 +705,30 @@ observeEvent(input$confirm_sample_dil_edit, {
   })
 
 })
+
+# Delete Plate
+observeEvent(input$delete_plate, {
+
+  selected_analyte <- paste(input$selected_experiment_row, input$original_sample_dilution_factor, sep = "_")
+  # showNotification(paste("Delete clicked for analyte", analyte_list[row_idx], "plate", plate_list[col_idx]))
+  showModal(
+    modalDialog(
+      title = "Confirm Delete",
+      paste("Are you sure you want to delete count for analyte",
+            selected_analyte, "and", input$original_plate_to_edit, "? This will delete the header,
+                buffers, controls, standards, and standard fits."),
+      footer = tagList(
+        #actionButton("confirm_plate_delete", "Confirm Deletion"),
+        modalButton("Cancel")
+      ),
+      easyClose = TRUE
+    )
+  )
+
+
+}, ignoreInit = TRUE)
+
+observe({
+  shinyjs::disable("confirm_plate_delete")
+})
+
