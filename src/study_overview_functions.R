@@ -201,7 +201,7 @@ pull_fits <- function(conn, selected_study, current_user, plates) {
 
   standard_fit$plateid <- str_replace_all(standard_fit$plateid, fixed(".."),"_")
   standard_fit$plateid <- str_replace_all(standard_fit$plateid, fixed("."),"_")
-  #standard_fit_v <<- standard_fit
+  standard_fit_v <<- standard_fit
 
   standard_fit <- merge(standard_fit[ , ! names(standard_fit) %in% c("analyte")], plates, by = "plateid", all.y = TRUE)
   standard_fit$plate_id <- toupper(standard_fit$plate_id)
@@ -214,7 +214,7 @@ pull_fits <- function(conn, selected_study, current_user, plates) {
 
   #standard_fit_f <<- standard_fit
 
-  standard_fit <- standard_fit %>% distinct()
+  standard_fit <<- standard_fit %>% distinct()
 
   return(standard_fit)
 }
@@ -742,6 +742,8 @@ make_cv_scatterplot <- function(df, x_var, y_var, facet_var1, facet_var2, color_
 
 
 prep_analyte_fit_summary <- function(summ_spec_in, standard_fit_res) {
+  standard_fit_res <<- standard_fit_res
+  summ_spec_in <<- summ_spec_in
   merged_df <- merge(summ_spec_in,
                      standard_fit_res[, c("plateid", "antigen", "analyte", "crit", "source")],
                      by = c("plateid", "antigen", "analyte"),
@@ -767,10 +769,27 @@ prep_analyte_fit_summary <- function(summ_spec_in, standard_fit_res) {
 
 
 plot_preped_analyte_fit_summary <- function(preped_data, analyte_selector) {
+
+  preped_data <<- preped_data
+  analyte_selector <<- analyte_selector
+
+  failed_plates <- preped_data %>%
+    filter(specimen_type == "standard", crit == "No Model", analyte == analyte_selector) %>%
+    pull(plate) %>%
+    unique()
+
   failed_model_count <- preped_data %>%
-    filter(specimen_type == "standard", analyte == analyte_selector, crit == "No Model") %>%
-    distinct(plateid, antigen, analyte) %>%
+    filter(specimen_type == "sample", analyte == analyte_selector, plate %in% failed_plates) %>%
     nrow()
+
+  # failed_model_count <- preped_data %>%
+  #   filter(specimen_type == "standard", analyte == analyte_selector, crit == "No Model") %>%
+  #  distinct(plateid, antigen, analyte) %>%
+  #   nrow()
+  # failed_model_count <- preped_data %>%
+  #     filter(specimen_type == "sample", crit == "No Model", analyte == analyte_selector) %>%
+  #        dplyr::summarise(count = dplyr::n()) %>%
+  #       dplyr::pull(count)
 
   long_df <- preped_data[preped_data$specimen_type == "sample" & preped_data$analyte == analyte_selector,] %>%
     pivot_longer(
@@ -797,12 +816,11 @@ plot_preped_analyte_fit_summary <- function(preped_data, analyte_selector) {
 
 
   # filter out fit category of samples
-   long_df <- long_df[!(long_df$fit_category %in% c("High Bead Aggregation", "Low Bead Count")), ]
+  # long_df <- long_df[!(long_df$fit_category %in% c("High Bead Aggregation", "Low Bead Count")), ]
    long_df_group <- long_df %>%
          group_by(plate, antigen, crit) %>%
          mutate(proportion = count / sum(count)) %>%
          ungroup()
-
 
    long_df_group$fit_category <- factor(
      long_df_group$fit_category,
@@ -823,6 +841,59 @@ plot_preped_analyte_fit_summary <- function(preped_data, analyte_selector) {
    plates_all <- summarise_by_fit_category_plate(long_df_group)[, c("analyte", "plate", "antigen", "model_class", "crit", "fit_category", "count", "proportion")]
    long_df_group <- rbind(long_df_group, plates_all)
 
+  #  fit_levels <- rev(c(
+  #    "Below LLOD",
+  #    "Low Bead Count",
+  #    "Too Diluted",
+  #    "In Linear Range",
+  #    "Too Concentrated",
+  #    "High Bead Aggregation",
+  #    "Above ULOD",
+  #    "No Model"
+  #  )
+  #  )
+  #
+  #  long_df_group <- long_df_group %>%
+  #    group_by(plate, antigen) %>%
+  #    mutate(proportion_norm = count / sum(count)) %>%
+  #    ungroup() %>%
+  #    mutate(fit_category = factor(fit_category, levels = fit_levels))
+  #
+  #
+  # fit_colors <-  c(
+  #        "Below LLOD"            = "#313695",
+  #        "Low Bead Count"        = "#4575b4",
+  #        "Too Diluted"           = "#91bfdb",
+  #        "In Linear Range"       = "#1a9850",  # green (center)
+  #        "Too Concentrated"      = "#fee08b",
+  #        "High Bead Aggregation" = "#fc8d59",
+  #        "Above ULOD"            = "#d73027",
+  #        "No Model"              = "black"
+  #  )
+  #  plots <- lapply(split(long_df_group, long_df_group$antigen), function(df) {
+  #    plot_ly(
+  #      data = df,
+  #      x = ~plate,
+  #      y = ~proportion_norm,
+  #      color = ~fit_category,
+  #      colors = fit_colors,
+  #      type = "bar"
+  #    ) %>%
+  #      layout(
+  #        barmode = "stack",
+  #        title = unique(df$antigen),
+  #        xaxis = list(title = "Plate", tickangle = 90),
+  #        yaxis = list(title = "Proportion")
+  #      )
+  #  })
+
+   # arrange subplots vertically
+   # plot <- subplot(plots, nrows = length(plots), shareX = TRUE) %>%
+   #   layout(
+   #     title = paste(input$analyte_selector,
+   #                   "- Sample Estimate Quality by Plate and Antigen (Proportion)."),
+   #     legend = list(title = list(text = "Quality"))
+   #   )
   plot <- ggplot(long_df_group, aes(x = plate, y = proportion, fill = fit_category)) +
     geom_bar(stat = "identity", color = "black", linewidth = 0.3) +
     facet_grid(rows = vars(antigen), scales = "free_x", space = "free_x") + #cols = vars(crit),
@@ -850,6 +921,9 @@ plot_preped_analyte_fit_summary <- function(preped_data, analyte_selector) {
   return(list(plot, long_df_group))
 
 }
+
+
+
 
 # Produce table with number of samples by analyte, antigen, time period table
 create_timeperiod_table <- function(sample_spec_timeperiod) {

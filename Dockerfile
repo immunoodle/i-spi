@@ -93,6 +93,7 @@ RUN R -e "install.packages(c('strex', 'purrr'))"
 RUN R -e "install.packages('shiny.destroy')"
 RUN R -e "install.packages(c('viridis', 'htmltools'))"
 RUN R -e "install.packages(c('minpack.lm', 'Deriv'))"
+RUN R -e "install.packages('nls.multstart')"
 
 
 RUN rm -rf /srv/shiny-server/*
