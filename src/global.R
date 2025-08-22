@@ -38,6 +38,7 @@ library(magrittr)
 library(car) # for VIF
 library(nlraa)
 library(minpack.lm)
+library(nls.multstart)
 library(Deriv)
 library(nlstools)
 library(magrittr)

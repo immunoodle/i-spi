@@ -1498,11 +1498,24 @@ compute_nls_4 <- function(dat, bkg, is_log_mfi_axis) {
 ## Function to compute power four parameter function
 compute_power_4 <- function(dat, bkg, is_log_mfi_axis) {
 cat("\ncalculating power four param\n")
-  start_vals <- list(
-    l_asy = min(dat$mfi),       # lower asymptote
-    r_asy = max(dat$mfi),       # upper asymptote
-    xmid = median(dat$log_dilution), # inflection point
-    scal = 1                # slope (Hill slope)
+  # start_vals <<- list(
+  #   l_asy = 0,       # lower asymptote
+  #   r_asy = max(dat$mfi) * 1.2,       # upper asymptote
+  #   xmid = median(dat$log_dilution), # inflection point
+  #   scal = 1                # slope (Hill slope)
+  # )
+  start_lower <- list(
+    l_asy = 0,       # lower asymptote
+    r_asy = median(dat$mfi),       # upper asymptote
+    xmid = median(dat$log_dilution) * 2, # inflection point
+    scal = 0.1                # slope (Hill slope)
+  )
+
+  start_upper <- list(
+    l_asy = median(dat$mfi),       # lower asymptote
+    r_asy = max(dat$mfi) * 2,       # upper asymptote
+    xmid = median(dat$log_dilution) * 0.5, # inflection point
+    scal = 100                # slope (Hill slope)
   )
 
   #start_vals_v <- start_vals
@@ -1516,15 +1529,38 @@ cat("\ncalculating power four param\n")
   # }
 
   # Fit model with nlsLM (more robust than nls)
+  #dat_v <<- dat
   fit <- tryCatch({
-    minpack.lm::nlsLM(mfi ~ r_asy + (l_asy - r_asy) / (1 + (log_dilution / xmid)^scal),
-                      data = dat,
-                      start = start_vals,
-                      control = nls.lm.control(maxiter = 1000)) },
+    # minpack.lm::nlsLM(mfi ~ r_asy + (l_asy - r_asy) / (1 + (log_dilution / xmid)^scal),
+    #                   data = dat,
+    #                   start = start_vals,
+    #                   control = nls.lm.control(maxiter = 1000))
+    nls.multstart::nls_multstart(
+     mfi ~ r_asy + (l_asy - r_asy) / (1 + (log_dilution / xmid)^scal),
+               data = dat,
+               iter = 10,
+               start_lower = unlist(start_lower),
+               start_upper = unlist(start_upper),
+               supp_errors = "Y",
+               convergence_count = FALSE,
+               control = list(maxiter = 1000)
+        )
+
+
+
+    },
     error = function(e) {
       message("Error in nlsLM: ", e$message)
       NULL  # Return NULL on error
     })
+
+  # if (!is.null(fit)) {
+  #   fit <- minpack.lm::nlsLM(
+  #     formula(fit),
+  #     data = dat,
+  #     start = as.list(coef(fit))
+  #   )
+  # }
   # fit <- minpack.lm::nlsLM(mfi ~ r_asy + (l_asy - r_asy) / (1 + (log_dilution / xmid)^scal),
   #              data = dat,
   #              start = start_vals,
@@ -1569,10 +1605,15 @@ cat("\ncalculating power four param\n")
      se <- as.data.frame(summary(fit)$coefficients)["r_asy", "Std. Error"]
      coef_d <- as.data.frame(summary(fit)$coefficients)["r_asy", "Estimate"]
 
-     llod_pred <- predictNLS(fit, newdata = data.frame(log_dilution = min(dat$log_dilution) * 1.1),
-                             interval = "confidence")
+     pred <- nlstools::confint2(fit)
+     llod <- pred["l_asy", "97.5 %"]
 
-     llod <- llod_pred$summary$`Prop.97.5%`
+     # llod_pred <- predictNLS(fit, newdata = data.frame(log_dilution = min(dat$log_dilution) * 1.1),
+     #                         interval = "confidence")
+     #
+     # llod <- llod_pred$summary$`Prop.97.5%`
+
+
      # if (llod > coef_d * 0.90) {
      #
      # }
@@ -1588,10 +1629,12 @@ cat("\ncalculating power four param\n")
      }
 
      # ULOD — predict at the highest dilution
-     ulod_pred <- predictNLS(fit, newdata = data.frame(log_dilution = max(dat$log_dilution) * 0.9),
-                             interval = "confidence")
-
-     ulod <- ulod_pred$summary$`Prop.2.5%`
+    #ulod_pred <-
+     # ulod_pred <- predictNLS(fit, newdata = data.frame(log_dilution = max(dat$log_dilution) * 0.9),
+     #                         interval = "confidence")
+     #
+     # ulod <- ulod_pred$summary$`Prop.2.5%`
+     ulod <- pred["l_asy", "2.5 %"]
 
      # in summary this occurs
      if (is.nan(ulod)) {
@@ -4335,6 +4378,7 @@ save_fit_au <- function(dat, sample_data, selectedExperiment, selectedSource, bu
   pass_fits <- list()
 
   for (plate in plate_list) {
+   # for (plate in plate_list[1]) {
 
     cat("Before plate filter")
     print(plate)
@@ -4342,7 +4386,7 @@ save_fit_au <- function(dat, sample_data, selectedExperiment, selectedSource, bu
    # plate_data <- dat[dat$plateid == plate & dat$antigen %in% antigen_list_input,]
    # dat_v <<- dat
     plate_sc_data <- dat[dat$plateid == plate, ]
-    plate_source <- unique(plate_sc_data$source)
+    plate_sources <- unique(plate_sc_data$source)
 
   # plate_sc_data_view <<- plate_sc_data
   # source_v <<- selectedSource
@@ -4355,11 +4399,12 @@ save_fit_au <- function(dat, sample_data, selectedExperiment, selectedSource, bu
     antigen_list <- unique(plate_sc_data$antigen)
     print(antigen_list)
     #antigen_list_v <<- antigen_list
-
-    for(antigen in antigen_list) {
+    for (source_var in plate_sources) {
+     for(antigen in antigen_list) {
+     # for(antigen in c("b_austria_18")) {
 
       # filter plate and antigen
-      filtered_sc_data <- plate_sc_data[plate_sc_data$source == plate_source & plate_sc_data$antigen == antigen
+      filtered_sc_data <- plate_sc_data[plate_sc_data$source == source_var & plate_sc_data$antigen == antigen
                                   & plate_sc_data$experiment_accession == selectedExperiment,]
 
       filtered_sc_data_view_1 <- filtered_sc_data
@@ -4396,7 +4441,7 @@ save_fit_au <- function(dat, sample_data, selectedExperiment, selectedSource, bu
           plate = plate,
           study_accession =  unique(filtered_sc_data$study_accession),
           experiment_accession = unique(filtered_sc_data$experiment_accession),
-          source = plate_source,
+          source = source_var,
           bkg = bkg,
           is_log_mfi_axis = is_log_mfi_axis,
           g_value = 0.5
@@ -4434,7 +4479,7 @@ save_fit_au <- function(dat, sample_data, selectedExperiment, selectedSource, bu
                          experiment_accession_in = experiment_accession ,
                          antigen_in = antigen,
                          plateid_in = plate,
-                         source  = selectedSource,
+                         source  = source_var,
                          is_log_mfi_axis_in = is_log_mfi_axis)
 
         cat("Before Save")
@@ -4510,13 +4555,14 @@ save_fit_au <- function(dat, sample_data, selectedExperiment, selectedSource, bu
                          experiment_accession_in = experiment_accession ,
                          antigen_in = antigen,
                          plateid_in = plate,
-                         source  = selectedSource,
+                         source  = source_var,
                          is_log_mfi_axis_in = is_log_mfi_axis)
 
 
         } # end else for null model
       } # test nrow > 0
     } # end antigen loop
+    } # end source loop
     # selected_antigen(NULL)
   } # end plate loop
 
