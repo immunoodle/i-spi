@@ -223,8 +223,8 @@ createOutlierTypeUI <- function(existing_types, job_status) {
 
 
 # Main observer - was in loaded data
-observeEvent(input$qc_component, {
-  if (input$qc_component == "Outliers") {
+observeEvent(input$advanced_qc_component, {
+  if (input$advanced_qc_component == "Outliers") {
     observe({
 
     outlierUIRefresher()

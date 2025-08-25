@@ -490,69 +490,158 @@ render_study_parameters <- reactive({
     id = "standard_curve_config",
     bsCollapsePanel(
       title = "Standard Curve Parameters",
-      bsCollapse(
-        id = "standard_curve_parameters_info",
-        bsCollapsePanel(
-          title = "Standard Curve Parameters Methods",
-          tagList(
-           tags$p("The Prozone correction which is recomended, accounts for the prozone effect in stndard curve data in which
-                  '...the concentration of the analyte becomes so high that it exceeds the capacity of the antibodies in the assay' (Bradley and Bhalla)"),
-           tags$p("Including the geometric mean of the MFI of the blanks and subtracting the geometric mean of the blanks from each standard are adapted from Sanz et al.")
-
-          ), # end taglist
-          style = "success"
-        )),
-  #  HTML("<h4><strong>Standard Curve</strong></h4>"),
-    # Mean MFI at each dilution factor
-    switchInput(mean_mfi_params$param_name,
-                label = mean_mfi_params$param_label,
-                value = as.logical(toupper(mean_mfi_params$param_boolean_value))),
-
-    uiOutput("mean_mfi_warning"),
-   # Use MFI as log or not
-   switchInput(log_mfi_axis_params$param_name,
-              label = log_mfi_axis_params$param_label,
-              value = as.logical(toupper(log_mfi_axis_params$param_boolean_value))),
-
-   uiOutput("is_log_mfi_warning"),
-
-  # Prozone correction or not
-  switchInput(prozone_correction_params$param_name,
-              label = prozone_correction_params$param_label,
-              value = as.logical(toupper(prozone_correction_params$param_boolean_value))),
-
-  uiOutput("apply_prozone_warning"),
+      # bsCollapse(
+      #   id = "standard_curve_parameters_info",
+      #   bsCollapsePanel(
+      #     title = "Standard Curve Parameters Methods",
+      #     tagList(
+      #      tags$p("The Prozone correction which is recomended, accounts for the prozone effect in stndard curve data in which
+      #             '...the concentration of the analyte becomes so high that it exceeds the capacity of the antibodies in the assay' (Bradley and Bhalla)"),
+      #      tags$p("Including the geometric mean of the MFI of the blanks and subtracting the geometric mean of the blanks from each standard are adapted from Sanz et al.")
+      #
+      #     ), # end taglist
+      #     style = "success"
+      #   )),
 
 
+      tags$table(
+        border = 1,
 
-    # Blank Control Options
-    div(style = "display:inline-block; margin-bottom: 10px;",
-        title = "Info",
-        icon("info-circle", class = "fa-lg", `data-toggle` = "tooltip",
-             `data-placement` = "right",
-             title = paste("To select a method for which the buffers are to be treated for the selected study click one of the methods.
+        # Row 1: Mean MFI
+        tags$tr(
+          tags$td(
+            switchInput(mean_mfi_params$param_name,
+                        label = mean_mfi_params$param_label,
+                        value = as.logical(toupper(mean_mfi_params$param_boolean_value))),
+            uiOutput("mean_mfi_warning")
+          ),
+          tags$td(
+            "Take the mean of multiple MFI measurements in the standards at same concentration. This is especially helpful if there are repeated MFI measures."
+          )
+        ),
+
+        # Row 2: Log MFI
+        tags$tr(
+          tags$td(
+            switchInput(log_mfi_axis_params$param_name,
+                        label = log_mfi_axis_params$param_label,
+                        value = as.logical(toupper(log_mfi_axis_params$param_boolean_value))),
+            uiOutput("is_log_mfi_warning")
+          ),
+          tags$td(
+            "Choose whether or not to log transform MFI when fitting standard curves."
+          )
+        ),
+
+        # Row 3: Prozone correction
+        tags$tr(
+          tags$td(
+            switchInput(prozone_correction_params$param_name,
+                        label = prozone_correction_params$param_label,
+                        value = as.logical(toupper(prozone_correction_params$param_boolean_value))),
+            uiOutput("apply_prozone_warning")
+          ),
+          tags$td(
+            "The Prozone Correction, which is recomended, accounts for the prozone effect in stndard curve data in which
+                  '...the concentration of the analyte becomes so high that it exceeds the capacity of the antibodies in the assay' (Bradley and Bhalla)"
+          )
+        ),
+
+        # Row 4: Blank control options
+        tags$tr(
+          tags$td(
+            radioButtons(blank_options_params$param_name,
+                         label = blank_options_params$param_label,
+                         choices = blank_options_choices,
+                         selected = blank_options_params$param_character_value),
+            uiOutput("blank_option_warning")
+          ),
+          tags$td(
+            "Select how blank controls are handled in the standard curve estimation. Options include Ignore, Include geometric mean of blank, or Subtract multiples of the geometric mean.",
+            div(style = "display:inline-block; margin-bottom: 10px;",
+                title = "Info",
+                icon("info-circle", class = "fa-lg", `data-toggle` = "tooltip",
+                     `data-placement` = "right",
+                     title = paste("To select a method for which the blanks are to be treated for the selected study click one of the methods.
                                  The avaliable methods are 'Ignore', 'Include', 'Subtract Geometric Mean', 'Subtract three times the Geometric Mean' and subtract 10 times the geometric mean.
-                                 When Ignore is selected, the buffers are not considered in the standard curve.
+                                 When Ignore is selected, the blanks are not considered in the standard curve.
                                  When Included is selected, the stimation of the standard curve takes into account the mean of the background
 of the values as another point of the standard curve. The median fluorescence intensity and the expected concentration for this new point by analyte is estimated as follows:
                                  MFI: geometric mean of the blank controls.
                                  log dilution: The mininum log dilution - log10(2). This corresponds to the the minimum expected concentration value of the standard points divided by 2 as in the drLumi package.
                                  When subtracted is selected, the geometric mean of the blank controls is subracted from all the standard points. Depending on what level of subtraction is selected,
                                  the geometric mean is multiplied by that factor (1,3, or 10) before the subtraction is applied. After subtraction, if any MFI is below 0 it is set to 0."),
-             `data-html` = "true")
-    ),
-    radioButtons(blank_options_params$param_name,
-                 label = blank_options_params$param_label,
-                 choices = blank_options_choices,
-                 selected = blank_options_params$param_character_value),
+                     `data-html` = "true")
+            )
+          )
+        ),
 
-    uiOutput("blank_option_warning"),
-    # Source - get from loaded data - default to first source
-     radioButtons(default_source_params$param_name,
-                  label = default_source_params$param_label,
-                  choices  = source_options_choices,
-                  selected = default_db_source), # source_options_choices[1]),
-  uiOutput("default_source_warning"),
+        # Row 5: Source
+        tags$tr(
+          tags$td(
+            radioButtons(default_source_params$param_name,
+                         label = default_source_params$param_label,
+                         choices  = source_options_choices,
+                         selected = default_db_source),
+            uiOutput("default_source_warning")
+          ),
+          tags$td(
+            "Select the default source to use for standard curve calculation."
+          )
+        )
+      ),
+
+  #  HTML("<h4><strong>Standard Curve</strong></h4>"),
+    # Mean MFI at each dilution factor
+#     switchInput(mean_mfi_params$param_name,
+#                 label = mean_mfi_params$param_label,
+#                 value = as.logical(toupper(mean_mfi_params$param_boolean_value))),
+#
+#     uiOutput("mean_mfi_warning"),
+#    # Use MFI as log or not
+#    switchInput(log_mfi_axis_params$param_name,
+#               label = log_mfi_axis_params$param_label,
+#               value = as.logical(toupper(log_mfi_axis_params$param_boolean_value))),
+#
+#    uiOutput("is_log_mfi_warning"),
+#
+#   # Prozone correction or not
+#   switchInput(prozone_correction_params$param_name,
+#               label = prozone_correction_params$param_label,
+#               value = as.logical(toupper(prozone_correction_params$param_boolean_value))),
+#
+#   uiOutput("apply_prozone_warning"),
+#
+#
+#
+#     # Blank Control Options
+#     div(style = "display:inline-block; margin-bottom: 10px;",
+#         title = "Info",
+#         icon("info-circle", class = "fa-lg", `data-toggle` = "tooltip",
+#              `data-placement` = "right",
+#              title = paste("To select a method for which the buffers are to be treated for the selected study click one of the methods.
+#                                  The avaliable methods are 'Ignore', 'Include', 'Subtract Geometric Mean', 'Subtract three times the Geometric Mean' and subtract 10 times the geometric mean.
+#                                  When Ignore is selected, the buffers are not considered in the standard curve.
+#                                  When Included is selected, the stimation of the standard curve takes into account the mean of the background
+# of the values as another point of the standard curve. The median fluorescence intensity and the expected concentration for this new point by analyte is estimated as follows:
+#                                  MFI: geometric mean of the blank controls.
+#                                  log dilution: The mininum log dilution - log10(2). This corresponds to the the minimum expected concentration value of the standard points divided by 2 as in the drLumi package.
+#                                  When subtracted is selected, the geometric mean of the blank controls is subracted from all the standard points. Depending on what level of subtraction is selected,
+#                                  the geometric mean is multiplied by that factor (1,3, or 10) before the subtraction is applied. After subtraction, if any MFI is below 0 it is set to 0."),
+#              `data-html` = "true")
+#     ),
+#     radioButtons(blank_options_params$param_name,
+#                  label = blank_options_params$param_label,
+#                  choices = blank_options_choices,
+#                  selected = blank_options_params$param_character_value),
+#
+#     uiOutput("blank_option_warning"),
+#     # Source - get from loaded data - default to first source
+#      radioButtons(default_source_params$param_name,
+#                   label = default_source_params$param_label,
+#                   choices  = source_options_choices,
+#                   selected = default_db_source), # source_options_choices[1]),
+#   uiOutput("default_source_warning"),
 
   actionButton(inputId = "save_standard_curve_config",
                label = "Save"),

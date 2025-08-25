@@ -201,7 +201,7 @@ pull_fits <- function(conn, selected_study, current_user, plates) {
 
   standard_fit$plateid <- str_replace_all(standard_fit$plateid, fixed(".."),"_")
   standard_fit$plateid <- str_replace_all(standard_fit$plateid, fixed("."),"_")
-  standard_fit_v <<- standard_fit
+  #standard_fit_v <<- standard_fit
 
   standard_fit <- merge(standard_fit[ , ! names(standard_fit) %in% c("analyte")], plates, by = "plateid", all.y = TRUE)
   standard_fit$plate_id <- toupper(standard_fit$plate_id)
@@ -214,7 +214,7 @@ pull_fits <- function(conn, selected_study, current_user, plates) {
 
   #standard_fit_f <<- standard_fit
 
-  standard_fit <<- standard_fit %>% distinct()
+  standard_fit <- standard_fit %>% distinct()
 
   return(standard_fit)
 }
@@ -359,6 +359,10 @@ check_plate <- function(conn, selected_study){
     plates$plateids <- stringr::str_replace_all(plates$plateids, "_pt", "_plate")
     plates$plate <- str_split_i(plates$plateids, "plate",-1)
     plates$plate <- paste("plate",str_split_i(plates$plate, "_",1),sep = "_")
+
+
+    plates$plate <- str_extract(plates$plate, "plate_\\d+")
+
     plates <- distinct(plates[ , c("xmap_header_id","experiment_accession","plate_id","plateid","plate","sample_dilution_factor","needs_update")])
   }
 
@@ -370,7 +374,7 @@ check_plate <- function(conn, selected_study){
   if (nrow(plates_update)>0){
     for(i in seq_len(nrow(plates_update))) {
       this_row <- plates_update[i, ]
-
+      print(this_row$plate)
       sql <- glue_sql(
         "UPDATE xmap_header
      SET plateid = {this_row$plateid}, plate = {this_row$plate},
@@ -742,8 +746,8 @@ make_cv_scatterplot <- function(df, x_var, y_var, facet_var1, facet_var2, color_
 
 
 prep_analyte_fit_summary <- function(summ_spec_in, standard_fit_res) {
-  standard_fit_res <<- standard_fit_res
-  summ_spec_in <<- summ_spec_in
+  # standard_fit_res <- standard_fit_res
+  # summ_spec_in <- summ_spec_in
   merged_df <- merge(summ_spec_in,
                      standard_fit_res[, c("plateid", "antigen", "analyte", "crit", "source")],
                      by = c("plateid", "antigen", "analyte"),
@@ -770,8 +774,8 @@ prep_analyte_fit_summary <- function(summ_spec_in, standard_fit_res) {
 
 plot_preped_analyte_fit_summary <- function(preped_data, analyte_selector) {
 
-  preped_data <<- preped_data
-  analyte_selector <<- analyte_selector
+  #preped_data <<- preped_data
+  #analyte_selector <<- analyte_selector
 
   failed_plates <- preped_data %>%
     filter(specimen_type == "standard", crit == "No Model", analyte == analyte_selector) %>%
@@ -894,6 +898,85 @@ plot_preped_analyte_fit_summary <- function(preped_data, analyte_selector) {
    #                   "- Sample Estimate Quality by Plate and Antigen (Proportion)."),
    #     legend = list(title = list(text = "Quality"))
    #   )
+   col_map <- c(
+     "Below LLOD"            = "#313695",
+     "Low Bead Count"        = "#4575b4",
+     "Too Diluted"           = "#91bfdb",
+     "In Linear Range"       = "#1a9850",
+     "Too Concentrated"      = "#fee08b",
+     "High Bead Aggregation" = "#fc8d59",
+     "Above ULOD"            = "#d73027",
+     "No Model"              = "black"
+   )
+   # fill_levels <- names(col_map)
+   # # same setup of long_df_group as before, but plate can remain character if different per antigen
+   # antigens <- unique(long_df_group$antigen)
+   # subplot_list <- vector("list", length(antigens))
+   #
+   # for (i in seq_along(antigens)) {
+   #   ag <- antigens[i]
+   #   df_ag <- filter(long_df_group, antigen == ag)
+   #   plates <- unique(df_ag$plate)
+   #
+   #   p <- plot_ly()
+   #   for (cat in fill_levels) {
+   #     df_cat <- df_ag %>% filter(fit_category == cat)
+   #     vals <- sapply(plates, function(pn) {
+   #       v <- df_cat$proportion[df_cat$plate == pn]
+   #       if (length(v) == 0) 0 else v
+   #     })
+   #     p <- add_trace(p,
+   #                    x = plates, y = vals, type = "bar", name = cat,
+   #                    marker = list(color = col_map[cat], line = list(color = "black", width = 0.3)),
+   #                    showlegend = (i == 1),
+   #                    hoverinfo = "text",
+   #                    text = paste0("Antigen: ", ag, "<br>Plate: ", plates, "<br>Quality: ", cat, "<br>Proportion: ", vals)
+   #     )
+   #   }
+   #
+   #   show_xticks <- i == length(antigens)  # only bottom subplot shows x tick labels
+   #
+   #   p <- layout(p,
+   #               barmode = "stack",
+   #               xaxis = list(title = "Plate", tickangle = 90, showticklabels = show_xticks),
+   #               yaxis = list(title = "Proportion"),
+   #               title = list(text = ag, x = 0, xanchor = "left"))
+   #   subplot_list[[i]] <- p
+   # }
+   #
+   # plot <- subplot(subplot_list, nrows = length(subplot_list), shareX = FALSE, shareY = TRUE) %>%
+   #   layout(title = paste0(input$analyte_selector, " - Sample Estimate Quality by Plate and Antigen (Proportion)"),
+   #          legend = list(orientation = "v", x = 1.02, y = 1),
+   #          margin = list(l = 60, r = 150, t = 80, b = 160))
+   # plot
+
+   # plots <- long_df_group %>%
+   #   split(.$antigen) %>%
+   #   lapply(function(df) {
+   #     plot_ly(
+   #       data = df,
+   #       x = ~plate,
+   #       y = ~proportion,
+   #       color = ~fit_category,
+   #       colors = col_map,
+   #       type = "bar"
+   #     ) %>%
+   #       layout(
+   #         barmode = "stack",
+   #         xaxis = list(title = "Plate", tickangle = 90),
+   #         yaxis = list(title = "Proportion"),
+   #         legend = list(title = list(text = "Quality")),
+   #         title = unique(df$antigen)
+   #       )
+   #   })
+   #
+   # # arrange vertically like facet_grid(rows = vars(antigen))
+   # plot <- subplot(plots, nrows = length(plots), shareX = TRUE, shareY = FALSE, titleY = TRUE) %>%
+   #   layout(
+   #     title = paste(input$analyte_selector,"- Sample Estimate Quality by Plate and Antigen (Proportion)")
+   #   )
+
+ #long_df_group_v <<- long_df_group
   plot <- ggplot(long_df_group, aes(x = plate, y = proportion, fill = fit_category)) +
     geom_bar(stat = "identity", color = "black", linewidth = 0.3) +
     facet_grid(rows = vars(antigen), scales = "free_x", space = "free_x") + #cols = vars(crit),
@@ -915,7 +998,7 @@ plot_preped_analyte_fit_summary <- function(preped_data, analyte_selector) {
       x = "Plate",
       y = "Proportion",
       fill = "Quality",
-      title = paste(input$analyte_selector,"- Sample Estimate Quality by Plate and Antigen (Proportion).")
+      title = paste(input$analyte_selector,"- Sample Estimate Quality by Plate and Antigen (Proportion)")
     )
 
   return(list(plot, long_df_group))

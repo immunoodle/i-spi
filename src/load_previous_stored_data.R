@@ -307,7 +307,7 @@ observeEvent(input$readxMap_experiment_accession, {
       )
    # output$stored_header = DT::renderDataTable(stored_header_dt, server = FALSE)
     output$stored_header <- DT::renderDataTable({
-      req(input$dataCollapse == "Header")  # Only run if "Header" panel is open
+      req(input$dataCollapse == "Plates")  # Only run if "Header" panel is open
       stored_header_dt
     }, server = TRUE)
 
@@ -508,7 +508,7 @@ observe({
                     id = "dataCollapse",
                     multiple = FALSE,
                     bsCollapsePanel(
-                      title = "Header",
+                      title = "Plates",
                       DT::dataTableOutput("stored_header"),
                       downloadButton("download_stored_header"),
                       uiOutput("header_actions"),
@@ -538,7 +538,7 @@ observe({
                       downloadButton("download_stored_sample"),
                       style = "primary" # set to open initially
                     ),
-                    open = "Header"
+                    open = "Plates"
                   )
                 ),
                 tabPanel(

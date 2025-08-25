@@ -3,17 +3,17 @@
 observeEvent(list(
   input$readxMap_experiment_accession,
   input$readxMap_study_accession,
-  input$qc_component,
+  input$advanced_qc_component,
   input$study_level_tabs,
   input$main_tabs), {
 
-    req(input$qc_component == "Subgroup Detection Summary",
+    req(input$advanced_qc_component == "Subgroup Detection Summary",
         input$readxMap_study_accession != "Click here",
         input$readxMap_experiment_accession != "Click here",
         input$study_level_tabs == "Experiments",
         input$main_tabs == "view_files_tab")
 
-  if (input$qc_component == "Subgroup Detection Summary") {
+  if (input$advanced_qc_component == "Subgroup Detection Summary") {
 
     selected_study <- selected_studyexpplate$study_accession
     selected_experiment <- selected_studyexpplate$experiment_accession
