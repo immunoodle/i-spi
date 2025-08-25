@@ -2,11 +2,11 @@
 observeEvent(list(
   input$readxMap_experiment_accession,
   input$readxMap_study_accession,
-  input$qc_component,
+  input$advanced_qc_component,
   input$study_level_tabs,
   input$main_tabs), {
 
-    req(input$qc_component == "Dilution Analysis",
+    req(input$advanced_qc_component == "Dilution Analysis",
         input$readxMap_study_accession != "Click here",
         input$readxMap_experiment_accession != "Click here",
         input$study_level_tabs == "Experiments",
@@ -14,7 +14,7 @@ observeEvent(list(
 
  # req(input$inLoadedData, input$readxMap_experiment_accession)
  # input$readxMap_experiment_accession
-  if (input$qc_component == "Dilution Analysis") {
+  if (input$advanced_qc_component == "Dilution Analysis") {
     selected_study <- selected_studyexpplate$study_accession
     selected_experiment <- selected_studyexpplate$experiment_accession
 
@@ -255,7 +255,7 @@ observeEvent(list(
     ### Decision tree
     decision_tree_reactive <- reactive({
       #req(input$inLoadedData == "Dilution Analysis")
-      req(input$qc_component == "Dilution Analysis")
+      req(input$advanced_qc_component == "Dilution Analysis")
       req(study_configuration)
 
       is_binary <- study_configuration[study_configuration$param_name == "is_binary_gc",]$param_boolean_value
@@ -412,7 +412,7 @@ observeEvent(list(
 
     output$dilution_summary_barplot <- renderPlotly({
      # req(input$inLoadedData == "Dilution Analysis")
-      req(input$qc_component == "Dilution Analysis")
+      req(input$advanced_qc_component == "Dilution Analysis")
       # if (input$inLoadedData != "Dilution Analysis") {
       #   return(NULL)
       # }
@@ -545,7 +545,7 @@ observeEvent(list(
 
     # Filter the classified  merged
     classified_merged_rv <- reactive({
-      if (is.null(input$qc_component) || input$qc_component != "Dilution Analysis") {
+      if (is.null(input$advanced_qc_component) || input$advanced_qc_component != "Dilution Analysis") {
         return(NULL)
       }
 

@@ -101,7 +101,7 @@ observeEvent(input$study_level_tabs, {
           "Sample Estimate Quality by Plate and Antigen",
           uiOutput("fit_source_selectorUI"),
           uiOutput("analyte_selectorUI"),
-          plotOutput("analyte_dilution_assessment", height = "800px"),
+          plotOutput("analyte_dilution_assessment", height = "800px"),#, height = "800px"),
           downloadButton("download_plot_dilution_assessment", "Download Plot"),
           downloadButton("download_plot_dilution_assessment_data", "Download Sample Estimate Quality by Plate and Antigen"),
          # hr(style = "border: none; height: 1px; background-color: black; margin: 20px 0;"),

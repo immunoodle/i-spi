@@ -224,16 +224,116 @@ output$view_stored_experiments_ui <- renderUI({
                      conditionalPanel(
                        condition = "input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
 
-                       radioGroupButtons(
-                         inputId = "qc_component",
-                         label = "QC Phase",
-                         choices = c("Data", "Bead Count", "Standard Curve","Standard Curve Summary", "Dilution Analysis", "Dilutional Linearity",
-                                    # "Plate Normalization",
-                                     "Outliers", "Subgroup Detection", "Subgroup Detection Summary"),
-                         selected = "Data",
-                       #  justified = TRUE,
-                       #  multiple = FALSE
-                       )
+                      # tabsetPanel(
+                      #   id = "basic_advance_tabs",
+                      #   tabPanel(id = "basic_qc",
+                      #     title = "Quality Control",
+                      #     radioGroupButtons(
+                      #       inputId = "qc_component",
+                      #       label = "QC Phase",
+                      #       choices = c("Data", "Bead Count", "Standard Curve","Standard Curve Summary", "Dilution Analysis", "Dilutional Linearity",
+                      #                   # "Plate Normalization",
+                      #                   "Outliers", "Subgroup Detection", "Subgroup Detection Summary"),
+                      #       selected = "Data",
+                      #       #  justified = TRUE,
+                      #       #  multiple = FALSE
+                      #     )
+                      #   ),
+                      #   tabPanel(id = "advance_qc",
+                      #            title = "Advanced Diagnostics",
+                      #            radioGroupButtons(
+                      #              inputId = "advanced_qc_component",
+                      #              label = "Advanced QC Phase",
+                      #              choices = c("Dilution Analysis", "Dilutional Linearity",
+                      #                          # "Plate Normalization",
+                      #                          "Outliers", "Subgroup Detection", "Subgroup Detection Summary"),
+                      #              selected = "Dilution Analysis",
+                      #              #  justified = TRUE,
+                      #              #  multiple = FALSE
+                      #            ))
+                      #
+                      # ),
+                      tabsetPanel(
+                        id = "basic_advance_tabs",
+
+                        tabPanel(
+                          id = "basic_qc",
+                          title = "Quality Control",
+                          radioGroupButtons(
+                            inputId = "qc_component",
+                            label = "QC Phase",
+                            choices = c("Data", "Bead Count", "Standard Curve","Standard Curve Summary"),
+                            selected = "Data"
+                          ),
+
+                          # Conditional panels for basic QC only
+                          conditionalPanel(
+                            condition = "input.qc_component == 'Data'",
+                            uiOutput("dynamic_data_ui")
+                          ),
+                          conditionalPanel(
+                            condition = "input.qc_component == 'Bead Count'",
+                            uiOutput("bead_count_module_ui")
+                          ),
+                          conditionalPanel(
+                            condition = "input.qc_component == 'Standard Curve'",
+                            uiOutput("sc_fit_module_ui")
+                          ),
+                          conditionalPanel(
+                            condition = "input.qc_component == 'Standard Curve Summary'",
+                            uiOutput("standardCurveSummaryUI")
+                          )
+                        ),
+
+                        tabPanel(
+                          id = "advance_qc",
+                          title = "Advanced Diagnostics",
+                          radioGroupButtons(
+                            inputId = "advanced_qc_component",
+                            label = "Advanced QC Phase",
+                            choices = c("Dilution Analysis", "Dilutional Linearity",
+                                        "Outliers", "Subgroup Detection", "Subgroup Detection Summary"),
+                            selected = "Dilution Analysis"
+                          ),
+
+                          # Conditional panels for advanced QC only
+                          conditionalPanel(
+                            condition = "input.advanced_qc_component == 'Dilution Analysis'",
+                            uiOutput("dilutionAnalysisUI")
+                          ),
+                          conditionalPanel(
+                            condition = "input.advanced_qc_component == 'Dilutional Linearity'",
+                            uiOutput("dilutional_linearity_mod_ui")
+                          ),
+                          conditionalPanel(
+                            condition = "input.advanced_qc_component == 'Outliers'",
+                            uiOutput("outlierTab")
+                          ),
+                          conditionalPanel(
+                            condition = "input.advanced_qc_component == 'Subgroup Detection'",
+                            uiOutput("subgroupDetectionUI")
+                          ),
+                          conditionalPanel(
+                            condition = "input.advanced_qc_component == 'Subgroup Detection Summary'",
+                            uiOutput("subgroup_summary_UI")
+                          )
+                        )
+                      ),
+
+
+
+
+
+                       # radioGroupButtons(
+                       #   inputId = "qc_component",
+                       #   label = "QC Phase",
+                       #   choices = c("Data", "Bead Count", "Standard Curve","Standard Curve Summary", "Dilution Analysis", "Dilutional Linearity",
+                       #              # "Plate Normalization",
+                       #               "Outliers", "Subgroup Detection", "Subgroup Detection Summary"),
+                       #   selected = "Data",
+                       # #  justified = TRUE,
+                       # #  multiple = FALSE
+                       # )
                       # verbatimTextOutput(paste(input$qc_component, input$readxMap_study_accession, input$readxMap_experiment_accession, input$study_level_tabs, input$main_tabs, sep = ", "))
 
 
@@ -251,99 +351,55 @@ output$view_stored_experiments_ui <- renderUI({
                    #   verbatimTextOutput(paste(input$qc_component, input$readxMap_study_accession, input$readxMap_experiment_accession, input$study_level_tabs, input$main_tabs, sep = ", "))
                    # ),
 
-                   conditionalPanel(
-                     condition = "input.qc_component == 'Data' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
-                     # uiOutput("beadCountAnalysisUI"),
-                     # uiOutput("standard_curve_section"),
-                     # uiOutput("dilution_analysis_section"),
-                     # uiOutput("subgroup_detection_section"),
-                     # uiOutput("outlierTab"),
-                     # removeOutput("beadCountAnalysisUI", session = session),
-                     # removeOutput("plateSelection_bead_count_UI", session = session),
-                     # removeOutput("sample_data_antigenUI", session = session),
-                     # removeOutput("beadCountPlot", session = session),
-                     # removeOutput("sample_low_bead_count_table", session = session),
-                     # removeOutput("download_bead_gating", session = session),
-                     uiOutput("dynamic_data_ui")
 
-                     #render_dynamic_ui_content()
-                   ),
-                   conditionalPanel(
-                     #condition = "input.qc_component == 'Bead Count' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
-                    condition = "input.qc_component == 'Bead Count'",
-                      # uiOutput("standard_curve_section"),
-                     # uiOutput("dilution_analysis_section"),
-                     # uiOutput("subgroup_detection_section"),
-                     # uiOutput("dynamic_data_ui"),
-                     # uiOutput("outlierTab"),
-                    # uiOutput("beadCountAnalysisUI")
-                    uiOutput("bead_count_module_ui")
-                   ),
-                   conditionalPanel(
-                     condition = "input.qc_component == 'Standard Curve' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
-                     # uiOutput("dilution_analysis_section"),
-                     # uiOutput("subgroup_detection_section"),
-                     # uiOutput("dynamic_data_ui"),
-                     # uiOutput("beadCountAnalysisUI"),
-                     # uiOutput("outlierTab"),
-                     #uiOutput("standard_curve_section")
-                     # bsCollapse(id = "standardCurveCollapse",
-                     #            bsCollapsePanel(
-                     #              title = "Fitting",
-                     #              value = "fitting_mod",
-                     #              style = "primary"
-                     #            ),
-                     #            bsCollapsePanel(
-                     #              title = "Summary",
-                     #              value = "summ",
-                     #              style = "primary"
-                     #            )),
-                     uiOutput("sc_fit_module_ui")
-                   ),
-                   conditionalPanel(
-                     condition = "input.qc_component == 'Standard Curve Summary' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
-                   #  uiOutput("sc_summary_module_ui")
-                   uiOutput("standardCurveSummaryUI")
-                   ),
-                   conditionalPanel(
-                     condition = "input.qc_component == 'Dilution Analysis' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
-                     # uiOutput("subgroup_detection_section"),
-                     # uiOutput("dynamic_data_ui"),
-                     # uiOutput("beadCountAnalysisUI"),
-                     # uiOutput("standard_curve_section"),
-                     # uiOutput("outlierTab"),
-                     #uiOutput("dilution_analysis_section")
-                     uiOutput("dilutionAnalysisUI")
-                   ),
-                   conditionalPanel(
-                     condition = "input.qc_component == 'Dilutional Linearity' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
-                    # uiOutput("dilutionalLinearityUI")
-                     uiOutput("dilutional_linearity_mod_ui")
-                   ),
-
-                   conditionalPanel(
-                     condition = "input.qc_component == 'Outliers'  && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
-                     # uiOutput("subgroup_detection_section"),
-                     # uiOutput("dynamic_data_ui"),
-                     # uiOutput("beadCountAnalysisUI"),
-                     # uiOutput("standard_curve_section"),
-                     # uiOutput("dilution_analysis_section"),
-                     uiOutput("outlierTab")
-                   ),
-                   conditionalPanel(
-                     condition = "input.qc_component == 'Subgroup Detection' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
-                     # uiOutput("dynamic_data_ui"),
-                     # uiOutput("beadCountAnalysisUI"),
-                     # uiOutput("standard_curve_section"),
-                     # uiOutput("dilution_analysis_section"),
-                     # uiOutput("outlierTab"),
-                     uiOutput("subgroupDetectionUI")
-                    # uiOutput("subgroup_detection_section")
-                   ),
-                   conditionalPanel(
-                     condition = "input.qc_component == 'Subgroup Detection Summary' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
-                      uiOutput("subgroup_summary_UI")
-                     )
+                   # OLD conditions
+                   # conditionalPanel(
+                   #   condition = "input.qc_component == 'Data' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
+                   #   uiOutput("dynamic_data_ui")
+                   #
+                   #   #render_dynamic_ui_content()
+                   # ),
+                   # conditionalPanel(
+                   #   #condition = "input.qc_component == 'Bead Count' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
+                   #  condition = "input.qc_component == 'Bead Count'",
+                   #  uiOutput("bead_count_module_ui")
+                   # ),
+                   # conditionalPanel(
+                   #   condition = "input.qc_component == 'Standard Curve' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
+                   #   uiOutput("sc_fit_module_ui")
+                   # ),
+                   # conditionalPanel(
+                   #   condition = "input.qc_component == 'Standard Curve Summary' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
+                   # #  uiOutput("sc_summary_module_ui")
+                   # uiOutput("standardCurveSummaryUI")
+                   # ),
+                   # conditionalPanel(
+                   #   condition = "input.qc_component == 'Dilution Analysis' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
+                   #   uiOutput("dilutionAnalysisUI")
+                   # ),
+                   # conditionalPanel(
+                   #   condition = "input.qc_component == 'Dilutional Linearity' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
+                   #   uiOutput("dilutional_linearity_mod_ui")
+                   # ),
+                   #
+                   # conditionalPanel(
+                   #   condition = "input.qc_component == 'Outliers'  && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
+                   #   uiOutput("outlierTab")
+                   # ),
+                   # conditionalPanel(
+                   #   condition = "input.qc_component == 'Subgroup Detection' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
+                   #   # uiOutput("dynamic_data_ui"),
+                   #   # uiOutput("beadCountAnalysisUI"),
+                   #   # uiOutput("standard_curve_section"),
+                   #   # uiOutput("dilution_analysis_section"),
+                   #   # uiOutput("outlierTab"),
+                   #   uiOutput("subgroupDetectionUI")
+                   #  # uiOutput("subgroup_detection_section")
+                   # ),
+                   # conditionalPanel(
+                   #   condition = "input.qc_component == 'Subgroup Detection Summary' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
+                   #    uiOutput("subgroup_summary_UI")
+                   #   )
                    # conditionalPanel(
                    #   condition = "input.qc_component == 'Test' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
                    #   uiOutput("sg_module_ui")
@@ -388,7 +444,7 @@ output$dynamic_data_ui <- renderUI({
     tabsetPanel(
       id = "dataCollapse",
       tabPanel(
-        title = "Header",
+        title = "Plates",
         DT::dataTableOutput("stored_header"),
         downloadButton("download_stored_header"),
         uiOutput("header_actions")
@@ -404,12 +460,12 @@ output$dynamic_data_ui <- renderUI({
         downloadButton("download_stored_control")
       ),
       tabPanel(
-        title = "Buffer",
+        title = "Blanks",
         DT::dataTableOutput("swide_buffer"),
         downloadButton("download_stored_buffer")
       ),
       tabPanel(
-        title = "Sample",
+        title = "Samples",
         DT::dataTableOutput("swide_sample"),
         downloadButton("download_stored_sample")
       )
@@ -455,7 +511,42 @@ output$dynamic_data_ui <- renderUI({
   }
 })
 
+observeEvent(input$advanced_qc_component, {
+  req(input$readxMap_study_accession)
+  req(input$readxMap_experiment_accession)
 
+  if (input$advanced_qc_component == "Dilutional Linearity" &&
+      input$readxMap_study_accession != "" &&
+      input$readxMap_study_accession != "Click here" &&
+      input$readxMap_experiment_accession != "" &&
+      input$readxMap_experiment_accession != "Click here") {
+
+    # Destroy previous module (if exists)
+    prev_dil_lin_id <- paste0("dil_lin_mod_", reload_dil_lin_count)
+    try(destroyModule(prev_dil_lin_id), silent = TRUE)
+
+    # Increment counter and build new ID
+    reload_dil_lin_count <<- reload_dil_lin_count + 1
+    new_dil_lin_id <- paste0("dil_lin_mod_", reload_dil_lin_count)
+
+    # Render UI and load module
+    output$dilutional_linearity_mod_ui <- renderUI({
+      destroyableDilutionalLinearityModuleUI(new_dil_lin_id)
+    })
+
+    destroyableDilutionalLinearityServer(
+      id = new_dil_lin_id,
+      selected_study = reactive(input$readxMap_study_accession),
+      selected_experiment = reactive(input$readxMap_experiment_accession),
+      currentuser()
+    )
+
+  } else {
+    # If switching away, destroy any existing SC a module
+    try(destroyModule(paste0("dil_lin_mod_", reload_dil_lin_count)), silent = TRUE)
+    output$dilutional_linearity_mod_ui <- renderUI({ NULL })
+  }
+})
 
 observeEvent(input$qc_component, {
   cat("QC component selected:\n")
@@ -599,37 +690,37 @@ observeEvent(input$qc_component, {
   #   gc(verbose = TRUE)
   # }
 
-  if (input$qc_component == "Dilutional Linearity" &&
-      input$readxMap_study_accession != "" &&
-      input$readxMap_study_accession != "Click here" &&
-      input$readxMap_experiment_accession != "" &&
-      input$readxMap_experiment_accession != "Click here") {
-
-    # Destroy previous module (if exists)
-    prev_dil_lin_id <- paste0("dil_lin_mod_", reload_dil_lin_count)
-    try(destroyModule(prev_dil_lin_id), silent = TRUE)
-
-    # Increment counter and build new ID
-    reload_dil_lin_count <<- reload_dil_lin_count + 1
-    new_dil_lin_id <- paste0("dil_lin_mod_", reload_dil_lin_count)
-
-    # Render UI and load module
-    output$dilutional_linearity_mod_ui <- renderUI({
-      destroyableDilutionalLinearityModuleUI(new_dil_lin_id)
-    })
-
-    destroyableDilutionalLinearityServer(
-      id = new_dil_lin_id,
-      selected_study = reactive(input$readxMap_study_accession),
-      selected_experiment = reactive(input$readxMap_experiment_accession),
-      currentuser()
-    )
-
-  } else {
-    # If switching away, destroy any existing SC a module
-    try(destroyModule(paste0("dil_lin_mod_", reload_dil_lin_count)), silent = TRUE)
-    output$dilutional_linearity_mod_ui <- renderUI({ NULL })
-  }
+  # if (input$advanced_qc_component == "Dilutional Linearity" &&
+  #     input$readxMap_study_accession != "" &&
+  #     input$readxMap_study_accession != "Click here" &&
+  #     input$readxMap_experiment_accession != "" &&
+  #     input$readxMap_experiment_accession != "Click here") {
+  #
+  #   # Destroy previous module (if exists)
+  #   prev_dil_lin_id <- paste0("dil_lin_mod_", reload_dil_lin_count)
+  #   try(destroyModule(prev_dil_lin_id), silent = TRUE)
+  #
+  #   # Increment counter and build new ID
+  #   reload_dil_lin_count <<- reload_dil_lin_count + 1
+  #   new_dil_lin_id <- paste0("dil_lin_mod_", reload_dil_lin_count)
+  #
+  #   # Render UI and load module
+  #   output$dilutional_linearity_mod_ui <- renderUI({
+  #     destroyableDilutionalLinearityModuleUI(new_dil_lin_id)
+  #   })
+  #
+  #   destroyableDilutionalLinearityServer(
+  #     id = new_dil_lin_id,
+  #     selected_study = reactive(input$readxMap_study_accession),
+  #     selected_experiment = reactive(input$readxMap_experiment_accession),
+  #     currentuser()
+  #   )
+  #
+  # } else {
+  #   # If switching away, destroy any existing SC a module
+  #   try(destroyModule(paste0("dil_lin_mod_", reload_dil_lin_count)), silent = TRUE)
+  #   output$dilutional_linearity_mod_ui <- renderUI({ NULL })
+  # }
 
   gc(verbose = TRUE)
 })
