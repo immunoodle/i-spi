@@ -949,8 +949,8 @@ decision_tree_reactive_diagram <- reactive({
   replacements <- c(limits_of_detection = "gate", linear_region = "linear", limits_of_quantification = "quantifiable")
   node_order <- ifelse(node_order %in% names(replacements), replacements[node_order], node_order)
 
-  replacements_gate <- c(Between_Limits_of_Detection = "Between_Limits", Above_Upper_Limit_of_Detection = "Above_Upper_Limit", Below_Lower_Limit_of_Detection = "Below_Lower_Limit")
-  sufficient_gc <- ifelse(sufficient_gc %in% names(replacements_gate), replacements_gate[sufficient_gc], sufficient_gc)
+  # replacements_gate <- c(Between_Limits_of_Detection = "Between_Limits", Above_Upper_Limit_of_Detection = "Above_Upper_Limit", Below_Lower_Limit_of_Detection = "Below_Lower_Limit")
+  # sufficient_gc <- ifelse(sufficient_gc %in% names(replacements_gate), replacements_gate[sufficient_gc], sufficient_gc)
 
   # Create truth table inline
   truth_table <- create_truth_table(

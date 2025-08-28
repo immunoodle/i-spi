@@ -935,7 +935,7 @@ create_truth_table <- function(binary_gate, exclude_linear = FALSE, exclude_quan
     return(NULL)
   }
   if (!exclude_gate) {
-    gate_class <- c("Below_Lower_Limit", "Between_Limits", "Above_Upper_Limit")
+    gate_class <- c("Below_Lower_Limit_of_Detection", "Between_Limits_of_Detection", "Above_Upper_Limit_of_Detection")
 
     if (binary_gate) {
       gate_class <- c(TRUE, FALSE)
@@ -1127,19 +1127,19 @@ create_decision_tree_tt <- function(truth_table, binary_gate, sufficient_gc_vect
         gc_row <- row$Gate_Class
         if (binary_gate && ("gate" %in% node_order) && length(node_order)  == 1) {
           cat("Only gate and binary gate")
-          true_gate_node_name <- "Gate Class: TRUE"
+          true_gate_node_name <- "In Detection Region: TRUE" # Gate Class
           if (!true_gate_node_name %in% names(current_node$children)) {
             true_gate_node <- current_node$AddChild(true_gate_node_name)
             true_gate_node$condition <- function(x) x$sufficient_gc == TRUE
           }
-          false_gate_node_name <- "Gate Class: FALSE"
+          false_gate_node_name <- "In Detection Region: FALSE"
           if (!false_gate_node_name %in% names(current_node$children)) {
             false_gate_node <- current_node$AddChild(false_gate_node_name)
             false_gate_node$condition <- function(x) x$sufficient_gc == FALSE
           }
         } else if (binary_gate) {
           # Create TRUE gate node
-          true_gate_node_name <- "Gate Class: TRUE"
+          true_gate_node_name <- "In Detection Region: TRUE"
           if (!true_gate_node_name %in% names(current_node$children)) {
             true_gate_node <- current_node$AddChild(true_gate_node_name)
             true_gate_node$condition <- function(x) x$sufficient_gc == TRUE
@@ -1150,7 +1150,7 @@ create_decision_tree_tt <- function(truth_table, binary_gate, sufficient_gc_vect
           }
 
           # Create FALSE gate node
-          false_gate_node_name <- "Gate Class: FALSE"
+          false_gate_node_name <- "In Detection Region: FALSE"
           if (!false_gate_node_name %in% names(current_node$parent$children)) {
             false_gate_node <- current_node$parent$AddChild(false_gate_node_name)
             false_gate_node$condition <- function(x) x$sufficient_gc == FALSE
@@ -1158,10 +1158,13 @@ create_decision_tree_tt <- function(truth_table, binary_gate, sufficient_gc_vect
         } else {
           # Handle non-binary case
 
+         gc_row_clean <- gsub("_", " ", gc_row)
+
           if (gc_row %in% sufficient_gc_vector) {
-            gate_node_name <- paste("Gate Class:", gc_row, "TRUE")
+
+            gate_node_name <- paste("Detection Region:", gc_row_clean, "TRUE")
           } else {
-            gate_node_name <- paste("Gate Class:", gc_row, "FALSE")
+            gate_node_name <- paste("Detection Region:", gc_row_clean, "FALSE")
           }
 
           if (!gate_node_name %in% names(current_node$children)) {
