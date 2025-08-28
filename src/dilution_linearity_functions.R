@@ -39,7 +39,7 @@ fetch_standard_curves_dilution <- function(study_accession, experiment_accession
 }
 ### Read in data and find concentration status
 calculate_sample_concentration_status <- function(study_accession, experiment_accession, node_order) {
-  query_samples <- glue::glue("SELECT xmap_sample_id, study_accession, experiment_accession, plate_id, timeperiod, patientid, well, stype, sampleid, id_imi, agroup, dilution, pctaggbeads, samplingerrors, antigen, antibody_mfi, antibody_n, antibody_name, feature, antibody_au, antibody_au_se, reference_dilution, gate_class_dil, norm_mfi, gate_class, in_linear_region, gate_class_linear_region,in_quantifiable_range, gate_class_loq,  quality_score
+  query_samples <- glue::glue("SELECT xmap_sample_id, study_accession, experiment_accession, plate_id, timeperiod, patientid, well, stype, sampleid, id_imi, agroup, dilution, pctaggbeads, samplingerrors, antigen, antibody_mfi, antibody_n, antibody_name, feature, antibody_au, antibody_au_se, norm_mfi, gate_class, in_linear_region, gate_class_linear_region,in_quantifiable_range, gate_class_loq,  quality_score
 	FROM madi_results.xmap_sample
 	WHERE study_accession = '{study_accession}'
 	AND experiment_accession = '{experiment_accession}';")
@@ -1877,7 +1877,7 @@ save_average_au <- function(conn, average_au_table, dilution_table_cols) {
 
 #### Dilution Linearity Models
 prepare_lm_sample_data <- function(study_accession, experiment_accession, is_log_mfi_axis, response_type) {
-  query_samples <- glue::glue("SELECT xmap_sample_id, study_accession, experiment_accession, plate_id, timeperiod, patientid, well, stype, sampleid, id_imi, agroup, dilution, pctaggbeads, samplingerrors, antigen, antibody_mfi, antibody_n, antibody_name, feature, gate_class, antibody_au, antibody_au_se, reference_dilution, gate_class_dil, norm_mfi, in_linear_region, gate_class_loq, in_quantifiable_range, gate_class_linear_region, quality_score
+  query_samples <- glue::glue("SELECT xmap_sample_id, study_accession, experiment_accession, plate_id, timeperiod, patientid, well, stype, sampleid, id_imi, agroup, dilution, pctaggbeads, samplingerrors, antigen, antibody_mfi, antibody_n, antibody_name, feature, gate_class, antibody_au, antibody_au_se, norm_mfi, in_linear_region, gate_class_loq, in_quantifiable_range, gate_class_linear_region, quality_score
     	FROM madi_results.xmap_sample
     	WHERE study_accession = '{study_accession}'
     	AND experiment_accession = '{experiment_accession}';")

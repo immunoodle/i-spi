@@ -386,24 +386,29 @@ observeEvent(input$readxMap_experiment_accession, {
                                 table_name = "xmap_sample",
                                 select_where = list("concat(study_accession,experiment_accession)" = paste0(input$readxMap_study_accession,input$readxMap_experiment_accession))
     )
+
+    stored_sampley <- stored_sampley[, !(names(stored_sampley) %in% c("gate_class_dil", "reference_dilution"))]
     nrows_sample <- nrow(stored_sampley)
     if (nrows_sample > 0) {
       # print(paste("loaded raw xmap_sample rows:",nrows_sample))
       stored_sampley$plateid <- gsub("[[:punct:][:blank:]]+", ".", basename(gsub("\\", "/", stored_sampley$plate_id, fixed=TRUE)))
       names(stored_sampley)[names(stored_sampley) == "antibody_n"] <- "n"
       names(stored_sampley)[names(stored_sampley) == "antibody_mfi"] <- "mfi"
-      names(stored_sampley)[names(stored_sampley) == "gate_class"] <- "gc"
-      names(stored_sampley)[names(stored_sampley) == "gate_class_dil"] <- "dil_gc"
+      names(stored_sampley)[names(stored_sampley) == "gate_class"] <- "gate_class_detection"
+     # names(stored_sampley)[names(stored_sampley) == "gate_class_dil"] <- "dil_gc"
       names(stored_sampley)[names(stored_sampley) == "antibody_au"] <- "au"
       names(stored_sampley)[names(stored_sampley) == "antibody_au_se"] <- "au_se"
-      names(stored_sampley)[names(stored_sampley) == "reference_dilution"] <- "ref_dil"
+     # names(stored_sampley)[names(stored_sampley) == "reference_dilution"] <- "ref_dil"
       # stored_sampley <- stored_sampley[,!(names(stored_sampley) %in% c("xmap_sample_id", "antibody_name"))]
       stored_samplex <- distinct(stored_sampley, study_accession, experiment_accession, plate_id, antigen, well, .keep_all = TRUE)
       # print(paste("loaded distinct xmap_sample rows:",nrow(stored_samplex)))
       # print(names(stored_samplex))
       stored_plates_data$stored_sample <- stored_samplex
       # storedlong_plates_data$stored_sample = stored_samplex
-      wide_sample <- pivot_wider(stored_samplex[ , c("study_accession", "experiment_accession", "plateid", "timeperiod", "patientid", "well", "stype", "sampleid", "agroup","dilution", "pctaggbeads", "samplingerrors", "antigen", "mfi", "n", "feature", "gc", "au", "au_se", "ref_dil", "dil_gc")], names_from = antigen, values_from = c(mfi, n, gc, dil_gc, au, au_se, ref_dil))
+      wide_sample <- pivot_wider(stored_samplex[ , c("study_accession", "experiment_accession", "plateid", "timeperiod", "patientid", "well",
+                                                     "stype", "sampleid", "agroup","dilution", "pctaggbeads", "samplingerrors", "antigen", "mfi",
+                                                     "n", "feature", "gate_class_detection", "au", "au_se", "gate_class_linear_region", "gate_class_loq", "quality_score")],
+                                 names_from = antigen, values_from = c(mfi, n, gate_class_detection, au, au_se, gate_class_linear_region, gate_class_loq, quality_score))
       output$swide_sample <- DT::renderDataTable(wide_sample, options = list(scrollX = TRUE))
       stored_plates_data$stored_samplew <- wide_sample
     }
