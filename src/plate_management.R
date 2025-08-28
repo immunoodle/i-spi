@@ -1,9 +1,32 @@
 
 fetch_study_header <- function(selected_study) {
-  header_query <- glue::glue_sql("SELECT experiment_accession, plate_id, plateid, plate, sample_dilution_factor
-FROM madi_results.xmap_header
-WHERE study_accession = {selected_study}",
-                                  .con = conn)
+#   header_query <- glue::glue_sql("SELECT experiment_accession, plate_id, plateid, plate, sample_dilution_factor
+# FROM madi_results.xmap_header
+# WHERE study_accession = {selected_study}",
+#                                   .con = conn)
+
+  header_query <- glue::glue_sql("SELECT
+    h.experiment_accession,
+    h.plate_id,
+    h.plateid,
+    h.plate,
+    h.sample_dilution_factor,
+    STRING_AGG( DISTINCT s.source, ',') AS standard_curve_sources
+FROM
+    madi_results.xmap_header as h
+JOIN
+    madi_results.xmap_standard as s
+    ON h.experiment_accession = s.experiment_accession AND h.plate_id = s.plate_id
+WHERE
+    h.study_accession = {selected_study}
+    AND s.study_accession = {selected_study}
+GROUP BY
+    h.experiment_accession,
+    h.plate_id,
+    h.plateid,
+    h.plate,
+    h.sample_dilution_factor;
+", .con = conn)
 
   study_header <- dbGetQuery(conn, header_query)
   return(study_header)
@@ -167,6 +190,32 @@ update_sample_dilution_factor <- function(selected_study, selected_experiment, s
     }
 }
 
+# update the standard curve source for a plate
+update_plate_standard_curve_source <- function(selected_study, selected_experiment, selected_plate_id, selected_source, edited_source) {
+  # check if there is data to update
+  original_standards_query <- glue::glue_sql("SELECT *
+	FROM madi_results.xmap_standard
+	WHERE study_accession = {selected_study}
+	AND experiment_accession = {selected_experiment}
+	AND plate_id = {selected_plate_id}
+	AND source = {selected_source}
+	", .con = conn)
+
+ original_standards <- dbGetQuery(conn, original_standards_query)
+ if (nrow(original_standards) > 0) {
+   update_standard_curve_source_plate_query <- glue::glue_sql("UPDATE madi_results.xmap_standard
+SET source = {edited_source}
+WHERE study_accession = {selected_study}
+  AND experiment_accession = {selected_experiment}
+  AND plate_id = {selected_plate_id}
+  AND source = {selected_source};", .con = conn)
+
+   dbExecute(conn, update_standard_curve_source_plate_query)
+ } else {
+  cat("\nno data in standards for experiment\n")
+ }
+}
+
 #observeEvent(input$study_level_tabs, {
 
   # req(input$readxMap_study_accession != "Click here",
@@ -221,11 +270,16 @@ update_sample_dilution_factor <- function(selected_study, selected_experiment, s
                          tags$div(style = "flex: 1;",
                                   selectInput("selected_plate_id", "Selected plate_id", choices = NULL)
                          ),
-                                       tags$div(style = "flex: 1;",
-                                                br(),
-                                                br(),
-                                                uiOutput("resetToCurrentPlate")
-                                       ), # end div flex reset button
+                        tags$div(style = "flex: 1;",
+                                          br(),
+                                          br(),
+                                          uiOutput("resetToCurrentPlate")
+                        ), # end div flex reset button
+                      tags$div(style = "flex: 1",
+                               br(),
+                               br(),
+                               actionButton("delete_plate", label = "Delete Selected Plate")
+                      )
                 )
          )
 
@@ -244,8 +298,10 @@ update_sample_dilution_factor <- function(selected_study, selected_experiment, s
                         tags$div(style = "flex: 1;",
                                 selectInput("original_sample_dilution_factor", "Original Sample Dilution Factor",choices = NULL),
                                 uiOutput("edit_sample_dilution_factorUI")
-                        ) # end third grouped div
-
+                        ),# end third grouped div
+                        tags$div(style = "flex: 1;",
+                                 selectInput("original_sc_source", "Original Standard Curve Source", choices = NULL),
+                                 uiOutput("edit_sc_sourceUI"))
                ) # end div outer flex tag
         )
       ),
@@ -263,18 +319,21 @@ update_sample_dilution_factor <- function(selected_study, selected_experiment, s
                         ), # end div rename plate column
                         tags$div(style = "flex: 1;",
                                  uiOutput("update_sample_dilution_factorUI")
-                        ) # end div update sample dilution factor
+                        ), # end div update sample dilution factor
+                        tags$div(style = "flex: 1;",
+                          uiOutput("rename_plate_sc_source")
+                        )
                ) # end div outer flex tag
         ) # end column
       ),
-      fluidRow(
-        column(12,
-               tags$div(style = "display: flex;",
-                tags$div(style = "flex: 1;",
-                         actionButton("delete_plate", label = "Delete Selected Plate"))
-              ) # end div outer flex tag
-        )
-      ),
+      # fluidRow(
+      #   column(12,
+      #          tags$div(style = "display: flex;",
+      #           tags$div(style = "flex: 1;",
+      #                    actionButton("delete_plate", label = "Delete Selected Plate"))
+      #         ) # end div outer flex tag
+      #   )
+      # ),
 
        style = "primary" )
       )
@@ -294,6 +353,10 @@ update_sample_dilution_factor <- function(selected_study, selected_experiment, s
 
   output$edit_sample_dilution_factorUI <- renderUI({
     numericInput("edit_sample_dil_factor", "Edit Sample Dilution Factor", value = NULL)
+  })
+
+  output$edit_sc_sourceUI <- renderUI({
+    textInput("edit_sc_source", "Edit Standard Curve Source", value = NULL)
   })
 
 
@@ -325,6 +388,12 @@ update_sample_dilution_factor <- function(selected_study, selected_experiment, s
     req(input$edit_sample_dil_factor != input$original_sample_dilution_factor)
     actionButton("update_sample_dilution_factor", "Update Sample Dilution Factor")
   })
+  ## button for rename standard curve source for plate
+  output$rename_plate_sc_source <- renderUI({
+    req(input$edit_sc_source != "-1")
+    req(input$original_sc_source != input$edit_sc_source)
+    actionButton("rename_plate_sc_source", "Rename Standard Curve Source")
+  })
 
 
    output$plate_header <- renderDT({
@@ -339,6 +408,7 @@ update_sample_dilution_factor <- function(selected_study, selected_experiment, s
      enable("selected_plateid_to_edit")
      enable("original_plate_to_edit")
      enable("original_sample_dilution_factor")
+     enable("original_sc_source")
      selected_row_index <- input$plate_header_rows_selected
      if (length(selected_row_index)) {
        plate_df <- fetch_study_header(selected_study = input$readxMap_study_accession)
@@ -364,6 +434,10 @@ update_sample_dilution_factor <- function(selected_study, selected_experiment, s
                          choices = selected_row_data$sample_dilution_factor,
                          selected = selected_row_data$sample_dilution_factor)
 
+       updateSelectInput(session, "original_sc_source",
+                         choices = strsplit(selected_row_data$standard_curve_sources, ",")[[1]],
+                         selected = strsplit(selected_row_data$standard_curve_sources, ",")[[1]][1])
+
 
        disable("selected_experiment_row")
        disable("selected_plate_id")
@@ -380,8 +454,15 @@ update_sample_dilution_factor <- function(selected_study, selected_experiment, s
 
        updateNumericInput(session, "edit_sample_dil_factor", value = selected_row_data$sample_dilution_factor)
 
+       updateTextInput(session, "edit_sc_source", value = strsplit(selected_row_data$standard_curve_sources, ",")[[1]][1])
      }
    })
+
+   # update based on what is selected
+   observeEvent(input$original_sc_source, {
+     updateTextInput(session, "edit_sc_source", value = input$original_sc_source)
+   })
+
 
 
    observe({
@@ -405,6 +486,18 @@ update_sample_dilution_factor <- function(selected_study, selected_experiment, s
        disable("edit_plate")
      } else {
        enable("edit_plate")
+     }
+
+     if (input$edit_sc_source == "-1" || is.null(input$edit_sc_source)) {
+       disable("edit_sc_source")
+     } else {
+       enable("edit_sc_source")
+     }
+
+     if (!identical(input$original_sc_source, input$edit_sc_source)) {
+       showFeedbackWarning("edit_sc_source", text = "Unsaved Changes")
+     } else {
+       hideFeedback("edit_sc_source")
      }
 
    #  if (input$original_sample_dilution_factor != input$edit_sample_dil_factor) {
@@ -518,6 +611,7 @@ observe({
     enable("selected_plateid_to_edit")
     enable("original_plate_to_edit")
     enable("original_sample_dilution_factor")
+    enable("edit_sc_source")
 
     updateSelectInput(session, "selected_experiment_row",
                      choices = character(0),
@@ -538,19 +632,28 @@ observe({
                       choices = character(0),
                       selected = NULL)
 
+    updateSelectInput(session, "original_sc_source",
+                      choices = character(0),
+                      selected = NULL)
+
     updateTextInput(session, "edit_plateid", value = "-1")
     hideFeedback("edit_plateid")
     updateTextInput(session, "edit_plate", value = "-1")
     hideFeedback("edit_plate")
     updateNumericInput(session, "edit_sample_dil_factor", value = -1)
+    updateTextInput(session, "edit_sc_source", value = "-1")
 
     disable("selected_experiment_row")
     disable("selected_plate_id")
     disable("selected_plateid_to_edit")
     disable("original_plate_to_edit")
     disable("original_sample_dilution_factor")
+    disable("edit_sc_source")
+
 
   }
+
+
 
   cat("current values:\n")
    print(input$selected_experiment_row)
@@ -567,6 +670,7 @@ observeEvent(input$reset_plate_edits, {
   updateTextInput(session, "edit_plateid", value = input$selected_plateid_to_edit)
   updateTextInput(session, "edit_plate", value = input$original_plate_to_edit)
   updateNumericInput(session,"edit_sample_dil_factor", value = input$original_sample_dilution_factor)
+  updateTextInput(session, "edit_sc_source", value = input$original_sc_source)
 
 })
 
@@ -705,6 +809,53 @@ observeEvent(input$confirm_sample_dil_edit, {
   })
 
 })
+
+## modal for updating plate standard curve source
+observeEvent(input$rename_plate_sc_source, {
+  showModal(
+    modalDialog(
+      title = paste0("Confirm Standard Curve Source Update: ", input$readxMap_study_accession, " - " ,input$selected_experiment_row),
+      paste("Are you sure you want to rename the standard curve source in the standards from ",
+            input$original_sc_source, "to", input$edit_sc_source, "?"),
+      footer = tagList(
+        actionButton("confirm_standard_curve_source_edit", "Confirm"),
+        modalButton("Cancel")
+      ),
+      easyClose = TRUE
+    )
+  )
+})
+
+## confirm update for plate-specific standard curve source
+observeEvent(input$confirm_standard_curve_source_edit, {
+  cat("Pressed confirm standard curve source")
+  # do update
+  update_plate_standard_curve_source(selected_study = input$readxMap_study_accession,
+                                   selected_experiment = input$selected_experiment_row ,
+                                   selected_plate_id = input$selected_plate_id,
+                                   selected_source = input$original_sc_source,
+                                   edited_source = input$edit_sc_source)
+  removeModal() # remove once click confirm
+  showNotification("Plate Standard Curve Source Updated")
+
+  # RELOAD plate_header data
+  updated_plate_df <- fetch_study_header(selected_study = input$readxMap_study_accession)
+
+  # Reset UI based on the updated data
+  updateSelectInput(session, "original_sc_source",
+                    choices = strsplit(updated_plate_df$standard_curve_sources, ",")[[1]],
+                    selected = strsplit(updated_plate_df$standard_curve_sources, ",")[[1]][1])
+
+  updateTextInput(session, "edit_sc_source", value = NULL)
+
+  # Refresh datatable
+  output$plate_header <- renderDT({
+    datatable(updated_plate_df, selection = "single", filter = 'top')
+  })
+
+})
+
+
 
 # Delete Plate
 observeEvent(input$delete_plate, {
