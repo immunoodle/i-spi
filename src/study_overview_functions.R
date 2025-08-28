@@ -27,11 +27,23 @@ gn <- function(x) {
 # }
 pull_standard <- function(conn, selected_study, current_user, plates) {
   standard_query <- glue::glue_sql("
-  SELECT DISTINCT study_accession, experiment_accession AS Analyte, plate_id, well, antigen,
-        		antibody_mfi AS MFI, antibody_n AS bead_count, pctaggbeads
-  	FROM madi_results.xmap_standard
-  	WHERE study_accession = {selected_study}
-  	ORDER BY experiment_accession, antigen, plate_id",
+  SELECT DISTINCT s.study_accession, s.experiment_accession AS Analyte, s.plate_id, s.well, s.antigen,
+        		s.antibody_mfi AS MFI, s.antibody_n AS bead_count, s.pctaggbeads,
+        		CASE WHEN s.antibody_n < lower_bc_threshold THEN 'LowBeadN' ELSE 'Acceptable' END AS lowbeadn,
+            CASE WHEN s.pctaggbeads > pct_agg_threshold THEN 'PctAggBeads' ELSE 'Acceptable' END AS highbeadagg
+  	FROM madi_results.xmap_standard AS s
+  	     INNER JOIN (
+            SELECT study_accession, param_integer_value AS lower_bc_threshold
+            FROM madi_results.xmap_study_config
+    		    WHERE study_accession = {selected_study} AND param_user = {current_user} AND param_name = 'lower_bc_threshold'
+  		    ) AS bct ON bct.study_accession = s.study_accession
+          INNER JOIN (
+            SELECT study_accession, param_integer_value AS pct_agg_threshold
+            FROM madi_results.xmap_study_config
+    		    WHERE study_accession = {selected_study} AND param_user = {current_user} AND param_name = 'pct_agg_threshold'
+  		    ) AS pab ON pab.study_accession = s.study_accession
+  	WHERE s.study_accession = {selected_study}
+  	ORDER BY s.experiment_accession, s.antigen, s.plate_id",
                                    .con = conn)
   standard_data <- dbGetQuery(conn, standard_query)
   standard_data$plate_id <- str_trim(str_replace_all(standard_data$plate_id, "\\s", ""), side = "both")
@@ -48,11 +60,23 @@ pull_standard <- function(conn, selected_study, current_user, plates) {
 
 pull_blank <- function(conn, selected_study, current_user, plates) {
   buffer_query <- glue::glue_sql("
-  SELECT DISTINCT study_accession, experiment_accession AS Analyte, plate_id, well, antigen,
-        		antibody_mfi AS MFI, antibody_n AS bead_count, pctaggbeads
-  	FROM madi_results.xmap_buffer
-  	WHERE study_accession = {selected_study}
-  	ORDER BY experiment_accession, antigen, plate_id",
+  SELECT DISTINCT s.study_accession, s.experiment_accession AS Analyte, s.plate_id, s.well, s.antigen,
+        		s.antibody_mfi AS MFI, s.antibody_n AS bead_count, s.pctaggbeads,
+        		 CASE WHEN s.antibody_n < lower_bc_threshold THEN 'LowBeadN' ELSE 'Acceptable' END AS lowbeadn,
+            CASE WHEN s.pctaggbeads > pct_agg_threshold THEN 'PctAggBeads' ELSE 'Acceptable' END AS highbeadagg
+  	FROM madi_results.xmap_buffer as s
+  	     INNER JOIN (
+            SELECT study_accession, param_integer_value AS lower_bc_threshold
+            FROM madi_results.xmap_study_config
+    		    WHERE study_accession = {selected_study} AND param_user = {current_user} AND param_name = 'lower_bc_threshold'
+  		    ) AS bct ON bct.study_accession = s.study_accession
+          INNER JOIN (
+            SELECT study_accession, param_integer_value AS pct_agg_threshold
+            FROM madi_results.xmap_study_config
+    		    WHERE study_accession = {selected_study} AND param_user = {current_user} AND param_name = 'pct_agg_threshold'
+  		    ) AS pab ON pab.study_accession = s.study_accession
+  	WHERE s.study_accession = {selected_study}
+  	ORDER BY s.experiment_accession, s.antigen, s.plate_id",
                                  .con = conn)
   blank_data <- dbGetQuery(conn, buffer_query)
   blank_data$plate_id <- str_trim(str_replace_all(blank_data$plate_id, "\\s", ""), side = "both")
@@ -67,11 +91,23 @@ pull_blank <- function(conn, selected_study, current_user, plates) {
 
 pull_control <- function(conn, selected_study, current_user, plates){
   control_query <- glue::glue_sql("
-  SELECT DISTINCT study_accession, experiment_accession AS Analyte, plate_id, well, antigen,
-        		antibody_mfi AS MFI, antibody_n AS bead_count, pctaggbeads
-  	FROM madi_results.xmap_control
-  	WHERE study_accession = {selected_study}
-  	ORDER BY experiment_accession, antigen, plate_id",
+  SELECT DISTINCT s.study_accession, s.experiment_accession AS Analyte, s.plate_id, s.well, s.antigen,
+        		s.antibody_mfi AS MFI, s.antibody_n AS bead_count, s.pctaggbeads,
+        		CASE WHEN s.antibody_n < lower_bc_threshold THEN 'LowBeadN' ELSE 'Acceptable' END AS lowbeadn,
+            CASE WHEN s.pctaggbeads > pct_agg_threshold THEN 'PctAggBeads' ELSE 'Acceptable' END AS highbeadagg
+  	FROM madi_results.xmap_control as s
+  	     INNER JOIN (
+            SELECT study_accession, param_integer_value AS lower_bc_threshold
+            FROM madi_results.xmap_study_config
+    		    WHERE study_accession = {selected_study} AND param_user = {current_user} AND param_name = 'lower_bc_threshold'
+  		    ) AS bct ON bct.study_accession = s.study_accession
+          INNER JOIN (
+            SELECT study_accession, param_integer_value AS pct_agg_threshold
+            FROM madi_results.xmap_study_config
+    		    WHERE study_accession = {selected_study} AND param_user = {current_user} AND param_name = 'pct_agg_threshold'
+  		    ) AS pab ON pab.study_accession = s.study_accession
+  	WHERE s.study_accession = {selected_study}
+  	ORDER BY s.experiment_accession, s.antigen, s.plate_id",
                                   .con = conn)
   control_data <- dbGetQuery(conn, control_query)
   #control_data$plate_id <- str_trim(control_data$plate_id, side = "both")
@@ -427,17 +463,80 @@ load_specimens <- function(conn, current_user, selected_study) {
   return(list(plates, standard_data, blank_data, sample_data, control_data, standard_fit, stdcurve_undiluted_conc))
 }
 
+# add_condition_counts <- function(data, summ) {
+#   lowbead    <- get_condition_counts(data, "lowbeadn",  "LowBeadN",       "nlowbead",   summ)
+#   highbead   <- get_condition_counts(data, "highbeadagg","PctAggBeads",   "nhighbeadagg", summ)
+#   gclin_lin  <- get_condition_counts(data, "gclin",     "Acceptable",     "nlinear",    summ)
+#   gclin_conc <- get_condition_counts(data, "gclin",     "Too Concentrated","ntooconc",  summ)
+#   gclin_dil  <- get_condition_counts(data, "gclin",     "Too Diluted",    "ntoodilut",  summ)
+#   gclod_conc <- get_condition_counts(data, "gclod",     "Too Concentrated","nabovelod", summ)
+#   gclod_dil  <- get_condition_counts(data, "gclod",     "Too Diluted",    "nbelowlod",  summ)
+#
+#   summ %>%
+#     left_join(lowbead,    by = c("analyte", "antigen", "plate_id")) %>%
+#     left_join(highbead,   by = c("analyte", "antigen", "plate_id")) %>%
+#     left_join(gclin_lin,  by = c("analyte", "antigen", "plate_id")) %>%
+#     left_join(gclin_conc, by = c("analyte", "antigen", "plate_id")) %>%
+#     left_join(gclin_dil,  by = c("analyte", "antigen", "plate_id")) %>%
+#     left_join(gclod_conc, by = c("analyte", "antigen", "plate_id")) %>%
+#     left_join(gclod_dil,  by = c("analyte", "antigen", "plate_id")) %>%
+#     replace_na(list(
+#       nlinear      = 0,
+#       nhighbeadagg = 0,
+#       nlowbead     = 0,
+#       ntooconc     = 0,
+#       ntoodilut    = 0,
+#       nabovelod    = 0,
+#       nbelowlod    = 0
+#     ))
+# }
+
+# make_summspec <- function(standard_data, blank_data, control_data, active_samples, low_bead_data, high_agg_bead_data, plates) {
+#   buffer_summ   <- summarise_data(blank_data)  %>%
+#                     mutate(specimen_type = "blank") %>%
+#                     add_condition_counts(blank_data, .)
+#   control_summ  <- summarise_data(control_data)  %>%
+#                     mutate(specimen_type = "control") %>%
+#                       add_condition_counts(control_data, .)
+#   standard_summ <- summarise_data(standard_data) %>%
+#                         mutate(specimen_type = "standard") %>%
+#                         add_condition_counts(standard_data, .)
+#   sample_summ   <- summarise_data(active_samples) %>%
+#                       mutate(specimen_type = "sample") %>%
+#                       add_condition_counts(active_samples, .)
+#
+#   low_bead_summ  <- summarise_data(low_bead_data) %>%
+#                           mutate(specimen_type = "low_bead_count")
+#   high_agg_bead_summ <- summarise_data(high_agg_bead_data) %>%
+#                            mutate(specimen_type = "high_aggregate_beads")
+#
+#   summ_spec <- bind_rows(buffer_summ, control_summ, standard_summ, sample_summ,
+#                          low_bead_summ, high_agg_bead_summ)
+#
+#   summ_spec$plate_id <- toupper(summ_spec$plate_id)
+#     plates$plate_id <- toupper(plates$plate_id)
+#     summ_spec <- merge(summ_spec, plates, by="plate_id", all.x = TRUE)
+#
+#     cat("Sum Spec:\n")
+#     print(head(summ_spec))
+#     if ("analyte.y" %in% names(summ_spec)) {
+#       names(summ_spec)[names(summ_spec) == "analyte.y"] <- "analyte"
+#     }
+#     return(summ_spec)
+#
+# }
+
 make_summspec <- function(standard_data, blank_data, control_data, active_samples, low_bead_data, high_agg_bead_data, plates) {
 
   # Summarise buffer data and add specimen_type
   buffer_summ <- summarise_data(blank_data) %>%
     mutate(specimen_type = "blank")
 
-  low_bead_summ <- summarise_data(low_bead_data) %>%
-    mutate(specimen_type = "low_bead_count")
-
-  high_agg_bead_summ <- summarise_data(high_agg_bead_data) %>%
-    mutate(specimen_type = "high_aggregate_beads")
+  # low_bead_summ <<- summarise_data(low_bead_data) %>%
+  #   mutate(specimen_type = "low_bead_count")
+  #
+  # high_agg_bead_summ <<- summarise_data(high_agg_bead_data) %>%
+  #   mutate(specimen_type = "high_aggregate_beads")
 
   cat("aftr summarise_data blank")
   # Summarize control data and add specimen_type
@@ -457,10 +556,24 @@ make_summspec <- function(standard_data, blank_data, control_data, active_sample
 
   cat("after summarise_data sample")
 
+  # standard_data <<- standard_data
+  # blank_data <<- blank_data
+  # control_data <<- control_data
+  # active_samples <<- active_samples
+  # low_bead_data <<- low_bead_data
+  # high_agg_bead_data <<- high_agg_bead_data
+
   sample_lowbead <- get_condition_counts(active_samples, "lowbeadn", "LowBeadN", "nlowbead", sample_summ)
+  standard_lowbead <- get_condition_counts(standard_data, "lowbeadn", "LowBeadN", "nlowbead", sample_summ)
+  blank_lowbead <- get_condition_counts(blank_data, "lowbeadn", "LowBeadN", "nlowbead", sample_summ)
+  control_lowbead <- get_condition_counts(control_data, "lowbeadn", "LowBeadN", "nlowbead", sample_summ)
   cat("after sample low bead")
   print(class(sample_lowbead))
   sample_highbeadagg <- get_condition_counts(active_samples, "highbeadagg", "PctAggBeads", "nhighbeadagg", sample_summ)
+  standard_highbeadagg <- get_condition_counts(standard_data, "highbeadagg", "PctAggBeads", "nhighbeadagg", sample_summ)
+  blank_highbeadagg <- get_condition_counts(blank_data, "highbeadagg", "PctAggBeads", "nhighbeadagg", sample_summ)
+  control_highbeadagg <- get_condition_counts(control_data, "highbeadagg", "PctAggBeads", "nhighbeadagg", sample_summ)
+
   sample_gclin <- get_condition_counts(active_samples, "gclin", "Acceptable", "nlinear", sample_summ)
   sample_gcconc <- get_condition_counts(active_samples, "gclin", "Too Concentrated", "ntooconc", sample_summ)
   sample_gcdilut <- get_condition_counts(active_samples, "gclin", "Too Diluted", "ntoodilut", sample_summ)
@@ -486,7 +599,51 @@ make_summspec <- function(standard_data, blank_data, control_data, active_sample
       nbelowlod = 0
     ))
 
-  summ_spec <- bind_rows(buffer_summ, control_summ, standard_summ, sample_summ, low_bead_summ, high_agg_bead_summ)
+  buffer_summ <- buffer_summ %>%
+    left_join(blank_highbeadagg, by = c("analyte", "antigen", "plate_id")) %>%
+    left_join(blank_lowbead, by = c("analyte", "antigen", "plate_id")) %>%
+    # Replace NAs in the new count columns with zeros
+    replace_na(list(
+      nlinear = 0,
+      nhighbeadagg = 0,
+      nlowbead = 0,
+      ntooconc = 0,
+      ntoodilut = 0,
+      nabovelod = 0,
+      nbelowlod = 0
+    ))
+
+  control_summ <- control_summ %>%
+    left_join(control_highbeadagg, by = c("analyte", "antigen", "plate_id")) %>%
+    left_join(control_lowbead, by = c("analyte", "antigen", "plate_id")) %>%
+    # Replace NAs in the new count columns with zeros
+    replace_na(list(
+      nlinear = 0,
+      nhighbeadagg = 0,
+      nlowbead = 0,
+      ntooconc = 0,
+      ntoodilut = 0,
+      nabovelod = 0,
+      nbelowlod = 0
+    ))
+
+  standard_summ <- standard_summ %>%
+    left_join(standard_highbeadagg, by = c("analyte", "antigen", "plate_id")) %>%
+    left_join(standard_lowbead, by = c("analyte", "antigen", "plate_id")) %>%
+    # Replace NAs in the new count columns with zeros
+    replace_na(list(
+      nlinear = 0,
+      nhighbeadagg = 0,
+      nlowbead = 0,
+      ntooconc = 0,
+      ntoodilut = 0,
+      nabovelod = 0,
+      nbelowlod = 0
+    ))
+
+
+
+  summ_spec <- bind_rows(buffer_summ, control_summ, standard_summ, sample_summ) # low_bead_summ, high_agg_bead_summ)
 
   summ_spec$plate_id <- toupper(summ_spec$plate_id)
   plates$plate_id <- toupper(plates$plate_id)
@@ -605,8 +762,55 @@ preprocess_plate_data <- function(conn, current_user, selected_study){
   control_data <- as.data.frame(loaded_data[[5]])
   standard_fit_data <- as.data.frame(loaded_data[[6]])
 
-  low_bead_data <- active_samples[active_samples$lowbeadn == "LowBeadN",]
-  high_agg_bead_data <- active_samples[active_samples$highbeadagg == "PctAggBeads",]
+  low_bead_sample <- active_samples[active_samples$lowbeadn == "LowBeadN", c("study_accession",
+                                                                             "plate_id", "plate",
+                                                                             "analyte", "antigen", "mfi",
+                                                                             "specimen_type", "sample_dilution_factor", "feature",
+                                                                             "lowbeadn", "highbeadagg")]
+  low_bead_standard <- standard_data[standard_data$lowbeadn == "LowBeadN", c("study_accession",
+                                                                             "plate_id", "plate",
+                                                                             "analyte", "antigen", "mfi",
+                                                                             "specimen_type", "sample_dilution_factor", "feature",
+                                                                             "lowbeadn", "highbeadagg")]
+  low_bead_blank <- blank_data[blank_data$lowbeadn == "LowBeadN", c("study_accession",
+                                                                    "plate_id", "plate",
+                                                                    "analyte", "antigen","mfi",
+                                                                    "specimen_type", "sample_dilution_factor", "feature",
+                                                                    "lowbeadn", "highbeadagg")]
+  low_bead_control <- control_data[control_data$lowbead == "LowBeadN", c("study_accession",
+                                                                         "plate_id", "plate",
+                                                                         "analyte", "antigen","mfi",
+                                                                         "specimen_type", "sample_dilution_factor", "feature",
+                                                                         "lowbeadn", "highbeadagg")]
+
+  cat("\n\nLOW BEad SAMPLE \n\n")
+  print(names(low_bead_sample))
+  cat("\n\nLOW Bead standard \n\n")
+  print(names(low_bead_standard))
+  low_bead_data <- rbind(low_bead_sample, low_bead_standard, low_bead_blank, low_bead_control)
+
+  high_agg_bead_sample <- active_samples[active_samples$highbeadagg == "PctAggBeads",c("study_accession",
+                                                                                       "plate_id", "plate",
+                                                                                       "analyte", "antigen","mfi",
+                                                                                       "specimen_type", "sample_dilution_factor", "feature",
+                                                                                       "lowbeadn", "highbeadagg")]
+  high_agg_bead_blank <- blank_data[blank_data$highbeadagg == "PctAggBeads",c("study_accession",
+                                                                              "plate_id", "plate",
+                                                                              "analyte", "antigen","mfi",
+                                                                              "specimen_type", "sample_dilution_factor", "feature",
+                                                                              "lowbeadn", "highbeadagg")]
+  high_agg_bead_control <- control_data[control_data$highbeadagg == "PctAggBeads",c("study_accession",
+                                                                                    "plate_id", "plate",
+                                                                                    "analyte", "antigen","mfi",
+                                                                                    "specimen_type", "sample_dilution_factor", "feature",
+                                                                                    "lowbeadn", "highbeadagg")]
+  high_agg_bead_standard <- standard_data[standard_data$highbeadagg == "PctAggBeads",c("study_accession",
+                                                                                       "plate_id", "plate",
+                                                                                       "analyte", "antigen","mfi",
+                                                                                       "specimen_type", "sample_dilution_factor", "feature",
+                                                                                       "lowbeadn", "highbeadagg")]
+
+  high_agg_bead_data <- rbind(high_agg_bead_sample, high_agg_bead_blank, high_agg_bead_control, high_agg_bead_standard)
   cat("before make summspec\n")
   print(head(standard_data))
   summ_spec <- make_summspec(standard_data, blank_data, control_data, active_samples, low_bead_data, high_agg_bead_data, plates)
@@ -746,8 +950,8 @@ make_cv_scatterplot <- function(df, x_var, y_var, facet_var1, facet_var2, color_
 
 
 prep_analyte_fit_summary <- function(summ_spec_in, standard_fit_res) {
-  # standard_fit_res <- standard_fit_res
-  # summ_spec_in <- summ_spec_in
+  # standard_fit_res <<- standard_fit_res
+  # summ_spec_in <<- summ_spec_in
   merged_df <- merge(summ_spec_in,
                      standard_fit_res[, c("plateid", "antigen", "analyte", "crit", "source")],
                      by = c("plateid", "antigen", "analyte"),
@@ -1103,4 +1307,54 @@ prepare_arm_balance_data <- function(sample_specimen, sorted_arms) {
 #
 #   return(summ_spec_dup)
 # }
+
+make_antigen_plate_bead <- function(data, specimen_type, analyte, title) {
+  plot_data <- data[data$specimen_type==specimen_type &
+                      data$analyte==analyte & data$N_wells > 0,]
+  if(nrow(plot_data) == 0) stop("No failing bead count for this combination of specimen type and analyte.")
+
+  type_levels <- levels(factor(plot_data$Type))
+  pal <- RColorBrewer::brewer.pal(n = max(3, length(type_levels)), name = "Set1")
+  type_colors <- setNames(pal[seq_along(type_levels)], type_levels)
+  p <- ggplot(plot_data, aes(x = plate, y = antigen, group = Type)) +
+    geom_text_repel(aes(label = N_wells, color = Type),
+                    min.segment.length = 0,
+                    box.padding = 0.25,
+                    point.padding = 0.35,
+                    max.overlaps = 20,
+                    force = 1) +
+    scale_color_manual(values = type_colors) +
+    theme_minimal() +
+    guides(color = "none", size = "none") +
+    labs(x = "Plate", y = "Antigen", title = title) +
+    scale_x_discrete(expand = expansion(mult = c(0.2, 0.2))) +
+    scale_y_discrete(expand = expansion(mult = c(0.2, 0.2)))
+  n_types <- length(type_levels)
+  if (n_types == 1) {
+    xpos <- 0.5
+  } else {
+    xpos <- seq(0, 1, length.out = n_types + 1)[-1] - (0.5 / n_types)  # spread evenly but not flush to edges
+  }
+
+  subtitle_items <- lapply(seq_along(type_levels), function(i) {
+    textGrob(
+      label = type_levels[i],
+      x = unit(xpos[i], "npc"),
+      y = unit(0.5, "npc"),
+      just = "center",
+      gp = gpar(col = type_colors[type_levels[i]], fontsize = 11)
+    )
+  })
+  subtitle_row <- gTree(children = do.call(gList, subtitle_items))
+  prefix_grob <- textGrob("Types: ", x = unit(0.02, "npc"), y = unit(0.5, "npc"),
+                          just = "left", gp = gpar(col = "black", fontsize = 11))
+  combined_subtitle <- gTree(children = gList(
+    editGrob(prefix_grob, x = unit(0.02, "npc"), y = unit(0.5, "npc"), just = c("left", "center")),
+    editGrob(subtitle_row, x = unit(0.16, "npc"), y = unit(0.5, "npc"), just = c("left", "center"))
+  ))
+  main_plot <- ggdraw() +
+    draw_plot(p, x = 0, y = 0.08, width = 1, height = 0.92) +   # leave bottom margin for subtitle
+    draw_grob(combined_subtitle, x = 0, y = 0, width = 1, height = 0.08)
+  return(main_plot)
+}
 

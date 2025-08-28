@@ -6,8 +6,11 @@ observeEvent(input$study_level_tabs, {
 
   if (input$study_level_tabs == "Study Overview") {
     cat("before preproccess data")
+    showNotification(id = "load_overview_notification", "Loading Study Overview...", duration = NULL)
     pppd <- preprocess_plate_data(conn, currentuser(),input$readxMap_study_accession)
     cat("after preproccessing data")
+    removeNotification("load_overview_notification")
+
     count_set <- pppd[[1]]
     plates <- pppd[[2]]
     # load the sample specimen
@@ -47,7 +50,6 @@ observeEvent(input$study_level_tabs, {
     output$study_overview_page <- renderUI({
       fluidPage(
       tagList(
-      tags$h4("Loaded data - % in Quantifiable Region"),
       tabsetPanel(
         tabPanel(
           "Blanks, Controls, and Standards",
@@ -57,6 +59,12 @@ observeEvent(input$study_level_tabs, {
           downloadButton("download_analyte_plate_specimen_data", "Downlaod Samples Summarized by Analyte, Plate, and Specimen"),
           DTOutput("sample_spec_plate_summary_table")
           #  plotlyOutput("study_arm_plot", width = "75vw")
+        ),
+        tabPanel(
+          "High Aggregate and Low Bead Count",
+          uiOutput("analyte_selector_beadUI"),
+          uiOutput("specimen_selector_beadUI"),
+          plotOutput("bead_count_summary_plot", height = "800px")
         ),
         # tabPanel(
         #   "Overall Sample Quality",
@@ -775,6 +783,176 @@ observeEvent(input$study_level_tabs, {
           selected = analyte_choices[1],
           status = "success"
         )
+    })
+
+    output$analyte_selector_beadUI <- renderUI({
+      req(preped_data)
+
+      analyte_choices <- unique(preped_data$analyte[!is.na(preped_data$analyte)])
+
+      shinyWidgets::radioGroupButtons(
+        inputId = "analyte_selector_bead",
+        label = "Select Analyte:",
+        choices = analyte_choices,
+        selected = analyte_choices[1],
+        status = "success"
+      )
+    })
+#
+    output$specimen_selector_beadUI <- renderUI({
+      req(preped_data)
+
+      specimen_choices <- unique(preped_data[preped_data$specimen_type %in% c("blank", "control", "standard", "sample"), "specimen_type"])
+
+      shinyWidgets::radioGroupButtons(
+        inputId = "specimen_selector_bead",
+        label = "Select Specimen:",
+        choices = specimen_choices,
+        selected = specimen_choices[1],
+        status = "success"
+      )
+    })
+
+    output$bead_count_summary_plot <- renderPlot({
+      req(preped_data)
+      req(input$analyte_selector_bead)
+      req(input$specimen_selector_bead)
+      bead_data <- preped_data[preped_data$specimen_type %in% c("blank", "control", "standard", "sample"), ]
+      bead_data <- bead_data[, c("analyte","antigen", "plate","specimen_type","nhighbeadagg","nlowbead")]
+
+      names(bead_data)[names(bead_data) == "nhighbeadagg"] <- "HighAggregates"
+      names(bead_data)[names(bead_data) == "nlowbead"]  <- "LowBeads"
+
+       bead_data <- bead_data %>%
+        group_by(analyte, antigen, plate, specimen_type) %>%
+        dplyr::summarise(
+          LowBeads = sum(LowBeads, na.rm = TRUE),
+          HighAggregates = sum(HighAggregates, na.rm = TRUE),
+          .groups = "keep"
+        )
+
+
+
+      lbead_data <- pivot_longer(bead_data, cols = c("HighAggregates","LowBeads"),
+                                 names_to = "Type", values_to = "N_wells")
+      lbead_data$antigen <- factor(lbead_data$antigen)
+      lbead_data$plate <- factor(lbead_data$plate)
+
+      specimen_type = input$specimen_selector_bead
+      analyte = input$analyte_selector_bead
+      title = paste("Bead counts failing thresholds:",analyte, specimen_type)
+
+      plot <- make_antigen_plate_bead(data=lbead_data,
+                                    specimen_type = specimen_type,
+                                    analyte = analyte,
+                                    title = title)
+
+      return(plot)
+      # summary_totals <- bead_data %>%
+      #   group_by(plate, antigen, specimen_type) %>%
+      #   dplyr::summarise(
+      #     HighAggregates = sum(HighAggregates),
+      #     LowBeads = sum(LowBeads),
+      #     .groups = "drop"
+      #   )
+      #
+      #
+      # plot_data <- summary_totals %>%
+      #   pivot_longer(
+      #     cols = c(HighAggregates, LowBeads),
+      #     names_to = "type",
+      #     values_to = "count"
+      #   )
+      #
+      # #plot_data <- plot_data[plot_data$count != 0,]
+      #
+      # plot <- ggplot(plot_data, aes(x = plate, y = antigen, fill = count)) +
+      #   geom_tile(color = "white") +
+      #   facet_grid(specimen_type ~type) +
+      #   #geom_point(aes(shape = specimen_type), size = 2) +
+      #   #facet_wrap(~type) +
+      #   scale_fill_viridis_c(option = "viridis",
+      #                        limits = c(min(plot_data$count, na.rm = TRUE), max(plot_data$count, na.rm = TRUE)),
+      #                        breaks = c(min(plot_data$count, na.rm = TRUE), round(max(plot_data$count)/2), max(plot_data$count))) +
+      #   theme_minimal() +
+      #   theme(
+      #     strip.text = element_text(face = "bold")
+      #   ) +
+      #   # theme(
+      #   #   panel.grid = element_blank()
+      #   # ) +
+      #   labs(title = "High Aggregate and Low Bead Counts per Plate, Antigen, and Specimen Type",
+      #        x = "Plate", y = "Antigen", fill = "Count")
+      #
+      #
+      # # plot <- ggplot(plot_data, aes(x = antigen, y = plate, fill = count)) +
+      # #   geom_tile(data = subset(plot_data, count > 0), color = "white") +
+      # #   facet_grid(specimen_type ~ type) +
+      # #   scale_fill_viridis_c(
+      # #     option = "viridis",
+      # #     limits = c(min(plot_data$count[plot_data$count > 0], na.rm = TRUE),
+      # #                max(plot_data$count, na.rm = TRUE)),
+      # #     breaks = c(min(plot_data$count[plot_data$count > 0], na.rm = TRUE),
+      # #                round(max(plot_data$count, na.rm = TRUE)/2),
+      # #                max(plot_data$count, na.rm = TRUE))
+      # #   ) +
+      # #   theme_minimal() +
+      # #   labs(
+      # #     title = "High Aggregate and Low Bead Counts per Plate and Antigen",
+      # #     x = "Antigen", y = "Plate", fill = "Count"
+      # #   )
+      #
+      #
+      # #summary_totals <- summary_totals[summary_totals$HighAggregates > 0 | summary_totals$LowBeads > 0,]
+      # # summary_wide <- summary_totals %>%
+      # #   pivot_wider(
+      # #     names_from = antigen,
+      # #     values_from = c(HighAggregates, LowBeads)
+      # #   )
+      #
+      #
+      # # names(bead_data)[names(bead_data) == "nhighbeadagg"] <- "HighAggregates"
+      # # names(bead_data)[names(bead_data) == "nlowbead"]     <- "LowBeads"
+      # # antigens <- sort(unique(bead_data$antigen))
+      # # plates <- sort(unique(bead_data$plate))
+      # # table_cells <- matrix(vector("list", length(antigens) * length(plates)),
+      # #                       nrow = length(antigens), ncol = length(plates),
+      # #                       dimnames = list(antigens, plates))
+      # #
+      # # for (a in antigens) {
+      # #   for (p in plates) {
+      # #     sub <- bead_data %>%
+      # #       filter(antigen == a, plate == p) %>%
+      # #       mutate(total = HighAggregates + LowBeads) %>%
+      # #       filter(total > 0) %>%
+      # #       select(specimen_type, HighAggregates, LowBeads)
+      # #     # If there are rows, convert to a data.frame with specimen_type as row names
+      # #     if (nrow(sub) > 0) {
+      # #       mat <- as.data.frame(sub[, c("HighAggregates", "LowBeads")],
+      # #                            row.names = sub$specimen_type,
+      # #                            stringsAsFactors = FALSE)
+      # #       table_cells[a, p][[1]] <- mat
+      # #     } else {
+      # #       table_cells[a, p][[1]] <- NULL
+      # #     }
+      # #   }
+      # # }
+      # #
+      # #
+      # # for (a in antigens) {
+      # #   cat("Antigen:", a, "\n")
+      # #   for (p in plates) {
+      # #     cat(" Plate:", p, "\n")
+      # #     cell <- table_cells[a, p][[1]]
+      # #     if (is.null(cell)) {
+      # #       cat("  (no specimen_types with total > 0)\n")
+      # #     } else {
+      # #       print(cell)
+      # #     }
+      # #   }
+      # #   cat("\n")
+      # # }
+      # return(plot)
     })
 
 

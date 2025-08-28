@@ -253,24 +253,32 @@ output$view_stored_experiments_ui <- renderUI({
                       #            ))
                       #
                       # ),
+
                       tabsetPanel(
                         id = "basic_advance_tabs",
-
+                        tabPanel(
+                         # id = "data_view",
+                          title = "Data",
+                          # conditionalPanel(
+                          #   condition = "input.basic_advance_tabs == 'data_view'",
+                            uiOutput("dynamic_data_ui")
+                          #)
+                        ),
                         tabPanel(
                           id = "basic_qc",
-                          title = "Quality Control",
+                          title = "Quality Control - Basic",
                           radioGroupButtons(
                             inputId = "qc_component",
-                            label = "QC Phase",
-                            choices = c("Data", "Bead Count", "Standard Curve","Standard Curve Summary"),
-                            selected = "Data"
+                            label = "",
+                            choices = c("Bead Count", "Standard Curve","Standard Curve Summary"),
+                            selected = "Bead Count"
                           ),
 
                           # Conditional panels for basic QC only
-                          conditionalPanel(
-                            condition = "input.qc_component == 'Data'",
-                            uiOutput("dynamic_data_ui")
-                          ),
+                          # conditionalPanel(
+                          #   condition = "input.qc_component == 'Data'",
+                          #   uiOutput("dynamic_data_ui")
+                          # ),
                           conditionalPanel(
                             condition = "input.qc_component == 'Bead Count'",
                             uiOutput("bead_count_module_ui")
@@ -433,9 +441,9 @@ output$view_stored_experiments_ui <- renderUI({
 
 # Data Contents
 output$dynamic_data_ui <- renderUI({
-  req(input$qc_component)
+  req(input$basic_advance_tabs)
   if (
-    input$qc_component == "Data" &&
+    input$basic_advance_tabs == "Data" &&
     input$readxMap_study_accession != "Click here" &&
     input$readxMap_experiment_accession != "Click here" &&
     input$study_level_tabs == "Experiments" &&
