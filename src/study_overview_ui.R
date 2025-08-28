@@ -64,7 +64,12 @@ observeEvent(input$study_level_tabs, {
           "High Aggregate and Low Bead Count",
           uiOutput("analyte_selector_beadUI"),
           uiOutput("specimen_selector_beadUI"),
-          plotOutput("bead_count_summary_plot", height = "800px")
+          uiOutput("no_failed_bead_message"),
+          plotOutput("bead_count_summary_plot", height = "800px"),
+          fluidRow(
+            column(1, uiOutput("download_bead_count_summary_button_ui")),
+            column(1, uiOutput("download_bead_count_summary_data_ui"))
+          )
         ),
         # tabPanel(
         #   "Overall Sample Quality",
@@ -806,14 +811,14 @@ observeEvent(input$study_level_tabs, {
 
       shinyWidgets::radioGroupButtons(
         inputId = "specimen_selector_bead",
-        label = "Select Specimen:",
+        label = "Select Specimen Type:",
         choices = specimen_choices,
         selected = specimen_choices[1],
         status = "success"
       )
     })
 
-    output$bead_count_summary_plot <- renderPlot({
+    plot_bead_count_summary_plot <- function() {
       req(preped_data)
       req(input$analyte_selector_bead)
       req(input$specimen_selector_bead)
@@ -823,7 +828,7 @@ observeEvent(input$study_level_tabs, {
       names(bead_data)[names(bead_data) == "nhighbeadagg"] <- "HighAggregates"
       names(bead_data)[names(bead_data) == "nlowbead"]  <- "LowBeads"
 
-       bead_data <- bead_data %>%
+      bead_data <- bead_data %>%
         group_by(analyte, antigen, plate, specimen_type) %>%
         dplyr::summarise(
           LowBeads = sum(LowBeads, na.rm = TRUE),
@@ -843,11 +848,155 @@ observeEvent(input$study_level_tabs, {
       title = paste("Bead counts failing thresholds:",analyte, specimen_type)
 
       plot <- make_antigen_plate_bead(data=lbead_data,
-                                    specimen_type = specimen_type,
-                                    analyte = analyte,
-                                    title = title)
+                                      specimen_type = specimen_type,
+                                      analyte = analyte,
+                                      title = title)
+
+      return(list(plot, lbead_data))
+    }
+
+    output$bead_count_summary_plot <- renderPlot({
+      # req(preped_data)
+      # req(input$analyte_selector_bead)
+      # req(input$specimen_selector_bead)
+      # bead_data <- preped_data[preped_data$specimen_type %in% c("blank", "control", "standard", "sample"), ]
+      # bead_data <- bead_data[, c("analyte","antigen", "plate","specimen_type","nhighbeadagg","nlowbead")]
+      #
+      # names(bead_data)[names(bead_data) == "nhighbeadagg"] <- "HighAggregates"
+      # names(bead_data)[names(bead_data) == "nlowbead"]  <- "LowBeads"
+      #
+      #  bead_data <- bead_data %>%
+      #   group_by(analyte, antigen, plate, specimen_type) %>%
+      #   dplyr::summarise(
+      #     LowBeads = sum(LowBeads, na.rm = TRUE),
+      #     HighAggregates = sum(HighAggregates, na.rm = TRUE),
+      #     .groups = "keep"
+      #   )
+      #
+      #
+      #
+      # lbead_data <- pivot_longer(bead_data, cols = c("HighAggregates","LowBeads"),
+      #                            names_to = "Type", values_to = "N_wells")
+      # lbead_data$antigen <- factor(lbead_data$antigen)
+      # lbead_data$plate <- factor(lbead_data$plate)
+      #
+      # specimen_type = input$specimen_selector_bead
+      # analyte = input$analyte_selector_bead
+      # title = paste("Bead counts failing thresholds:",analyte, specimen_type)
+      #
+      # plot <- make_antigen_plate_bead(data=lbead_data,
+      #                               specimen_type = specimen_type,
+      #                               analyte = analyte,
+      #                               title = title)
+
+      plot <- plot_bead_count_summary_plot()[[1]]
+     # if (is.null(plot)) {
+        output$no_failed_bead_message <- renderUI({
+              if (is.null(plot)){
+                HTML(paste("<span style='font-size: 1.5em;'> No failing bead count for this combination of specimen type and analyte.</span>"))
+              } else {
+                NULL
+              }
+            })
+
+      req(!is.null(plot))
 
       return(plot)
+      # if (!is.null(plot)) {
+      #   return(plot)
+      # } else {
+      #   return(NULL)
+      # }
+      # if (!is.null(plot)) {
+      #     return(plot)
+      #   } else {
+      #     return(NULL)
+      #   }
+
+      # if (!is.null(plot)) {
+      #   return(plot)
+      # } else {
+      #  output$no_faliled_bead_message <- renderUI({
+      #     if (is.null(plot)){
+      #       HTML(paste("<span style='font-size: 1.5em;'> No failing bead count for this combination of specimen type and analyte.</span>"))
+      #     } else {
+      #       NULL
+      #     }
+      #   })
+
+    })
+
+    # output$no_faliled_bead_message <- renderUI({
+    #       if (is.null(plot)){
+    #         HTML(paste("<span style='font-size: 1.5em;'> No failing bead count for this combination of specimen type and analyte.</span>"))
+    #       } else {
+    #         NULL
+    #       }
+    #     })
+
+    output$download_bead_count_summary_plot <- downloadHandler(
+      filename = function() {
+        paste(input$readxMap_study_accession, "bead_count_failing_thresholds.pdf", sep = "_")
+      },
+      content = function(file) {
+        plot <- plot_bead_count_summary_plot()[[1]]
+        req(plot)
+        if (!is.null(plot)) {
+          ggsave(file, plot = plot,
+                 device = "pdf",
+                 width = 20,
+                 height = 10,
+                 units = "in")
+        }
+      }
+    )
+
+    output$download_bead_count_summary_button_ui <- renderUI({
+      plot <- plot_bead_count_summary_plot()[[1]]
+      if (!is.null(plot)) {
+        downloadButton("download_bead_count_summary_plot", "Download Plot")
+      } else {
+        NULL
+      }
+    })
+
+
+    output$download_bead_count_summary_data <- downloadHandler(
+      filename = function() {
+        paste(input$readxMap_study_accession, "bead_count_failing_thresholds.csv", sep = "_")
+      },
+      content = function(file) {
+        plot <- plot_bead_count_summary_plot()[[1]]
+        req(plot)
+        if (!is.null(plot)) {
+          bead_count_summary_table <- plot_bead_count_summary_plot()[[2]]
+          write.csv(bead_count_summary_table, file)
+        }
+      }
+    )
+
+    output$download_bead_count_summary_data_ui <- renderUI({
+      plot <- plot_bead_count_summary_plot()[[1]]
+      if (!is.null(plot)) {
+        downloadButton("download_bead_count_summary_data", "Download Data")
+      } else {
+        NULL
+      }
+    })
+
+      # if (!is.null(plot)) {
+      #   return(plot)
+      # } else {
+      #  output$no_faliled_bead_message <- renderUI({
+      #     if (is.null(plot)){
+      #       HTML(paste("<span style='font-size: 1.5em;'> No failing bead count for this combination of specimen type and analyte.</span>"))
+      #     } else {
+      #       NULL
+      #     }
+      #   })
+      #  output$bead_count_summary_plot <- NULL
+      #  #return(NULL)
+      # }
       # summary_totals <- bead_data %>%
       #   group_by(plate, antigen, specimen_type) %>%
       #   dplyr::summarise(
@@ -953,7 +1102,7 @@ observeEvent(input$study_level_tabs, {
       # #   cat("\n")
       # # }
       # return(plot)
-    })
+
 
 
 

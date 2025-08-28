@@ -1311,7 +1311,10 @@ prepare_arm_balance_data <- function(sample_specimen, sorted_arms) {
 make_antigen_plate_bead <- function(data, specimen_type, analyte, title) {
   plot_data <- data[data$specimen_type==specimen_type &
                       data$analyte==analyte & data$N_wells > 0,]
-  if(nrow(plot_data) == 0) stop("No failing bead count for this combination of specimen type and analyte.")
+  if(nrow(plot_data) == 0) {
+    return(NULL)
+   # stop("No failing bead count for this combination of specimen type and analyte.")
+    } else {
 
   type_levels <- levels(factor(plot_data$Type))
   pal <- RColorBrewer::brewer.pal(n = max(3, length(type_levels)), name = "Set1")
@@ -1356,5 +1359,7 @@ make_antigen_plate_bead <- function(data, specimen_type, analyte, title) {
     draw_plot(p, x = 0, y = 0.08, width = 1, height = 0.92) +   # leave bottom margin for subtitle
     draw_grob(combined_subtitle, x = 0, y = 0, width = 1, height = 0.08)
   return(main_plot)
+
+    }
 }
 
