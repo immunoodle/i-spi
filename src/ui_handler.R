@@ -168,6 +168,19 @@ output$userProjectsTableNonOwner <- DT::renderDataTable({
 
 output$view_stored_experiments_ui <- renderUI({
   tabRefreshCounter()$view_files_tab
+  req(reactive_df_study_exp())
+
+  # Get data
+  df <- reactive_df_study_exp()
+  df <- df[df$study_accession != "Click here", ]
+
+
+  # Build choices safely
+  study_choices <- c("Click here" = "Click here",
+                     setNames(unique(df$study_accession),
+                              unique(df$study_name)))
+
+
   tagList(
     fluidPage(
       h3("Interactive Serology Plate Inspector - Stored Plate Data"),
@@ -177,9 +190,10 @@ output$view_stored_experiments_ui <- renderUI({
         column(5,
                selectInput("readxMap_study_accession",
                            "Choose Study Name",
-                           choices = c("Click here" = "Click here",
-                                       setNames(unique(reactive_df_study_exp()$study_accession),
-                                                unique(reactive_df_study_exp()$study_name))),
+                           choices = study_choices,
+                           # choices = c("Click here" = "Click here",
+                           #             setNames(unique(reactive_df_study_exp()$study_accession),
+                           #                      unique(reactive_df_study_exp()$study_name))),
                            selected = "Click here",
                            multiple = FALSE
                )

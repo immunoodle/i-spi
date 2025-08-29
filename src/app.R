@@ -66,9 +66,9 @@ authenticated_body_content <- function() {
     ")),
     # This tabsetPanel is the same in both versions
     tabsetPanel(id = "main_tabs",
-                tabPanel("View Stored Files", value = "view_files_tab", uiOutput("view_stored_experiments_ui")),
-                tabPanel("Import xMap Files", value = "import_tab", uiOutput("readxMapData")),
-                tabPanel("Manage Project", value = "manage_project_tab", uiOutput("manage_project_ui"))
+                tabPanel("View, Process, and Export Data", value = "view_files_tab", uiOutput("view_stored_experiments_ui")),
+                tabPanel("Import Plate Data", value = "import_tab", uiOutput("readxMapData")),
+                tabPanel("Create, Add, and Load Projects", value = "manage_project_tab", uiOutput("manage_project_ui"))
     )
   )
 }
@@ -180,7 +180,7 @@ ui <- tagList(
   # Your dashboardPage etc remains unchanged
 
   dashboardPage(
-    title = "xMap Reader",
+    title = "I-SPI",
     skin = "green",
     header = header,
     sidebar = sidebar,
@@ -259,7 +259,7 @@ ui <- tagList(
 
   # Define the dashboardPage structure
   dashboardPage(
-    title = "xMap Reader",
+    title = "I-SPI",
     skin = "green",
     header = header,
     sidebar = sidebar,

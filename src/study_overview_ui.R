@@ -552,7 +552,7 @@ observeEvent(input$study_level_tabs, {
         ~ index_named_vector[[.x]]
       )
       dt <- create_timeperiod_table(sample_spec_timeperiod)
-      datatable(dt, caption = "Number of Samples by Analyte, Antigen, and Timeperiod", filter = "top")
+      datatable(dt, caption = "Number of Samples by Analyte, Plate, and Timeperiod", filter = "top")
     })
 
     output$download_analyte_antigen_plot <- downloadHandler(
