@@ -128,21 +128,73 @@ render_study_parameters <- reactive({
   #  req(selected_study, currentuser())
     tagList(
       HTML(paste0("<h4>", selected_study, " – Study Parameters for ", currentuser(), "</h4>")),
-      uiOutput("plate_management_UI"),
-      uiOutput("bead_count_config"),
-      uiOutput("dilution_analysis_config"),
-      uiOutput("standard_curve_config"),
-      bsCollapse(
-        id = "advanced_parameters",
-        bsCollapsePanel(
-        title = "Advanced Parameters",
-        uiOutput("antigen_family_config"),
-        uiOutput("dilution_analysis_config"),
-        uiOutput("subgroup_config"),
-        style = "primary")
+      tabsetPanel(
+        id = "study_params_section_tab",
+        tabPanel(
+          "QC Basic Parameters",
+          radioGroupButtons(
+            inputId = "basic_qc_params",
+            label = "",
+            choices = c("Plate Label Editor", "Bead Count Parameters", "Standard Curve Parameters" ),
+            selected = "Plate Label Editor"
+          ),
+          conditionalPanel(
+            condition = "input.basic_qc_params == 'Plate Label Editor'",
+            uiOutput("plate_management_UI")
+          ),
+          conditionalPanel(
+            condition = "input.basic_qc_params == 'Bead Count Parameters'",
+            uiOutput("bead_count_config")
+          ),
+          conditionalPanel(
+            condition = "input.basic_qc_params == 'Standard Curve Parameters'",
+            uiOutput("standard_curve_config")
+          )
+        ),
+        tabPanel(
+          "Advanced Parameters",
+          radioGroupButtons(
+            inputId = "advanced_qc_params",
+            label = "",
+            choices = c("Antigen Family Parameters", "Dilution Analysis Parameters", "Subgroup Parameters"),
+            selected = "Antigen Family Parameters"
+          ),
+
+          conditionalPanel(
+            condition = "input.advanced_qc_params == 'Antigen Family Parameters'",
+            uiOutput("antigen_family_config")),
+
+          conditionalPanel(
+            condition = "input.advanced_qc_params == 'Dilution Analysis Parameters'",
+            uiOutput("dilution_analysis_config")),
+
+          conditionalPanel(
+            condition = "input.advanced_qc_params == 'Subgroup Parameters'",
+            uiOutput("subgroup_config"))
+
+          )
+        ),
+        #)
+      #uiOutput("plate_management_UI"),
+      # uiOutput("bead_count_config"),
+      # uiOutput("dilution_analysis_config"),
+      # uiOutput("standard_curve_config"),
+
+
+      # bsCollapse(
+      #   id = "advanced_parameters",
+      #   bsCollapsePanel(
+      #   title = "Advanced Parameters",
+      #   uiOutput("antigen_family_config"),
+      #   uiOutput("dilution_analysis_config"),
+      #   uiOutput("subgroup_config"),
+      #   style = "primary")
+      # ),
+      conditionalPanel(
+        condition = "!(input.basic_qc_params == 'Plate Label Editor' && input.study_params_section_tab == 'QC Basic Parameters')",
+        actionButton(inputId = "reset_user_config", label = "Reset Study Parameters"),
+        uiOutput("user_parameter_download")
       ),
-      actionButton(inputId = "reset_user_config", label = "Reset Study Parameters"),
-      uiOutput("user_parameter_download")
     )
   })
 
@@ -150,6 +202,7 @@ render_study_parameters <- reactive({
 
   output$antigen_family_config <- renderUI({
     req(study_config)
+    req(input$advanced_qc_params == 'Antigen Family Parameters')
     #study_config <- study_config_rv()
     study_config <- study_config[study_config$param_group == "antigen_family",]
     antigen_family_order_params <- study_config[study_config$param_name == "antigen_family_order",]
@@ -181,10 +234,11 @@ render_study_parameters <- reactive({
     #   #if (!default_db_timeperiod_order %in% timeperiod_choices) {
     #   default_db_antigen_order <- antigen_choices# fallback
     # }
-    bsCollapse(
-      id = "antigen_config_collapse",
-      bsCollapsePanel(
-        title = "Antigen Family Parameters",
+    mainPanel(
+    # bsCollapse(
+    #   id = "antigen_config_collapse",
+    #   bsCollapsePanel(
+    #     title = "Antigen Family Parameters",
 
       #HTML("<h4><strong>Antigen Family</strong></h4>"),
       HTML(paste0("<h4>Order the antigen family and antigens from most important antigen family and antigen from left to right. </h4>")),
@@ -222,10 +276,10 @@ render_study_parameters <- reactive({
 
       ),
       actionButton(inputId = "save_antigen_family_settings",
-                   "Save"),
+                   "Save")
 
-      style = "primary"
-    ) # end panel
+    #   style = "primary"
+    # ) # end panel
     )
   })
 
@@ -275,6 +329,7 @@ render_study_parameters <- reactive({
 
   output$bead_count_config <- renderUI({
    req(study_config)
+   req(input$basic_qc_params == 'Bead Count Parameters')
     # req(study_config_rv())
     # study_config <- study_config_rv()
     min_val_lower_bc <- strsplit(study_config[study_config$param_name == "lower_bc_threshold",]$param_choices_list, ",")[[1]][1]
@@ -282,11 +337,13 @@ render_study_parameters <- reactive({
     failed_well_params <-  study_config[study_config$param_name == "failed_well_criteria",]
     failed_well_params_choices <- strsplit(failed_well_params$param_choices_list, ",")[[1]]
     min_val_pct_agg_threshold <- strsplit(study_config[study_config$param_name == "pct_agg_threshold",]$param_choices_list, ",")[[1]][1]
+#
 
-    bsCollapse(
-      id = "bead_count_config_collapse",
-      bsCollapsePanel(
-        title = "Bead Count Parameters",
+    mainPanel(
+#     bsCollapse(
+#       id = "bead_count_config_collapse",
+#       bsCollapsePanel(
+#         title = "Bead Count Parameters",
      # HTML("<h4><strong>Bead Count</strong></h4>"),
       numericInput(inputId = "lower_bc_threshold",
                    label =  study_config[study_config$param_name == "lower_bc_threshold",]$param_label,
@@ -315,13 +372,14 @@ render_study_parameters <- reactive({
                   label = "Save"),
 
 
-      style = "primary"
-      )
+      # style = "primary"
+      # )
     )
   })
 #
   output$dilution_analysis_config <- renderUI({
     req(study_config)
+    req(input$advanced_qc_params == 'Dilution Analysis Parameters')
     # req(study_config_rv())
     # study_config <- study_config_rv()
 
@@ -371,10 +429,11 @@ render_study_parameters <- reactive({
     #   default_db_node_order <- node_order_params_choices #strsplit(node_order_params$param_character_value, ",")[[1]] # fallback
     # }
 
-    bsCollapse(
-      id = "dilution_analysis_config",
-      bsCollapsePanel(
-        title = "Dilution Analysis Parameters",
+   mainPanel(
+    # bsCollapse(
+    #   id = "dilution_analysis_config",
+    #   bsCollapsePanel(
+    #     title = "Dilution Analysis Parameters",
     #  HTML("<h4><strong>Dilution Analysis</strong></h4>"),
       HTML(paste0("<h4>For the decision tree, select the order in which the decisions (and thus the nodes) are created from the type of sample limit selector.
                   Set the limit of detection that is considered passing in the decision tree classification and how the final arbritary units are calculated
@@ -442,16 +501,17 @@ render_study_parameters <- reactive({
 
     ),
     actionButton(inputId = "save_dilution_analysis_config",
-                 label = "Save"),
+                 label = "Save")
 
-    style = "primary"
-  )
+  #   style = "primary"
+  # )
     )
 })
 
 
   output$standard_curve_config <- renderUI({
     req(study_config)
+    req(input$basic_qc_params == 'Standard Curve Parameters')
     # req(study_config_rv())
     # study_config <- study_config_rv()
     req(study_sources)
@@ -486,10 +546,12 @@ render_study_parameters <- reactive({
     #   default_blank_option <- blank_options_params$param_character_value
     # }
 
-  bsCollapse(
-    id = "standard_curve_config",
-    bsCollapsePanel(
-      title = "Standard Curve Parameters",
+    mainPanel(
+  # bsCollapse(
+  #   id = "standard_curve_config",
+  #   bsCollapsePanel(
+  #     title = "Standard Curve Parameters",
+
       # bsCollapse(
       #   id = "standard_curve_parameters_info",
       #   bsCollapsePanel(
@@ -644,15 +706,17 @@ of the values as another point of the standard curve. The median fluorescence in
 #   uiOutput("default_source_warning"),
 
   actionButton(inputId = "save_standard_curve_config",
-               label = "Save"),
+               label = "Save")
 
-  style = "primary")
+#   style = "primary")
+# )
 )
 
   })
 
   output$subgroup_config <- renderUI({
     req(study_config)
+    req(input$advanced_qc_params == 'Subgroup Parameters')
     # req(study_config_rv())
     # study_config <- study_config_rv()
     req(study_arms)
@@ -697,10 +761,11 @@ of the values as another point of the standard curve. The median fluorescence in
     }
   }
 
-    bsCollapse(
-      id = "subgroup_config",
-      bsCollapsePanel(
-        title = "Subgroup Parameters",
+    mainPanel(
+    # bsCollapse(
+    #   id = "subgroup_config",
+    #   bsCollapsePanel(
+    #     title = "Subgroup Parameters",
     #HTML("<h4><strong>Subgroup Parameters</strong></h4>"),
     # Arm control
     radioButtons(inputId = reference_arm_params$param_name,
@@ -725,10 +790,12 @@ of the values as another point of the standard curve. The median fluorescence in
     actionButton(inputId = "save_subgroup_config",
                  label = "Save"),
 
-    style = "primary")
+    # style = "primary")
+    # )
     )
 
   })
+
 }) # end render
 
 

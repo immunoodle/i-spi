@@ -227,12 +227,13 @@ WHERE study_accession = {selected_study}
     # req(input$readxMap_study_accession != "Click here",
     #     input$study_level_tabs == "Study Overview",
     #     input$main_tabs == "view_files_tab")
+    req(input$basic_qc_params == 'Plate Label Editor')
 
-    #fluidPage(
-      bsCollapse(
-        id = "plate_management_collapse",
-        bsCollapsePanel(
-          title = "Plate Label Editor",
+    fluidPage(
+      # bsCollapse(
+      #   id = "plate_management_collapse",
+      #   bsCollapsePanel(
+      #     title = "Plate Label Editor",
 
 
       bsCollapse(
@@ -325,7 +326,7 @@ WHERE study_accession = {selected_study}
                         )
                ) # end div outer flex tag
         ) # end column
-      ),
+      )
       # fluidRow(
       #   column(12,
       #          tags$div(style = "display: flex;",
@@ -335,9 +336,9 @@ WHERE study_accession = {selected_study}
       #   )
       # ),
 
-       style = "primary" )
-      )
-
+      #  style = "primary" )
+      # )
+    )
     #)
   })
 

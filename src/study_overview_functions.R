@@ -321,7 +321,7 @@ summarise_by_fit_category_plate <- function(df) {
 
 summarise_by_timeperiod <- function(df) {
   df %>%
-    dplyr::group_by(analyte, antigen, timeperiod) %>%
+    dplyr::group_by(analyte, plate, timeperiod) %>%
     dplyr::summarise(
       gmean = gmean(mfi),
       gsd = gsd(mfi),
@@ -1024,7 +1024,7 @@ plot_preped_analyte_fit_summary <- function(preped_data, analyte_selector) {
 
 
   # filter out fit category of samples
-  # long_df <- long_df[!(long_df$fit_category %in% c("High Bead Aggregation", "Low Bead Count")), ]
+  long_df <- long_df[!(long_df$fit_category %in% c("High Bead Aggregation", "Low Bead Count")), ]
    long_df_group <- long_df %>%
          group_by(plate, antigen, crit) %>%
          mutate(proportion = count / sum(count)) %>%
@@ -1214,9 +1214,9 @@ plot_preped_analyte_fit_summary <- function(preped_data, analyte_selector) {
 
 # Produce table with number of samples by analyte, antigen, time period table
 create_timeperiod_table <- function(sample_spec_timeperiod) {
-sample_spec_timeperiod_v1 <- sample_spec_timeperiod[, c("analyte", "antigen", "timeperiod", "n", "timeperiod_order")]
+sample_spec_timeperiod_v1 <- sample_spec_timeperiod[, c("analyte", "plate", "timeperiod", "n", "timeperiod_order")]
 sample_spec_timeperiod_v1 <- sample_spec_timeperiod_v1[order(sample_spec_timeperiod_v1$timeperiod_order),]
-sample_spec_timeperiod_v1 <- sample_spec_timeperiod_v1[, c("analyte", "antigen", "timeperiod", "n")]
+sample_spec_timeperiod_v1 <- sample_spec_timeperiod_v1[, c("analyte", "plate", "timeperiod", "n")]
 
 return(sample_spec_timeperiod_v1)
 }
@@ -1307,59 +1307,136 @@ prepare_arm_balance_data <- function(sample_specimen, sorted_arms) {
 #
 #   return(summ_spec_dup)
 # }
-
-make_antigen_plate_bead <- function(data, specimen_type, analyte, title) {
-  plot_data <- data[data$specimen_type==specimen_type &
-                      data$analyte==analyte & data$N_wells > 0,]
-  if(nrow(plot_data) == 0) {
+make_antigen_plate_bead <- function(data, specimen_type, analyte, title,
+                                    axis_text_size = 12,
+                                    size_range = c(4, 10)) {
+  plot_data <- data[data$specimen_type == specimen_type &
+                      data$analyte == analyte & data$N_wells > 0, ]
+  if (nrow(plot_data) == 0) {
     return(NULL)
-   # stop("No failing bead count for this combination of specimen type and analyte.")
-    } else {
-
-  type_levels <- levels(factor(plot_data$Type))
-  pal <- RColorBrewer::brewer.pal(n = max(3, length(type_levels)), name = "Set1")
-  type_colors <- setNames(pal[seq_along(type_levels)], type_levels)
-  p <- ggplot(plot_data, aes(x = plate, y = antigen, group = Type)) +
-    geom_text_repel(aes(label = N_wells, color = Type),
-                    min.segment.length = 0,
-                    box.padding = 0.25,
-                    point.padding = 0.35,
-                    max.overlaps = 20,
-                    force = 1) +
-    scale_color_manual(values = type_colors) +
-    theme_minimal() +
-    guides(color = "none", size = "none") +
-    labs(x = "Plate", y = "Antigen", title = title) +
-    scale_x_discrete(expand = expansion(mult = c(0.2, 0.2))) +
-    scale_y_discrete(expand = expansion(mult = c(0.2, 0.2)))
-  n_types <- length(type_levels)
-  if (n_types == 1) {
-    xpos <- 0.5
   } else {
-    xpos <- seq(0, 1, length.out = n_types + 1)[-1] - (0.5 / n_types)  # spread evenly but not flush to edges
-  }
 
-  subtitle_items <- lapply(seq_along(type_levels), function(i) {
-    textGrob(
-      label = type_levels[i],
-      x = unit(xpos[i], "npc"),
-      y = unit(0.5, "npc"),
-      just = "center",
-      gp = gpar(col = type_colors[type_levels[i]], fontsize = 11)
-    )
-  })
-  subtitle_row <- gTree(children = do.call(gList, subtitle_items))
-  prefix_grob <- textGrob("Types: ", x = unit(0.02, "npc"), y = unit(0.5, "npc"),
-                          just = "left", gp = gpar(col = "black", fontsize = 11))
-  combined_subtitle <- gTree(children = gList(
-    editGrob(prefix_grob, x = unit(0.02, "npc"), y = unit(0.5, "npc"), just = c("left", "center")),
-    editGrob(subtitle_row, x = unit(0.16, "npc"), y = unit(0.5, "npc"), just = c("left", "center"))
-  ))
-  main_plot <- ggdraw() +
-    draw_plot(p, x = 0, y = 0.08, width = 1, height = 0.92) +   # leave bottom margin for subtitle
-    draw_grob(combined_subtitle, x = 0, y = 0, width = 1, height = 0.08)
-  return(main_plot)
+    type_levels <- levels(factor(plot_data$Type))
+    pal <- RColorBrewer::brewer.pal(n = max(3, length(type_levels)), name = "Set1")
+    type_colors <- setNames(pal[seq_along(type_levels)], type_levels)
 
+    plot_data$plate_factor <- factor(plot_data$plate, levels = unique(plot_data$plate))
+    plot_data$plate_pos <- as.numeric(plot_data$plate_factor)
+    plate_positions <- seq_along(levels(plot_data$plate_factor))
+    plate_labels <- levels(plot_data$plate_factor)
+
+    p <- ggplot(plot_data, aes(x = plate_pos, y = antigen, group = Type)) +
+      geom_text_repel(aes(label = N_wells, color = Type, size = N_wells),
+                      min.segment.length = 0,
+                      box.padding = 0.25,
+                      point.padding = 0.35,
+                      max.overlaps = 20,
+                      force = 1,
+                      show.legend = FALSE) +
+      scale_color_manual(values = type_colors) +
+      scale_size_continuous(range = size_range) +
+      theme_minimal() +
+      guides(color = "none", size = "none") +
+      labs(x = "Plate", y = "Antigen", title = title) +
+      theme(
+        axis.text.x = element_text(size = axis_text_size),
+        axis.text.y = element_text(size = axis_text_size),
+        axis.title.x = element_text(size = axis_text_size + 1),
+        axis.title.y = element_text(size = axis_text_size + 1),
+        plot.title = element_text(size = axis_text_size + 2, hjust = 0.5)
+      ) +
+      scale_x_continuous(
+        breaks = plate_positions,
+        labels = plate_labels,
+        expand = expansion(mult = c(0.02, 0.02)),
+        sec.axis = dup_axis(name = NULL, breaks = plate_positions, labels = plate_labels)
+      ) +
+      scale_y_discrete(expand = expansion(mult = c(0.2, 0.2)))
+
+    # Build the subtitle legend row showing Type colored labels (unchanged from original)
+    n_types <- length(type_levels)
+    if (n_types == 1) {
+      xpos <- 0.5
+    } else {
+      xpos <- seq(0, 1, length.out = n_types + 1)[-1] - (0.5 / n_types)
     }
+
+    subtitle_items <- lapply(seq_along(type_levels), function(i) {
+      textGrob(
+        label = type_levels[i],
+        x = unit(xpos[i], "npc"),
+        y = unit(0.5, "npc"),
+        just = "center",
+        gp = gpar(col = type_colors[type_levels[i]], fontsize = 11)
+      )
+    })
+    subtitle_row <- gTree(children = do.call(gList, subtitle_items))
+    prefix_grob <- textGrob("", x = unit(0.02, "npc"), y = unit(0.5, "npc"),
+                            just = "left", gp = gpar(col = "black", fontsize = 11))
+    combined_subtitle <- gTree(children = gList(
+      editGrob(prefix_grob, x = unit(0.02, "npc"), y = unit(0.5, "npc"), just = c("left", "center")),
+      editGrob(subtitle_row, x = unit(0.16, "npc"), y = unit(0.5, "npc"), just = c("left", "center"))
+    ))
+
+    # Use ggdraw to leave space at bottom for subtitle. The top sec_axis sits within the ggplot area.
+    main_plot <- ggdraw() +
+      draw_plot(p, x = 0, y = 0.08, width = 1, height = 0.92) +   # leave bottom margin for subtitle
+      draw_grob(combined_subtitle, x = 0, y = 0, width = 1, height = 0.08)
+    return(main_plot)
+  }
 }
+# make_antigen_plate_bead <- function(data, specimen_type, analyte, title) {
+#   plot_data <- data[data$specimen_type==specimen_type &
+#                       data$analyte==analyte & data$N_wells > 0,]
+#   if(nrow(plot_data) == 0) {
+#     return(NULL)
+#    # stop("No failing bead count for this combination of specimen type and analyte.")
+#     } else {
+#
+#   type_levels <- levels(factor(plot_data$Type))
+#   pal <- RColorBrewer::brewer.pal(n = max(3, length(type_levels)), name = "Set1")
+#   type_colors <- setNames(pal[seq_along(type_levels)], type_levels)
+#   p <- ggplot(plot_data, aes(x = plate, y = antigen, group = Type)) +
+#     geom_text_repel(aes(label = N_wells, color = Type),
+#                     min.segment.length = 0,
+#                     box.padding = 0.25,
+#                     point.padding = 0.35,
+#                     max.overlaps = 20,
+#                     force = 1) +
+#     scale_color_manual(values = type_colors) +
+#     theme_minimal() +
+#     guides(color = "none", size = "none") +
+#     labs(x = "Plate", y = "Antigen", title = title) +
+#     scale_x_discrete(expand = expansion(mult = c(0.2, 0.2))) +
+#     scale_y_discrete(expand = expansion(mult = c(0.2, 0.2)))
+#   n_types <- length(type_levels)
+#   if (n_types == 1) {
+#     xpos <- 0.5
+#   } else {
+#     xpos <- seq(0, 1, length.out = n_types + 1)[-1] - (0.5 / n_types)  # spread evenly but not flush to edges
+#   }
+#
+#   subtitle_items <- lapply(seq_along(type_levels), function(i) {
+#     textGrob(
+#       label = type_levels[i],
+#       x = unit(xpos[i], "npc"),
+#       y = unit(0.5, "npc"),
+#       just = "center",
+#       gp = gpar(col = type_colors[type_levels[i]], fontsize = 11)
+#     )
+#   })
+#   subtitle_row <- gTree(children = do.call(gList, subtitle_items))
+#   prefix_grob <- textGrob("Types: ", x = unit(0.02, "npc"), y = unit(0.5, "npc"),
+#                           just = "left", gp = gpar(col = "black", fontsize = 11))
+#   combined_subtitle <- gTree(children = gList(
+#     editGrob(prefix_grob, x = unit(0.02, "npc"), y = unit(0.5, "npc"), just = c("left", "center")),
+#     editGrob(subtitle_row, x = unit(0.16, "npc"), y = unit(0.5, "npc"), just = c("left", "center"))
+#   ))
+#   main_plot <- ggdraw() +
+#     draw_plot(p, x = 0, y = 0.08, width = 1, height = 0.92) +   # leave bottom margin for subtitle
+#     draw_grob(combined_subtitle, x = 0, y = 0, width = 1, height = 0.08)
+#   return(main_plot)
+#
+#     }
+# }
 

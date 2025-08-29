@@ -526,12 +526,13 @@ observeEvent(input$study_level_tabs, {
         sample_spec_timeperiod$timeperiod,
         ~ index_named_vector[[.x]]
       )
+      sample_spec_timeperiod <- sample_spec_timeperiod
 
       make_timeperiod_grid(df = sample_spec_timeperiod, x_var = "analyte",
-                           y_var = "antigen",
+                           y_var = "plate",
                            time_var = "timeperiod",
                            count_var = "n",
-                           title_var = "Number of Samples by Analyte, Antigen, and Timeperiod",
+                           title_var = "Number of Samples by Analyte, Plate, and Timeperiod",
                            time_var_order = "timeperiod_order",
                            time_var_palette = microviz_kelly_pallete)
     }
