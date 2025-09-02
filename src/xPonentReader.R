@@ -3,7 +3,7 @@ xPonent_fileinput_ui <- fluidPage(
   fluidRow(
     column(6,
            fileInput("uploaded_xPonent"
-                     , label="Upload an xMap File (xPONENT format Only)"
+                     , label="Upload a plate/batch file (xPONENT format Only)"
                      # , accept=c(".xlsx",".xls", ",csv")
                      , multiple=FALSE)),
     column(6,
@@ -244,10 +244,10 @@ observeEvent(input$upload_xponent_type_X, {
                                         workspace_id = load_workspace_id
     )
     # Map column types to the database
-    
+
     xponent_header_ready <<- map_type_db("Header", xponent_header_upload)
     # Append table
-    
+
     DBI::dbAppendTable(conn, Id(schema = "madi_results",
                                 table = "xmap_header"),
                        xponent_header_ready)
@@ -346,7 +346,7 @@ observeEvent(input$upload_xponent_type_S, {
       print("reactive_df_study_exp:loaded")
 
   }
-  
+
 
   xponent_type_s_upload <- data.frame(study_accession = study_name_import,
                                       experiment_accession = experiment_name_import,
