@@ -87,7 +87,7 @@ output$readxMapData <- renderUI({
                  conditionalPanel(
                    condition = "input.xPonentFile == false",
                    fileInput("upload_to_shiny"
-                             , label="Upload an xMap file(only accepts xlsx, xls)"
+                             , label="Upload a plate/batch file (only accepts xlsx, xls)"
                              , accept=c(".xlsx",".xls")
                              , multiple=FALSE)
                    ,uiOutput("sheet_ui")

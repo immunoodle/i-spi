@@ -1242,41 +1242,6 @@ prepare_arm_balance_data <- function(sample_specimen, sorted_arms) {
 }
 
 
-### Delete Plate from the SQL database and all associated data
-# delete_plate <- function(conn, selected_study, selected_plate_id, selected_plateid) {
-#   #conn <- get_db_connection()
-#
-#   delete_header_str <- glue::glue_sql("DELETE FROM madi_results.xmap_header
-#     WHERE study_accession = {selected_study} AND plate_id = {selected_plate_id};", .con = conn)
-#   RPostgres::dbExecute(conn, delete_header_str)
-#
-#   delete_buffer_str <- glue::glue_sql("DELETE FROM madi_results.xmap_buffer
-#     WHERE study_accession = {selected_study} AND plate_id = {selected_plate_id};", .con = conn)
-#   RPostgres::dbExecute(conn, delete_buffer_str)
-#
-#   delete_control_str <- glue::glue_sql("DELETE FROM madi_results.xmap_control
-#     WHERE study_accession = {selected_study} AND plate_id = {selected_plate_id};", .con = conn)
-#   RPostgres::dbExecute(conn, delete_control_str)
-#
-#   delete_sample_str <- glue::glue_sql("DELETE FROM madi_results.xmap_sample
-#     WHERE study_accession = {selected_study} AND plate_id = {selected_plate_id};", .con = conn)
-#   RPostgres::dbExecute(conn, delete_sample_str)
-#
-#   delete_standard_str <- glue::glue_sql("DELETE FROM madi_results.xmap_standard
-#     WHERE study_accession = {selected_study} AND plate_id = {selected_plate_id};", .con = conn)
-#   RPostgres::dbExecute(conn, delete_standard_str)
-#
-#   delete_fits_str <- glue::glue_sql("DELETE FROM madi_results.xmap_standard_fits
-#     WHERE study_accession = {selected_study} AND plate_id = {selected_plateid};", .con = conn)
-#   RPostgres::dbExecute(conn, delete_fits_str)
-#
-#   delete_fit_tab_str <- glue::glue_sql("DELETE FROM madi_results.xmap_standard_fit_tab
-#     WHERE study_accession = {selected_study} AND plate_id = {selected_plateid};", .con = conn)
-#   RPostgres::dbExecute(conn, delete_fit_tab_str)
-#
-# # dbDisconnect(conn)
-# }
-
 
 
 

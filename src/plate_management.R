@@ -865,12 +865,12 @@ observeEvent(input$delete_plate, {
   # showNotification(paste("Delete clicked for analyte", analyte_list[row_idx], "plate", plate_list[col_idx]))
   showModal(
     modalDialog(
-      title = "Confirm Delete",
+      title = paste(input$readxMap_study_accession, "Confirm Delete"),
       paste("Are you sure you want to delete count for analyte",
             selected_analyte, "and", input$original_plate_to_edit, "? This will delete the header,
                 buffers, controls, standards, and standard fits."),
       footer = tagList(
-        #actionButton("confirm_plate_delete", "Confirm Deletion"),
+        actionButton("confirm_plate_delete", "Confirm Deletion"),
         modalButton("Cancel")
       ),
       easyClose = TRUE
@@ -880,7 +880,35 @@ observeEvent(input$delete_plate, {
 
 }, ignoreInit = TRUE)
 
-observe({
-  shinyjs::disable("confirm_plate_delete")
-})
+
+observeEvent(input$confirm_plate_delete, {
+  cat("Pressed confirm delete plate")
+
+  print(input$readxMap_study_accession)
+  print(input$selected_plate_id)
+  print(input$selected_plateid_to_edit)
+  # do update
+  delete_plate(conn, selected_study = input$readxMap_study_accession,
+               selected_plate_id = input$selected_plate_id,
+               selected_plateid = input$selected_plateid_to_edit)
+
+   removeModal() # remove once click confirm
+    showNotification("Plate Deleted")
+ #
+  # RELOAD plate_header data
+  updated_plate_df <- fetch_study_header(selected_study = input$readxMap_study_accession)
+
+  # # Reset UI based on the updated data
+  # updateSelectInput(session, "original_sample_dilution_factor",
+  #                   choices = updated_plate_df$sample_dilution_factor,
+  #                   selected = input$edit_sample_dil_factor)
+  #
+  # updateTextInput(session, "edit_sample_dil_factor", value = NULL)
+  #
+  # Refresh datatable
+  output$plate_header <- renderDT({
+    datatable(updated_plate_df, selection = "single", filter = 'top')
+  })
+  })
+
 
