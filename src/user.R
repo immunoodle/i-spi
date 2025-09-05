@@ -68,104 +68,280 @@ observe({
           width = "80%"                # Optional: Styling
         )
       ),
-      div(style = "padding: 15px; color: #FFFFFF;",
-          # Project Info
-          h4("Current Project",
-             style = "margin-top: 0; color: #00FF00; font-weight: bold;"),
+      div(style = "padding: 15px;"),
+
+      # div(style = "padding: 15px; color: #FFFFFF;",
+      #     # Project Info
+      #     h4("Current Project",
+      #        style = "margin-top: 0; color: #00FF00; font-weight: bold;"),
+      #     p(
+      #       strong("Project: ", style = "color: #90EE90;"),
+      #       span(userProjectName(), style = "color: #FFFFFF;"), br(),
+      #       strong("Project ID: ", style = "color: #90EE90;"),
+      #       span(userWorkSpaceID(), style = "color: #FFFFFF;")
+      #     ),
+      #     # Session Info
+      #     hr(style = "margin: 10px 0; border-color: #90EE90;"),
+      #     # div(
+      #     #   style = paste0(
+      #     #     "background-color: #E1F5F9; padding: 15px; border-radius: 8px; ",
+      #     #     "margin: 0 auto 20px auto; border: 2px solid #2c3e50; ",
+      #     #     "width: 90%;  box-sizing: border-box;"
+      #     #   ),
+      #     #
+      #     #   # Header
+      #     #   h4("Current Session",
+      #     #      style = "color: black; font-weight: bold; margin-bottom: 10px;"
+      #     #   ),
+      #     #
+      #     #   # Dynamic section based on current tab
+      #     #   p(
+      #     #     strong(
+      #     #       if (input$main_tabs == "import_tab") "Importing:"
+      #     #       else if (input$main_tabs == "view_files_tab") "Viewing Files:"
+      #     #       else if (input$main_tabs == "manage_project_tab") "Managing Project"
+      #     #       else "",
+      #     #       style = "color: black;"
+      #     #     )
+      #     #   ),
+      #     #
+      #     #   # Show study/experiment details only for import and view_files tabs
+      #     #   if (input$main_tabs %in% c("import_tab", "view_files_tab")) {
+      #     #     div(
+      #     #       style = "padding-left: 10px;",
+      #     #
+      #     #       # Study
+      #     #       p(
+      #     #         strong("Study: ", style = "color: black;"),
+      #     #         if (!is.null(
+      #     #           if (input$main_tabs == "import_tab") input$readxMap_study_accession_import
+      #     #           else input$readxMap_study_accession
+      #     #         ) &&
+      #     #         (if (input$main_tabs == "import_tab") input$readxMap_study_accession_import
+      #     #          else input$readxMap_study_accession) != "Click here") {
+      #     #           span(
+      #     #             if (input$main_tabs == "import_tab") input$readxMap_study_accession_import
+      #     #             else input$readxMap_study_accession,
+      #     #             style = "color: black;"
+      #     #           )
+      #     #         } else {
+      #     #           em("None selected", style = "color: black;")
+      #     #         }
+      #     #       ),
+      #     #
+      #     #       # Experiment
+      #     #       p(
+      #     #         strong("Experiment: ", style = "color: black;"),
+      #     #         if (!is.null(
+      #     #           if (input$main_tabs == "import_tab") input$readxMap_experiment_accession_import
+      #     #           else input$readxMap_experiment_accession
+      #     #         ) &&
+      #     #         (if (input$main_tabs == "import_tab") input$readxMap_experiment_accession_import
+      #     #          else input$readxMap_experiment_accession) != "Click here") {
+      #     #           span(
+      #     #             if (input$main_tabs == "import_tab") input$readxMap_experiment_accession_import
+      #     #             else input$readxMap_experiment_accession,
+      #     #             style = "color: black;"
+      #     #           )
+      #     #         } else {
+      #     #           em("None selected", style = "color: black;")
+      #     #         }
+      #     #       )
+      #     #     )
+      #     #   }
+      #     # )
+      #
+      #     h4("Current Session",
+      #        style = "color: #00FF00; font-weight: bold;"),
+      #     # Dynamic Section based on current tab
+      #     p(
+      #       strong(
+      #         if (input$main_tabs == "import_tab") "Importing:"
+      #         else if (input$main_tabs == "view_files_tab") "Viewing Files:"
+      #         else if (input$main_tabs == "manage_project_tab") "Managing Project"
+      #         else "",
+      #         style = "color: #90EE90;"
+      #       )
+      #     ),
+      #    # Show study/experiment details only for import and view_files tabs
+      #     if (input$main_tabs %in% c("import_tab", "view_files_tab")) {
+      #       p(
+      #         style = "padding-left: 10px;",
+      #         strong("Study: ", style = "color: #90EE90;"),
+      #         if (!is.null(
+      #           if (input$main_tabs == "import_tab") input$readxMap_study_accession_import
+      #           else input$readxMap_study_accession
+      #         ) &&
+      #         (if (input$main_tabs == "import_tab") input$readxMap_study_accession_import
+      #          else input$readxMap_study_accession) != "Click here") {
+      #           span(
+      #             if (input$main_tabs == "import_tab") input$readxMap_study_accession_import
+      #             else input$readxMap_study_accession,
+      #             style = "color: #FFFFFF;"
+      #           )
+      #         } else {
+      #           em("None selected", style = "color: #98FB98;")
+      #         }, br(),
+      #         strong("Experiment: ", style = "color: #90EE90;"),
+      #         if (!is.null(
+      #           if (input$main_tabs == "import_tab") input$readxMap_experiment_accession_import
+      #           else input$readxMap_experiment_accession
+      #         ) &&
+      #         (if (input$main_tabs == "import_tab") input$readxMap_experiment_accession_import
+      #          else input$readxMap_experiment_accession) != "Click here") {
+      #           span(
+      #             if (input$main_tabs == "import_tab") input$readxMap_experiment_accession_import
+      #             else input$readxMap_experiment_accession,
+      #             style = "color: #FFFFFF;"
+      #           )
+      #         } else {
+      #           em("None selected", style = "color: #98FB98;")
+      #         }, #br()
+      #        #  strong("Reference Arm: ", style = "color: #90EE90;"),
+      #        #  reference_arm(),
+      #        #  br(),
+      #        # strong("Blank Control: ", style = "color: #90EE90;"),
+      #        # if(background_control_rv() == "ignored") {
+      #        #   "Ignored"
+      #        # } else if (background_control_rv() == "included"){
+      #        #   "Included"
+      #        # } else if (background_control_rv() == "subtracted") {
+      #        #   "Subtracted 1 x Geometric mean"
+      #        # } else if (background_control_rv() == "subtracted_3x") {
+      #        #   "Subtract 3 x Geometric Mean"
+      #        # }  else if (background_control_rv() == "subtracted_10x") {
+      #        #   "Subtracted 10 x Geometric Mean"
+      #        # }, br(),
+      #        # strong("Failed Well Criteria: ", style = "color: #90EE90;"),
+      #        # if (failed_well_criteria() == "lower") {
+      #        #   "Below Lower Threshold"
+      #        # } else if (failed_well_criteria() == "upper") {
+      #        #   "Below Upper Threshold"
+      #        # }, br(),
+      #        # strong("Bead Count Upper Threshold: ", style = "color: #90EE90;"),
+      #        # upper_threshold_rv(),
+      #        # br(),
+      #        # strong("Bead Count Lower Threshold: ", style = "color: #90EE90;"),
+      #        # lower_threshold_rv(),
+      #        # br()
+      #        #strong("Treatment of MFI values in Standard Curves: ",style = "color: #90EE90;"),
+      #          # if (aggrigate_mfi_dilution()) {
+      #          #   "Mean MFI at each Dilution Factor"
+      #          # } else {
+      #          #   "Raw MFI at each Dilution Factor"
+      #          # }
+      #
+      #
+      #
+      #
+      #       )
+      #     }
+      # ),
+
+
+      div(
+        style = paste0(
+          "background-color: #ffffff; padding: 15px; border-radius: 8px; ",
+          "margin: 0 auto 20px auto; border: 2px solid #2c3e50; ",
+          "width: 90%; max-width: 400px; box-sizing: border-box;"),
+              h4("Current Project",
+                 style = "margin-top: 0; color: black; font-weight: bold;"),
+              p(
+                strong("Project: ", style = "color: black;"),
+                span(userProjectName(), style = "color: black;"), br(),
+                strong("Project ID: ", style = "color: black;"),
+                span(userWorkSpaceID(), style = "color: black;")
+              )
+      ),
+      div(
+        style = paste0(
+          "background-color: #ffffff; padding: 15px; border-radius: 8px; ",
+          "margin: 0 auto 20px auto; border: 2px solid #2c3e50; ",
+          "width: 90%; max-width: 400px; box-sizing: border-box;"
+        ),#paste0("background-color: #ffffff ; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 2px solid #2c3e50;"),
+        h4("Current Session",
+           style = "color: black; font-weight: bold;"
+        ),
+
+        p(
+          strong(
+            if (input$main_tabs == "import_tab") "Importing:"
+            else if (input$main_tabs == "view_files_tab") "Viewing Files:"
+            else if (input$main_tabs == "manage_project_tab") "Managing Project"
+            else "",
+            style = "color: black;"
+          )
+        ),
+
+        # Only show study/experiment details for import/view tabs
+        if (input$main_tabs %in% c("import_tab", "view_files_tab")) {
           p(
-            strong("Project: ", style = "color: #90EE90;"),
-            span(userProjectName(), style = "color: #FFFFFF;"), br(),
-            strong("Project ID: ", style = "color: #90EE90;"),
-            span(userWorkSpaceID(), style = "color: #FFFFFF;")
-          ),
-          # Session Info
-          hr(style = "margin: 10px 0; border-color: #90EE90;"),
-          h4("Current Session",
-             style = "color: #00FF00; font-weight: bold;"),
-          # Dynamic Section based on current tab
-          p(
-            strong(
-              if (input$main_tabs == "import_tab") "Importing:"
-              else if (input$main_tabs == "view_files_tab") "Viewing Files:"
-              else if (input$main_tabs == "manage_project_tab") "Managing Project"
-              else "",
-              style = "color: #90EE90;"
-            )
-          ),
-          # Show study/experiment details only for import and view_files tabs
-          if (input$main_tabs %in% c("import_tab", "view_files_tab")) {
-            p(
-              style = "padding-left: 10px;",
-              strong("Study: ", style = "color: #90EE90;"),
-              if (!is.null(
+            style = "padding-left: 10px;",
+            strong("Study: ", style = "color: black;"),
+            if (!is.null(
+              if (input$main_tabs == "import_tab") input$readxMap_study_accession_import
+              else input$readxMap_study_accession
+            ) &&
+            (if (input$main_tabs == "import_tab") input$readxMap_study_accession_import
+             else input$readxMap_study_accession) != "Click here") {
+              span(
                 if (input$main_tabs == "import_tab") input$readxMap_study_accession_import
-                else input$readxMap_study_accession
-              ) &&
-              (if (input$main_tabs == "import_tab") input$readxMap_study_accession_import
-               else input$readxMap_study_accession) != "Click here") {
-                span(
-                  if (input$main_tabs == "import_tab") input$readxMap_study_accession_import
-                  else input$readxMap_study_accession,
-                  style = "color: #FFFFFF;"
-                )
-              } else {
-                em("None selected", style = "color: #98FB98;")
-              }, br(),
-              strong("Experiment: ", style = "color: #90EE90;"),
-              if (!is.null(
+                else input$readxMap_study_accession,
+                style = "color: black;"
+              )
+            } else {
+              em("None selected", style = "color: black;")
+            },
+            br(),
+            strong("Experiment: ", style = "color: black;"),
+            if (!is.null(
+              if (input$main_tabs == "import_tab") input$readxMap_experiment_accession_import
+              else input$readxMap_experiment_accession
+            ) &&
+            (if (input$main_tabs == "import_tab") input$readxMap_experiment_accession_import
+             else input$readxMap_experiment_accession) != "Click here") {
+              span(
                 if (input$main_tabs == "import_tab") input$readxMap_experiment_accession_import
-                else input$readxMap_experiment_accession
-              ) &&
-              (if (input$main_tabs == "import_tab") input$readxMap_experiment_accession_import
-               else input$readxMap_experiment_accession) != "Click here") {
-                span(
-                  if (input$main_tabs == "import_tab") input$readxMap_experiment_accession_import
-                  else input$readxMap_experiment_accession,
-                  style = "color: #FFFFFF;"
-                )
-              } else {
-                em("None selected", style = "color: #98FB98;")
-              }, #br()
-             #  strong("Reference Arm: ", style = "color: #90EE90;"),
-             #  reference_arm(),
-             #  br(),
-             # strong("Blank Control: ", style = "color: #90EE90;"),
-             # if(background_control_rv() == "ignored") {
-             #   "Ignored"
-             # } else if (background_control_rv() == "included"){
-             #   "Included"
-             # } else if (background_control_rv() == "subtracted") {
-             #   "Subtracted 1 x Geometric mean"
-             # } else if (background_control_rv() == "subtracted_3x") {
-             #   "Subtract 3 x Geometric Mean"
-             # }  else if (background_control_rv() == "subtracted_10x") {
-             #   "Subtracted 10 x Geometric Mean"
-             # }, br(),
-             # strong("Failed Well Criteria: ", style = "color: #90EE90;"),
-             # if (failed_well_criteria() == "lower") {
-             #   "Below Lower Threshold"
-             # } else if (failed_well_criteria() == "upper") {
-             #   "Below Upper Threshold"
-             # }, br(),
-             # strong("Bead Count Upper Threshold: ", style = "color: #90EE90;"),
-             # upper_threshold_rv(),
-             # br(),
-             # strong("Bead Count Lower Threshold: ", style = "color: #90EE90;"),
-             # lower_threshold_rv(),
-             # br()
-             #strong("Treatment of MFI values in Standard Curves: ",style = "color: #90EE90;"),
-               # if (aggrigate_mfi_dilution()) {
-               #   "Mean MFI at each Dilution Factor"
-               # } else {
-               #   "Raw MFI at each Dilution Factor"
-               # }
+                else input$readxMap_experiment_accession,
+                style = "color: black;"
+              )
+            } else {
+              em("None selected", style = "color: black;")
+            }
+          )
+        }
+        ),
+      div(
+        style = paste0(
+          "background-color: #ffffff; padding: 15px; border-radius: 8px; ",
+          "margin: 0 auto 20px auto; border: 2px solid #2c3e50; ",
+          "width: 90%; max-width: 400px; box-sizing: border-box;"
+        ),#paste0("background-color: #ffffff ; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 2px solid #2c3e50;"),
+        div(
+          style = "display: flex; align-items: center; margin-bottom: 8px;",
+          radioButtons("rb", NULL,
+                       choiceNames = list(
+                         div(
+                           style = "display: flex; align-items: center; padding: 8px; background-color: #ffffff;",
+                           tags$i(class = "fa fa-eye", style = "color: #e74c3c; margin-right: 10px; font-size: 1.1em;"),
+                           span("View, Process, and Export Data", style = "color: #2c3e50; font-weight: 600;")
+                         ),
+                         div(
+                           style = "display: flex; align-items: center; padding: 8px; background-color: #ffffff;",
+                           tags$i(class = "fa fa-cloud-upload", style = "color: #e74c3c; margin-right: 10px; font-size: 1.1em;"),
+                           span("Import Plate Data", style = "color: #2c3e50; font-weight: 600;")
+                         ),
+                         div(
+                           style = "display: flex; align-items: center; padding: 8px; background-color: #ffffff;",
+                           tags$i(class = "fa fa-users", style = "color: #e74c3c; margin-right: 10px; font-size: 1.1em;"),
+                           span("Create, Add, and Load Projects", style = "color: #2c3e50; font-weight: 600;")
+                         )
+                       ),
+                       choiceValues = list("viewExport", "importPlate", "manageProjects"),
+                       selected = "viewExport"
+          )
+        ))
 
-
-
-
-            )
-          }
-      )
     #   div(style = "padding: 15px; color: #FFFFFF;",
     #       hr(style = "margin: 10px 0; border-color: #90EE90;"),
     #       conditionalPanel(

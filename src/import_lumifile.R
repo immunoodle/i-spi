@@ -68,24 +68,34 @@ output$readxMapData <- renderUI({
       fluidRow(
         column(9,
                conditionalPanel(
-                 condition = "input.readxMap_study_accession_import != 'Click here' && readxMap_experiment_accession_import != 'Click here'",
-                 shinyWidgets::switchInput("xPonentFile",
-                                           onLabel = "xPONENT",
-                                           offLabel = "RAW",
-                                           onStatus = "success",
-                                           offStatus = "danger",
-                                           value = FALSE,
-                                           size = "large",
-                                           label = "File Format",
-                                           labelWidth = "150px",
-                                           handleWidth = "100px",
-                                           width = "auto"),
+                 condition = "input.readxMap_study_accession_import != 'Click here' && input.readxMap_experiment_accession_import != 'Click here' && input.readxMap_experiment_accession_import != ''",
+                 # shinyWidgets::switchInput("xPonentFile",
+                 #                           onLabel = "xPONENT",
+                 #                           offLabel = "RAW",
+                 #                           onStatus = "success",
+                 #                           offStatus = "danger",
+                 #                           value = FALSE,
+                 #                           size = "large",
+                 #                           label = "File Format",
+                 #                           labelWidth = "150px",
+                 #                           handleWidth = "100px",
+                 #                           width = "auto"),
+                 shinyWidgets::radioGroupButtons(
+                   inputId = "xPonentFile",
+                   label = "File Format",
+                   choices = c("xPONENT", "RAW"),
+                   selected = "RAW",
+                   justified = TRUE,
+                   checkIcon = list(
+                     yes = icon("check", lib = "font-awesome")
+                   )
+                 ),
                  conditionalPanel(
-                   condition = "input.xPonentFile == true",
+                   condition = "input.xPonentFile == 'xPONENT'",
                    uiOutput("xPonentReader_fileinput_ui")
                  ),
                  conditionalPanel(
-                   condition = "input.xPonentFile == false",
+                   condition = "input.xPonentFile == 'RAW'",
                    fileInput("upload_to_shiny"
                              , label="Upload a plate/batch file (only accepts xlsx, xls)"
                              , accept=c(".xlsx",".xls")
@@ -96,11 +106,11 @@ output$readxMapData <- renderUI({
         ),
         column(9,
                conditionalPanel(
-                 condition = "input.xPonentFile == true",
+                 condition = "input.xPonentFile == 'xPONENT'",
                  uiOutput("xPonent_fileparse_ui")
                ),
                conditionalPanel(
-                 condition = "input.xPonentFile == false",
+                 condition = "input.xPonentFile == 'RAW'",
                  uiOutput("segment_selector")
                )
         )
@@ -174,7 +184,8 @@ observeEvent(input$upload_to_shiny,{
                     "Select Sheet",
                     choices = c("Select excel sheet" = "", sheets),  # Combine default with sheets
                     selected = ""),
-        actionButton("view_raw_file", "View Raw File")
+        actionButton("view_raw_file", "View Raw File"),
+        actionButton("view_raw_header", "View Raw Header")
       )
     }
   })
@@ -195,11 +206,17 @@ observeEvent(input$uploaded_sheet,{
     openxlsx::read.xlsx(inFile()$datapath, startRow = 8, sheet = input$uploaded_sheet)
   )
 
+  header_info(
+    openxlsx::read.xlsx(inFile()$datapath, rows = c(1:7), sheet = input$uploaded_sheet, colNames = F)
+  )
+
   transform_dat <- plate_data()
   transform_dat <- data.frame(lapply(transform_dat, function(x) {  gsub("[,]", ".", x) }))
   transform_dat <- data.frame(lapply(transform_dat, function(x) {  gsub("[*]+", "", x) }))
   transform_dat <- data.frame(lapply(transform_dat, function(x) {  gsub("[.]+", ".", x) }))
   plate_data(transform_dat)
+
+
   }
 
 })
@@ -223,19 +240,48 @@ observeEvent(input$view_raw_file,{
   print(plate_data())
 })
 
+observeEvent(input$view_raw_header,{
+  print("view raw header")
+
+  showModal(
+    modalDialog(
+      title = "Raw Header",
+      rhandsontable::rHandsontableOutput("raw_header_file"),
+      size = "l",
+      easyClose = TRUE
+    )
+  )
+
+  output$raw_header_file <- rhandsontable::renderRHandsontable({
+    rhandsontable(header_info(), readOnly = TRUE)
+  })
+
+  print(header_info())
+})
+
 output$segment_selector <- renderUI({
 
   req(plate_data())  # Ensure that there is data to work with
+  # require sheet
+  req(input$uploaded_sheet)
+
+  type_p_completed()
 
   # Find unique types in the dataset
   plate_data() %>%
+    #slice(8:n()) %>%
     janitor::clean_names() %>%
     mutate(description = gsub("[^A-Za-z0-9]+", "_", description) %>% trimws(whitespace = "_")) %>%
     mutate(type = str_remove_all(type, "[0-9]")) %>%
     pull(type) %>%
     unique() -> unique_types
 
+  unique_types <- c("P", unique_types)
   unique_plate_types(unique_types)
+
+ if (!type_p_completed()) {
+   unique_types <- "P"
+ }
 
   # Create a tab for each unique type
   tabs <- lapply(unique_types, function(type) {

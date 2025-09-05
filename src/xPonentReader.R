@@ -34,7 +34,7 @@ xPonent_fileparse <- fluidPage(
 # Exponent files
 observeEvent(input$xPonentFile, {
 
-  if(input$xPonentFile == TRUE){
+  if(input$xPonentFile == 'xPONENT'){
     removeTab(inputId = "body_panel_id", target="headerxMap")
 
     output$xPonentReader_fileinput_ui <- renderUI({

@@ -723,7 +723,20 @@ server <- function(input, output, session) {
       reload_dil_lin_count <- 0
       #importing
       plate_data <- reactiveVal()
+      header_info <- reactiveVal()
+      current_type_p_tab <- reactiveVal()
       unique_plate_types <- reactiveVal()
+      imported_h_study <- reactiveVal()
+      imported_h_experiment <- reactiveVal()
+      imported_h_plate_id <- reactiveVal()
+      type_p_completed <- reactiveVal(FALSE)
+     #type_x_completed <- reactiveVal()
+      type_x_status <- reactiveVal(list(plate_exists = FALSE, n_record = 0))
+      type_s_status <- reactiveVal(list(plate_exists = FALSE, n_record = 0))
+      type_c_status <- reactiveVal(list(plate_exists = FALSE, n_record = 0))
+      type_b_status <- reactiveVal(list(plate_exists = FALSE, n_record = 0))
+
+
       availableSheets <- reactiveVal()
       inFile <- reactiveVal()
       xponent_plate_data <- reactiveVal()
