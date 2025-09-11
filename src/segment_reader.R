@@ -13,8 +13,8 @@ list_of_dataframes <- reactive({
 
     xprofile <- update_db(operation = "select",
                           schema = "madi_results",
-                          table_name = "xmap_profile",
-                          select_where = list("concat(study_accession,experiment_accession,stype)" = paste0(input$readxMap_study_accession_import,input$readxMap_experiment_accession_import,well_type))
+                          table_name = "xmap_profile", # was import for study
+                          select_where = list("concat(study_accession,experiment_accession,stype)" = paste0(input$readxMap_study_accession,input$readxMap_experiment_accession_import,well_type))
     )
     if (nrow(xprofile) > 0){
       xprofile <- xprofile[order("study_accession", "experiment_accession", "stype", "-xmap_profile_id"), ]
@@ -259,7 +259,7 @@ observe({
     create_ui_output <- function(type) {
       output_name <- paste0("ui_", type)
       output[[output_name]] <- renderUI({
-        create_ui_for_type(type, study_accession = input$readxMap_study_accession_import, experiment_accession = input$readxMap_experiment_accession_import)
+        create_ui_for_type(type, study_accession = input$readxMap_study_accession, experiment_accession = input$readxMap_experiment_accession)
       })
     }
 
@@ -332,7 +332,7 @@ output$table_plates <- renderRHandsontable({
     variable = c( "sample_dilution_factor", "study_accession", "experiment_accession", "auth0_user", "workspace_id"),
     value = c(
       NA,
-      input$readxMap_study_accession_import,
+      input$readxMap_study_accession, # was import
       input$readxMap_experiment_accession_import,
       currentuser(),
       as.character(userWorkSpaceID())
@@ -934,10 +934,10 @@ observeEvent(input$upload_type_X, {
   auth0_username <- session$userData$auth0_info$nickname
 
   print("upload for X")
-  print(input$readxMap_study_accession_import)
+  print(input$readxMap_study_accession) # was import
   print(input$readxMap_experiment_accession_import)
 
-  study_name_import <- as.character(input$readxMap_study_accession_import)
+  study_name_import <- as.character(input$readxMap_study_accession)
   experiment_name_import <- as.character(input$readxMap_experiment_accession_import)
 
   if(nchar(study_name_import) > 15){
@@ -1027,11 +1027,11 @@ observeEvent(input$upload_type_X, {
 
 ## Observe for type X
 observe({
-  req(input$readxMap_study_accession_import)
+  req(input$readxMap_study_accession) #was _import
   req(input$readxMap_experiment_accession_import)
   req(imported_h_plate_id())
 
-  study_name <- input$readxMap_study_accession_import
+  study_name <- input$readxMap_study_accession
   experiment_name <- input$readxMap_experiment_accession_import
   plate_id <- imported_h_plate_id()
 
@@ -1097,11 +1097,11 @@ observeEvent(input$upload_type_S, {
 
   auth0_username <- session$userData$auth0_info$nickname
   print("upload for S")
-  print(input$readxMap_study_accession_import)
+  print(input$readxMap_study_accession) # was _import
   print("experiment_accession is")
   print(input$readxMap_experiment_accession_import)
 
-  study_name_import <- as.character(input$readxMap_study_accession_import)
+  study_name_import <- as.character(input$readxMap_study_accession)
   experiment_name_import <- as.character(input$readxMap_experiment_accession_import)
 
   if(nchar(study_name_import) > 15){
@@ -1202,11 +1202,11 @@ observeEvent(input$upload_type_S, {
 
 ## Observe for type S
 observe({
-  req(input$readxMap_study_accession_import)
+  req(input$readxMap_study_accession) # was import
   req(input$readxMap_experiment_accession_import)
   req(imported_h_plate_id())
 
-  study_name <- input$readxMap_study_accession_import
+  study_name <- input$readxMap_study_accession
   experiment_name <- input$readxMap_experiment_accession_import
   plate_id <- imported_h_plate_id()
 
@@ -1247,10 +1247,10 @@ observeEvent(input$upload_type_C, {
   auth0_username <- session$userData$auth0_info$nickname
   print("upload for C")
 
-  print(input$readxMap_study_accession_import)
+  print(input$readxMap_study_accession) #was _import
   print(input$readxMap_experiment_accession_import)
 
-  study_name_import <- as.character(input$readxMap_study_accession_import)
+  study_name_import <- as.character(input$readxMap_study_accession)
   experiment_name_import <- as.character(input$readxMap_experiment_accession_import)
 
   if(nchar(study_name_import) > 15){
@@ -1346,11 +1346,11 @@ observeEvent(input$upload_type_C, {
 
 ## Observe for type C
 observe({
-  req(input$readxMap_study_accession_import)
+  req(input$readxMap_study_accession) #was _import
   req(input$readxMap_experiment_accession_import)
   req(imported_h_plate_id())
 
-  study_name <- input$readxMap_study_accession_import
+  study_name <- input$readxMap_study_accession
   experiment_name <- input$readxMap_experiment_accession_import
   plate_id <- imported_h_plate_id()
 
@@ -1390,10 +1390,10 @@ observeEvent(input$upload_type_B, {
 
   auth0_username <- session$userData$auth0_info$nickname
   print("upload for B")
-  print(input$readxMap_study_accession_import)
+  print(input$readxMap_study_accession) # was import
   print(input$readxMap_experiment_accession_import)
 
-  study_name_import <- as.character(input$readxMap_study_accession_import)
+  study_name_import <- as.character(input$readxMap_study_accession)
   experiment_name_import <- as.character(input$readxMap_experiment_accession_import)
 
   if(nchar(study_name_import) > 15){
@@ -1423,7 +1423,7 @@ observeEvent(input$upload_type_B, {
                                      table_data,
                                      type = "B",
                                      new_col_df = b_type_final_table,
-                                     study_accession = input$readxMap_study_accession_import,
+                                     study_accession = input$readxMap_study_accession, # was import
                                      exp_accession = input$readxMap_experiment_accession_import)
   # from what was stored before when updating the header
   type_b_ready$plate_id <- imported_h_plate_id()
@@ -1492,11 +1492,11 @@ observeEvent(input$upload_type_B, {
 
 ## Observe for type B
 observe({
-  req(input$readxMap_study_accession_import)
+  req(input$readxMap_study_accession) # was import
   req(input$readxMap_experiment_accession_import)
   req(imported_h_plate_id())
 
-  study_name <- input$readxMap_study_accession_import
+  study_name <- input$readxMap_study_accession
   experiment_name <- input$readxMap_experiment_accession_import
   plate_id <- imported_h_plate_id()
 

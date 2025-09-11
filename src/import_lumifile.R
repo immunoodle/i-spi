@@ -18,42 +18,63 @@ outputOptions(output, 'fileUploaded', suspendWhenHidden=FALSE)
 
 output$readxMapData <- renderUI({
   tabRefreshCounter()$import_tab
+  if (input$readxMap_study_accession != "Click here") {
+    import_plate_data_title <- paste("Import", input$readxMap_study_accession, "Plate Data", sep = " ")
+  } else {
+    import_plate_data_title<- paste("No study selected for Importing Plate Data")
+  }
   tagList(
     fluidPage(
-      tagList(
-        h3("Interactive Serology Plate Inspector - Data Importer"),
-        bsCollapsePanel(
-          "Instructions",
-          p("This is where we can load plate data from either Raw excel files or from the xPONENT format."),
-          p("1. Choose an existing study OR Create a new study."),
-          p("2. Choose an existing experiment OR Create a new experiment."),
-          p("3. Choose an xPONENT format OR a RAW format to upload."),
-          p("4. Browse to your plate data and import it in the correct format."),
-          p("5. Parse the plate data into correct columns/fields appropriate and required for each data component/type."),
-          p("6. Upload each data component/type."),
-          style = "success"
-        )
-      ),
+          tagList(
+            h3(import_plate_data_title),
+            if (input$readxMap_study_accession != "Click here") {
+              bsCollapsePanel(
+                "Instructions",
+                p("This is where we can load plate data from either Raw excel files or from the xPONENT format."),
+                p("1. Choose an existing study OR Create a new study."),
+                p("2. Choose an existing experiment OR Create a new experiment."),
+                p("3. Choose an xPONENT format OR a RAW format to upload."),
+                p("4. Browse to your plate data and import it in the correct format."),
+                p("5. Parse the plate data into correct columns/fields appropriate and required for each data component/type."),
+                p("6. Upload each data component/type."),
+                style = "success"
+              )
+            }
+          ),
+      # tagList(
+      #   h3(import_plate_data_title),
+      #   bsCollapsePanel(
+      #     "Instructions",
+      #     p("This is where we can load plate data from either Raw excel files or from the xPONENT format."),
+      #     p("1. Choose an existing study OR Create a new study."),
+      #     p("2. Choose an existing experiment OR Create a new experiment."),
+      #     p("3. Choose an xPONENT format OR a RAW format to upload."),
+      #     p("4. Browse to your plate data and import it in the correct format."),
+      #     p("5. Parse the plate data into correct columns/fields appropriate and required for each data component/type."),
+      #     p("6. Upload each data component/type."),
+      #     style = "success"
+      #   )
+      # ),
       br()
       ,
       fluidRow(
-        column(5,
-               selectizeInput("readxMap_study_accession_import",
-                              "Choose Existing Study Name OR Create a New Study Name (up to 15 characters)",
-                              choices <- c(c("Click OR Create New" = "Click here"),
-                                           setNames(unique(reactive_df_study_exp()$study_accession),
-                                                    unique(reactive_df_study_exp()$study_name)
-                                           )
-                              ),
-                              selected = "Click here",
-                              multiple = FALSE,
-                              options = list(create = TRUE), width = '500px'
-               )
-        )
-        ,
+       # column(5,
+#
+#                selectizeInput("readxMap_study_accession_import",
+#                               "Choose Existing Study Name OR Create a New Study Name (up to 15 characters)",
+#                               choices <- c(c("Click OR Create New" = "Click here"),
+#                                            setNames(unique(reactive_df_study_exp()$study_accession),
+#                                                     unique(reactive_df_study_exp()$study_name)
+#                                            )
+#                               ),
+#                               selected = "Click here",
+#                               multiple = FALSE,
+#                               options = list(create = TRUE), width = '500px'
+#                )
+#         ),
         column(5,
                conditionalPanel(
-                 condition = "input.readxMap_study_accession_import != 'Click here'",
+                 condition = "input.readxMap_study_accession != 'Click here'",
                  selectizeInput("readxMap_experiment_accession_import",
                                 "Choose Existing Experiment Name OR Create a New Experiment Name (up to 15 characters)",
                                 choices <- c("Click OR Create New" = "Click here"),
@@ -68,7 +89,7 @@ output$readxMapData <- renderUI({
       fluidRow(
         column(9,
                conditionalPanel(
-                 condition = "input.readxMap_study_accession_import != 'Click here' && input.readxMap_experiment_accession_import != 'Click here' && input.readxMap_experiment_accession_import != ''",
+                 condition = "input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession_import != 'Click here' && input.readxMap_experiment_accession_import != ''",
                  # shinyWidgets::switchInput("xPonentFile",
                  #                           onLabel = "xPONENT",
                  #                           offLabel = "RAW",
@@ -119,28 +140,9 @@ output$readxMapData <- renderUI({
   )
 })
 
-observeEvent(input$readxMap_study_accession_import, {
-  print(paste("readxMap_study_accession_import clicked",input$readxMap_study_accession_import))
-  study_exp <- reactive_df_study_exp()
-  filtered_exp <- study_exp[study_exp$study_accession == input$readxMap_study_accession_import, ]
-
-  if (nrow(filtered_exp) > 0) {
-    expvector_imp <<- setNames(filtered_exp$experiment_accession, filtered_exp$experiment_name)
-  } else {
-    expvector_imp <<- character(0)
-  }
-
-  print(paste("expvector_import:", expvector_imp))
-  experiment_drop_imp <<- c(c("Click OR Create New" = "Click here"), expvector_imp)
-  print(paste("experiments:",experiment_drop_imp))
-  updateSelectizeInput(session, inputId = "readxMap_experiment_accession_import",
-                       "Choose Existing Experiment Name OR Create a New Experiment Name (up to 15 characters)",
-                       choices <- experiment_drop_imp,
-                       selected = "Click here")
-})
-
 observeEvent(input$readxMap_study_accession, {
-  print(paste("readxMap_study_accession clicked: ",input$readxMap_study_accession))
+  print(paste("readxMap_study_accession clicked:", input$readxMap_study_accession))
+
   study_exp <- reactive_df_study_exp()
   filtered_exp <- study_exp[study_exp$study_accession == input$readxMap_study_accession, ]
 
@@ -149,15 +151,57 @@ observeEvent(input$readxMap_study_accession, {
   } else {
     expvector <- character(0)
   }
-  print(paste("expvector:", expvector))
-  experiment_drop <- c(c("Click here" = "Click here"), expvector)
-  print(paste("experiments:",experiment_drop))
-  updateSelectInput(session, inputId = "readxMap_experiment_accession",
-                    "Choose Experiment Name",
-                    choices <- experiment_drop,
-                    selected = "Click here")
 
+  experiment_drop <- c("Click OR Create New" = "Click here", expvector)
+
+  updateSelectizeInput(
+    session,
+    inputId = "readxMap_experiment_accession_import",
+    label = "Choose Existing Experiment Name OR Create a New Experiment Name (up to 15 characters)",
+    choices = experiment_drop,
+    selected = "Click here"
+  )
 })
+
+# observeEvent(input$readxMap_study_accession_import, {
+#   print(paste("readxMap_study_accession_import clicked",input$readxMap_study_accession_import))
+#   study_exp <- reactive_df_study_exp()
+#   filtered_exp <- study_exp[study_exp$study_accession == input$readxMap_study_accession_import, ]
+#
+#   if (nrow(filtered_exp) > 0) {
+#     expvector_imp <<- setNames(filtered_exp$experiment_accession, filtered_exp$experiment_name)
+#   } else {
+#     expvector_imp <<- character(0)
+#   }
+#
+#   print(paste("expvector_import:", expvector_imp))
+#   experiment_drop_imp <<- c(c("Click OR Create New" = "Click here"), expvector_imp)
+#   print(paste("experiments:",experiment_drop_imp))
+#   updateSelectizeInput(session, inputId = "readxMap_experiment_accession_import",
+#                        "Choose Existing Experiment Name OR Create a New Experiment Name (up to 15 characters)",
+#                        choices <- experiment_drop_imp,
+#                        selected = "Click here")
+# })
+#
+# observeEvent(input$readxMap_study_accession, {
+#   print(paste("readxMap_study_accession clicked: ",input$readxMap_study_accession))
+#   study_exp <- reactive_df_study_exp()
+#   filtered_exp <- study_exp[study_exp$study_accession == input$readxMap_study_accession, ]
+#
+#   if (nrow(filtered_exp) > 0) {
+#     expvector <- setNames(filtered_exp$experiment_accession, filtered_exp$experiment_name)
+#   } else {
+#     expvector <- character(0)
+#   }
+#   print(paste("expvector:", expvector))
+#   experiment_drop <- c(c("Click here" = "Click here"), expvector)
+#   print(paste("experiments:",experiment_drop))
+#   updateSelectInput(session, inputId = "readxMap_experiment_accession",
+#                     "Choose Experiment Name",
+#                     choices <- experiment_drop,
+#                     selected = "Click here")
+#
+# })
 
 ### read template and create the preview template tab
 observeEvent(input$upload_to_shiny,{
@@ -336,15 +380,15 @@ observeEvent(input$savexMapButton, {
   print("reactive_df_study_exp:loaded")
 
 
-  initial_source <- obtain_initial_source(input$readxMap_study_accession_import)
+  initial_source <- obtain_initial_source(input$readxMap_study_accession)
 
  # initial_source <- unique(standard_data$source)[1]
 
   # Initialize study parameters for a user and study
-  study_user_params_nrow <- nrow(fetch_study_configuration(study_accession = input$readxMap_study_accession_import
+  study_user_params_nrow <- nrow(fetch_study_configuration(study_accession = input$readxMap_study_accession
                                                              , user = currentuser()))
   if (study_user_params_nrow == 0) {
-    intitialize_study_configurations(study_accession = input$readxMap_study_accession_import,
+    intitialize_study_configurations(study_accession = input$readxMap_study_accession,
                                      user = currentuser(), initial_source = initial_source)
 
 
