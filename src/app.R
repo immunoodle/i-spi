@@ -64,23 +64,54 @@ authenticated_body_content <- function() {
         white-space: nowrap; /* Prevent button text wrapping */
       }
     ")),
-    # This tabsetPanel is the same in both versions
-    tabsetPanel(id = "main_tabs",
-                tabPanel("View, Process, and Export Data", value = "view_files_tab", uiOutput("view_stored_experiments_ui")),
-                tabPanel("Import Plate Data", value = "import_tab", uiOutput("readxMapData")),
-                tabPanel("Create, Add, and Load Projects", value = "manage_project_tab", uiOutput("manage_project_ui"))
-    )
-  )
+
+    uiOutput("body_tabs")
+
+    #This tabsetPanel is the same in both versions
+    # tabsetPanel(id = "main_tabs",
+    #             tabPanel("View, Process, and Export Data", value = "view_files_tab", uiOutput("view_stored_experiments_ui")),
+    #             tabPanel("Import Plate Data", value = "import_tab", uiOutput("readxMapData")),
+    #             tabPanel("Create, Add, and Load Projects", value = "manage_project_tab", uiOutput("manage_project_ui"))
+    # )
+
+
+    # mainPanel(
+    # conditionalPanel(
+    #   condition = "selected_tab == 'view_files_tab'",
+    #   uiOutput("view_stored_experiments_ui")
+    # ),
+    #
+    # conditionalPanel(
+    #   condition = "selected_tab == 'import_tab'",
+    #   uiOutput("readxMapData")
+    # ),
+    #
+    # conditionalPanel(
+    #   condition = "selected_tab == 'manage_project_tab'",
+    #   uiOutput("manage_project_ui")
+    # )
+    # )
+     )
 }
+
+
 
 # --- Define header, sidebar, body shell (From your HEAD version) ---
 header <- dashboardHeader(
   tags$li(a(img(src = "apple-touch-icon.png", title = "MADI Logo", height = "30px"), style = "padding-top:10px; padding-bottom:10px;"), class = "dropdown"), # Ensure www/apple-touch-icon.png
-  title = "I-SPI",
+  title = "Interactive Serology Plate Inspector",
   titleWidth = 350
 )
-sidebar <- dashboardSidebar(uiOutput("userpanel"))
+
+
+ sidebar <- dashboardSidebar(uiOutput("userpanel"))
+# sidebar <- dashboardSidebar(
+#   uiOutput("sidebar_info"),
+#   sidebarMenuOutput("sidebar_tabs")  # dynamic sidebar menu
+# )
+#sidebar <- sidebarLayout(uiOutput("userpanel"), uiOutput("main_tab_selector"))
 body <- dashboardBody(uiOutput("body_content_ui")) # Content depends on auth state
+#body <- mainPanel(uiOutput("body_content_ui")) # Content depends on auth state
 
 
 ui <- tagList(
@@ -180,15 +211,71 @@ ui <- tagList(
   # Your dashboardPage etc remains unchanged
 
   dashboardPage(
-    title = "I-SPI",
-    skin = "green",
+    title = "Interactive Serology Plate Inspector",
+    skin = "black",
     header = header,
     sidebar = sidebar,
     body = body # Contains uiOutput("body_content_ui")
   )
 )
-sidebar <- dashboardSidebar(uiOutput("userpanel"), width = 350)
-body <- dashboardBody(uiOutput("body_content_ui")) # Content depends on auth state
+
+
+sidebar <- dashboardSidebar(
+  uiOutput("userpanel"),
+  uiOutput("project_info"),
+  uiOutput("main_study_selector"),
+  sidebarMenuOutput("sidebar_tabs"),
+  width = 350# dynamic sidebar menu
+)
+# sidebar <- dashboardSidebar(uiOutput("userpanel"), width = 350)
+body <- dashboardBody(
+  style = "min-height:100vh; background-color: smokewhite;",
+    tags$head(
+  tags$style(HTML("
+        /* Keep sidebar fixed but allow toggling */
+        .main-sidebar {
+          position: fixed;
+          top: 0;
+          left: 0;
+          height: 100%;
+          width: 350px;
+        }
+
+        /* Make sure content shifts when sidebar toggles */
+
+        /*.sidebar-collapse .content-wrapper,*/
+        .sidebar-collapse .main-footer {
+          margin-left: 0 !important;
+        }
+
+        .main-footer {
+        display: none;
+        }
+
+        /* Keep header fixed full width */
+    .main-header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 1000;
+      width: 100% !important;
+    }
+
+    /* Push body down so it doesn't overlap header */
+    .content-wrapper {
+      padding-top: 50px; /* adjust if header is taller */
+    }
+
+.content-wrapper {
+      min-height: 100vh;        /* always full height */
+      padding-top: 50px;        /* header height */
+      margin-left: 350px;       /* sidebar width */
+      background-color: whitesmoke;
+    }
+
+      "))
+),uiOutput("body_content_ui")) # Content depends on auth state
 
 
 # --- Main UI Definition (From your HEAD version, as it handles auth) ---
@@ -200,7 +287,7 @@ ui <- tagList(
         $(document).on('shiny:connected', function(event) {
           console.log('JS: Shiny connected, setting up ALL custom message handlers...');
 
-          // Handler for redirect
+          // Handler for redirecthttp://127.0.0.1:8080/#shiny-tab-study_settings
           Shiny.addCustomMessageHandler('redirect', function(url) {
             console.log('JS: Redirecting to:', url);
             if(url) window.location.href = url; else console.error('JS: Null URL for redirect.');
@@ -259,8 +346,8 @@ ui <- tagList(
 
   # Define the dashboardPage structure
   dashboardPage(
-    title = "I-SPI",
-    skin = "green",
+    title = "Interactive Serology Plate Inspector",
+    skin = "black",
     header = header,
     sidebar = sidebar,
     body = body # Contains uiOutput("body_content_ui")
@@ -566,11 +653,15 @@ server <- function(input, output, session) {
     }
   })
 
+
+
   # --- UI Rendering Logic (from HEAD) ---
+
   output$body_content_ui <- renderUI({
     ud <- user_data()
     if (!is.null(ud) && isTRUE(ud$is_authenticated)) {
       message("Rendering authenticated body content.")
+      cat(input$main_tabs_panel)
       authenticated_body_content()
     } else {
       message("Rendering login button page.")
@@ -710,6 +801,7 @@ server <- function(input, output, session) {
       previousTab <- reactiveVal()
       rv_value_button <- reactiveValues(valueButton = 0)
       header_rvdata <- reactiveValues()
+      tab_counter <- reactiveVal(0) # for dynamic tabs
 
       standard_rvdata <- reactiveValues()
       sample_rvdata <- reactiveValues()
@@ -723,7 +815,20 @@ server <- function(input, output, session) {
       reload_dil_lin_count <- 0
       #importing
       plate_data <- reactiveVal()
+      header_info <- reactiveVal()
+      current_type_p_tab <- reactiveVal()
       unique_plate_types <- reactiveVal()
+      imported_h_study <- reactiveVal()
+      imported_h_experiment <- reactiveVal()
+      imported_h_plate_id <- reactiveVal()
+      type_p_completed <- reactiveVal(FALSE)
+     #type_x_completed <- reactiveVal()
+      type_x_status <- reactiveVal(list(plate_exists = FALSE, n_record = 0))
+      type_s_status <- reactiveVal(list(plate_exists = FALSE, n_record = 0))
+      type_c_status <- reactiveVal(list(plate_exists = FALSE, n_record = 0))
+      type_b_status <- reactiveVal(list(plate_exists = FALSE, n_record = 0))
+
+
       availableSheets <- reactiveVal()
       inFile <- reactiveVal()
       xponent_plate_data <- reactiveVal()
@@ -734,8 +839,6 @@ server <- function(input, output, session) {
       #outliers
       outlierJobStatus <- reactiveVal(list())
       outlierUIRefresher <- reactiveVal(0)
-
-
 
       ### Sourcing all the application logic files from `main`
       source("user.R", local = TRUE)

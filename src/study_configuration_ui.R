@@ -125,9 +125,16 @@ render_study_parameters <- reactive({
 
  study_config <- fetch_study_configuration(study_accession = selected_study, user = currentuser())
   output$studyParameters_UI <- renderUI({
-  #  req(selected_study, currentuser())
     tagList(
-      HTML(paste0("<h4>", selected_study, " – Study Parameters for ", currentuser(), "</h4>")),
+    conditionalPanel(
+      condition = "input.readxMap_study_accession == 'Click here'",
+      HTML("<h3>No study selected. Choose or create a study to change study settings.</h3>")
+    ),
+
+  #  req(selected_study, currentuser())
+    conditionalPanel(condition = "input.readxMap_study_accession != 'Click here'",
+    tagList(
+      HTML(paste0("<h3>Change ", selected_study, " study settings for ", currentuser(), "</h3>")),
       tabsetPanel(
         id = "study_params_section_tab",
         tabPanel(
@@ -195,6 +202,8 @@ render_study_parameters <- reactive({
         actionButton(inputId = "reset_user_config", label = "Reset Study Parameters"),
         uiOutput("user_parameter_download")
       ),
+    )
+    )
     )
   })
 
@@ -801,7 +810,7 @@ of the values as another point of the standard curve. The median fluorescence in
 
 
 observe({
-  req(input$main_tabs == "view_files_tab")
+  req(input$main_tabs == "study_settings")
  # req(study_level_tabs == "Study Parameters")
   req(input$readxMap_study_accession)
   req(currentuser())
@@ -1697,42 +1706,42 @@ observeEvent(input$reset_user_config, {
 
 
 ## Clear Study Configuration
-observeEvent(input$main_tabs, {
-  if (!is.null(input$main_tabs) && input$main_tabs != "view_files_tab") {
-    message("Not Viewing stored files")
-    cat("xmap experiment: ")
-    print(input$readxMap_experiment_accession)
-   updateSelectInput(session, "readxMap_experiment_accession", selected = "Click here")
-   cat("xmap experiment after update:\n ")
-   print(input$readxMap_experiment_accession)
-    # clear outputs
-    output$studyParameters_UI <- NULL
-    output$antigen_family_config <- NULL
-    output$antigen_family_table <- NULL
-    output$bead_count_config <- NULL
-    output$dilution_analysis_config <- NULL
-    output$standard_curve_config <- NULL
-    output$subgroup_config <- NULL
-    output$antigen_family_order_warning <- NULL
-    output$antigen_order_warning <- NULL
-    output$failed_well_warning <- NULL
-    output$decision_tree_diagram <- NULL
-    output$is_bnary_gc_warning <- NULL
-    output$zero_pass_diluted_Tx_warning <- NULL
-    output$zero_pass_concentrated_Tx_warning <- NULL
-    output$zero_pass_concentrated_diluted_Tx_warning <- NULL
-    output$one_pass_acceptable_Tx_warning <- NULL
-    output$two_plus_pass_acceptable_Tx_warning <- NULL
-    output$mean_mfi_warning <- NULL
-    output$is_log_mfi_warning <- NULL
-    output$apply_prozone_warning <- NULL
-    output$blank_option_warning <- NULL
-    output$default_source_warning <- NULL
-    output$reference_arm_warning <- NULL
-    output$timeperiod_order_warning <- NULL
-    #output$user_parameter_download <- NULL
-
-
-
-  }
-})
+# observeEvent(input$main_tabs, {
+#   if (!is.null(input$main_tabs) && input$main_tabs != "view_files_tab") {
+#     message("Not Viewing stored files")
+#     cat("xmap experiment: ")
+#     print(input$readxMap_experiment_accession)
+#    updateSelectInput(session, "readxMap_experiment_accession", selected = "Click here")
+#    cat("xmap experiment after update:\n ")
+#    print(input$readxMap_experiment_accession)
+#     # clear outputs
+#     output$studyParameters_UI <- NULL
+#     output$antigen_family_config <- NULL
+#     output$antigen_family_table <- NULL
+#     output$bead_count_config <- NULL
+#     output$dilution_analysis_config <- NULL
+#     output$standard_curve_config <- NULL
+#     output$subgroup_config <- NULL
+#     output$antigen_family_order_warning <- NULL
+#     output$antigen_order_warning <- NULL
+#     output$failed_well_warning <- NULL
+#     output$decision_tree_diagram <- NULL
+#     output$is_bnary_gc_warning <- NULL
+#     output$zero_pass_diluted_Tx_warning <- NULL
+#     output$zero_pass_concentrated_Tx_warning <- NULL
+#     output$zero_pass_concentrated_diluted_Tx_warning <- NULL
+#     output$one_pass_acceptable_Tx_warning <- NULL
+#     output$two_plus_pass_acceptable_Tx_warning <- NULL
+#     output$mean_mfi_warning <- NULL
+#     output$is_log_mfi_warning <- NULL
+#     output$apply_prozone_warning <- NULL
+#     output$blank_option_warning <- NULL
+#     output$default_source_warning <- NULL
+#     output$reference_arm_warning <- NULL
+#     output$timeperiod_order_warning <- NULL
+#     #output$user_parameter_download <- NULL
+#
+#
+#
+#   }
+# })

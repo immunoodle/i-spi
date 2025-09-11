@@ -70,6 +70,192 @@ getProjectName <- function(conn, current_user){
 }
 
 
+# output$sidebar_tabs <- renderMenu({
+#   current_count <- tab_counter()
+#   dynamic_items <- lapply(seq_len(current_count), function(i) {
+#     menuItem(paste("Dynamic Tab", i),
+#              tabName = paste0("dynamic_tab_", i), icon = icon("folder"))
+#   })
+#
+#   sidebarMenu(id = "sidebar_tabs",
+#               menuItem("View, Process, and Export Data", tabName = "view_files_tab", icon = icon("dashboard")),
+#               menuItem("Import Plate Data", tabName = "import_tab", icon = icon("file")),
+#               menuItem("Create, Add, and Load Projects", tabName = "manage_project_tab", icon = icon("chart-line")),
+#               dynamic_items
+#   )
+# })
+#
+# output$body_tabs <- renderUI({
+#   current_count <- tab_counter()
+#   dynamic_tabs <- lapply(seq_len(current_count), function(i) {
+#     tabItem(tabName = paste0("dynamic_tab_", i),
+#             uiOutput(paste0("dynamic_content_", i)))
+#   })
+#
+#   do.call(tabItems, c(
+#     list(
+#       tabItem(tabName = "view_files_tab", uiOutput("view_stored_experiments_ui")),
+#       tabItem(tabName = "import_tab", uiOutput("view_stored_experiments_ui")),
+#       tabItem(tabName = "manage_project_tab", uiOutput("manage_project_ui"))
+#     ),
+#     dynamic_tabs
+#   ))
+# })
+
+
+# output$sidebar_tabs <- renderMenu({
+#   current_count <- tab_counter()
+#   dynamic_items <- lapply(seq_len(current_count), function(i) {
+#     menuItem(paste("Dynamic Tab", i),
+#              tabName = paste0("dynamic_tab_", i), icon = icon("folder"))
+#   })
+#
+#   do.call(sidebarMenu, c(
+#     list(id = "sidebar_tabs",selected = "view_files_tab",
+#          menuItem("View, Process, and Export Data", tabName = "view_files_tab", icon = icon("dashboard")),
+#          menuItem("Import Plate Data", tabName = "import_tab", icon = icon("file")),
+#          menuItem("Create, Add, and Load Projects", tabName = "manage_project_tab", icon = icon("chart-line"))
+#     ),
+#     dynamic_items
+#   ))
+# })
+
+output$sidebar_tabs <- renderMenu({
+  current_count <- tab_counter()
+
+  # dynamic_items <- lapply(seq_len(current_count), function(i) {
+  #   menuItem(
+  #     paste("Dynamic Tab", i),
+  #     tabName = paste0("dynamic_tab_", i),
+  #     icon = icon("folder")
+  #   )
+  # })
+
+  do.call(sidebarMenu, c(
+    list(
+      id = "main_tabs",
+    #  selected = "view_files_tab",  # initial selected tab
+      #menuItem("Home", tabName = "home_tab", icon = icon("home")),      # landing page content
+      menuItem("View, Process, and Export Data", tabName = "view_files_tab", icon = icon("dashboard")),
+      menuItem("Change Study Settings", tabName = "study_settings", icon = icon("cog")),
+      menuItem("Import Plate Data", tabName = "import_tab", icon = icon("file")),
+      menuItem("Create, Add, and Load Projects", tabName = "manage_project_tab", icon = icon("chart-line"))
+
+    )
+    #dynamic_items  # add dynamic tabs at the end
+  ))
+})
+
+output$project_info <- renderUI({
+  tagList(
+    div(
+      style = paste0(
+        "background-color: #666666; padding: 15px; border-radius: 8px; ",
+        "margin: 0 auto 20px auto; border: 2px solid #2c3e50; ",
+        "width: 90%; max-width: 400px; box-sizing: border-box;"),
+  p(
+    strong("Project: ", style = "color: white;"),
+    span(userProjectName(), style = "color: white;"), br(),
+    strong("Project ID: ", style = "color: white;"),
+    span(userWorkSpaceID(), style = "color: white;")
+  )
+  )
+  )
+})
+
+output$main_study_selector <- renderUI({
+  req(reactive_df_study_exp())
+
+  # Get data
+  df <- reactive_df_study_exp()
+  df <- df[df$study_accession != "Click here", ]
+
+
+  # Build choices safely
+  study_choices <- c("Click here" = "Click here",
+                     setNames(unique(df$study_accession),
+                              unique(df$study_name)))
+
+  selectizeInput("readxMap_study_accession",
+               "Choose Existing Study Name OR Create a New Study Name (up to 15 characters)",
+               # choices <- c(c("Click OR Create New" = "Click here"),
+               #              setNames(unique(reactive_df_study_exp()$study_accession),
+               #                       unique(reactive_df_study_exp()$study_name)
+               #              )
+               # ),
+               choices = study_choices,
+               selected = "Click here",
+               multiple = FALSE,
+               options = list(create = TRUE), width = '500px'
+)
+})
+
+
+
+output$body_tabs <- renderUI({
+  current_count <- tab_counter()
+
+  dynamic_tabs <- lapply(seq_len(current_count), function(i) {
+    tabItem(
+      tabName = paste0("dynamic_tab_", i),
+      uiOutput(paste0("dynamic_content_", i))  # placeholder for dynamic content
+    )
+  })
+
+  do.call(tabItems, c(
+    list(
+      tabItem(tabName = "view_files_tab", uiOutput("view_stored_experiments_ui")),
+      tabItem(tabName = "study_settings", uiOutput("studyParameters_UI")),
+      tabItem(tabName = "import_tab", uiOutput("readxMapData")),
+      tabItem(tabName = "manage_project_tab", uiOutput("manage_project_ui"))
+    )
+   # dynamic_tabs  # append dynamic tabs here
+  ))
+
+})
+
+
+#
+# observe({
+#   req(input$main_tabs)
+#   if (input$main_tabs == "home_tab") {
+#     output$body_tabs <- renderUI({
+#       h2("Welcome to I-SPI")
+#     })
+#   }
+# })
+# observe({
+#   req(input$main_tabs)  # make sure it exists
+#   if (input$main_tabs == "home_tab") {
+#     output$home_tab <- renderUI({
+#       h2("Welcome to I-SPI")
+#       # You can add more landing content here
+#     })
+#   } else {
+#     output$home_tab <- renderUI({
+#       NULL  # hide content when not on Home tab
+#     })
+#   }
+# })
+
+# output$body_tabs <- renderUI({
+#   current_count <- tab_counter()
+#   dynamic_tabs <- lapply(seq_len(current_count), function(i) {
+#     tabItem(tabName = paste0("dynamic_tab_", i),
+#             uiOutput(paste0("dynamic_content_", i)))
+#   })
+#
+#   do.call(tabItems, c(
+#     list(
+#       tabItem(tabName = "view_files_tab", uiOutput("view_stored_experiments_ui")),
+#       tabItem(tabName = "import_tab", uiOutput("readxMapData")),
+#       tabItem(tabName = "manage_project_tab", uiOutput("manage_project_ui"))
+#     ),
+#     dynamic_tabs
+#   ))
+# })
+
+
 
 
 output$load_ui <- renderUI({
@@ -173,42 +359,57 @@ output$view_stored_experiments_ui <- renderUI({
   # Get data
   df <- reactive_df_study_exp()
   df <- df[df$study_accession != "Click here", ]
-
-
+  #df_v <<- df
   # Build choices safely
   study_choices <- c("Click here" = "Click here",
                      setNames(unique(df$study_accession),
                               unique(df$study_name)))
+  experiment_choices <- c("Click here" = "Click here",
+                    setNames(unique(df$experiment_accession),
+                             unique(df$experiment_name)))
 
+  if (!is.null(input$readxMap_study_accession) && input$readxMap_study_accession != "Click here") {
+    df_filtered <- df[df$study_accession == input$readxMap_study_accession, ]
+    experiment_choices <- c(
+      "Click here" = "Click here",
+      setNames(df_filtered$experiment_accession, df_filtered$experiment_name)
+    )
+  }
 
+ if (input$readxMap_study_accession != "Click here") {
+   stored_plate_title <- paste("View, Proccess, and Export", input$readxMap_study_accession, "Data", sep = " ")
+
+ } else {
+   stored_plate_title <- paste("No study selected for View, Proccess, and Export Data")
+ }
   tagList(
     fluidPage(
-      h3("Interactive Serology Plate Inspector - Stored Plate Data"),
+      h3(stored_plate_title),
 
       # Study Selection
-      fluidRow(
-        column(5,
-               selectInput("readxMap_study_accession",
-                           "Choose Study Name",
-                           choices = study_choices,
-                           # choices = c("Click here" = "Click here",
-                           #             setNames(unique(reactive_df_study_exp()$study_accession),
-                           #                      unique(reactive_df_study_exp()$study_name))),
-                           selected = "Click here",
-                           multiple = FALSE
-               )
-        )
-      ),
+      # fluidRow(
+      #   column(5,
+      #          selectInput("readxMap_study_accession",
+      #                      "Choose Study Name",
+      #                      choices = study_choices,
+      #                      # choices = c("Click here" = "Click here",
+      #                      #             setNames(unique(reactive_df_study_exp()$study_accession),
+      #                      #                      unique(reactive_df_study_exp()$study_name))),
+      #                      selected = "Click here",
+      #                      multiple = FALSE
+      #          )
+      #   )
+      # ),
 
       # Study Level Content
       conditionalPanel(
         condition = "input.readxMap_study_accession != 'Click here'",
         tabsetPanel(
           id = "study_level_tabs",
-          tabPanel("Study Parameters",
-                   id = "study_parameters_tab",
-                   uiOutput("studyParameters_UI")
-          ),
+          # tabPanel("Study Parameters",
+          #          id = "study_parameters_tab",
+          #          uiOutput("studyParameters_UI")
+          # ),
           # tabPanel("Plate Management",
           #          id = "plate_management_tab",
           #          uiOutput("plate_management_UI")),
@@ -216,20 +417,17 @@ output$view_stored_experiments_ui <- renderUI({
 
 
 
-          # Study Overview Tab
-          tabPanel("Study Overview",
-                   id = "study_overview_tab",
-                   uiOutput("study_overview_page")
-          ),
+
           # Experiment Level Tab
           tabPanel("Experiments",
                    fluidRow(
                     # column(6,
                             selectInput("readxMap_experiment_accession",
                                         "Choose Experiment Name",
-                                        choices = c("Click here" = "Click here",
-                                                    setNames(reactive_df_study_exp()$experiment_accession,
-                                                             reactive_df_study_exp()$experiment_name)),
+                                        choices = experiment_choices,
+                                        # choices = c("Click here" = "Click here",
+                                        #             setNames(df$experiment_accession,
+                                        #                      df()$experiment_name)),
                                         selected = "Click here",
                                         multiple = FALSE
                             ),
@@ -427,7 +625,12 @@ output$view_stored_experiments_ui <- renderUI({
                    #   uiOutput("sg_module_ui")
                    # )
 
-          ) # end TabsetPanel
+          ),
+          # Study Overview Tab
+          tabPanel("Study Overview",
+                   id = "study_overview_tab",
+                   uiOutput("study_overview_page")
+          ),# end TabsetPanel
         ) # end study level tabs
       ) # end  Study Level Content
       ) # end fluidPage
@@ -1005,6 +1208,7 @@ output$manage_project_ui <- renderUI({
   fluidRow(
     column(12,
            # Create Project Section
+           h3("Project Management"),
            wellPanel(
              h4("Create New Project"),
              bsCollapse(
