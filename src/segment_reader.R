@@ -94,6 +94,18 @@ create_ui_for_type <- function(data_type, study_accession = NULL, experiment_acc
 
   col_names <- names(df)
   print(paste(" select where str:",paste0(study_accession,experiment_accession,data_type)))
+
+  cat("=== ABOUT TO QUERY DATABASE ===\n")
+  cat("Function parameters received:\n")
+  cat("  study_accession:", study_accession, "\n")
+  cat("  experiment_accession:", experiment_accession, "\n")
+  cat("  data_type:", data_type, "\n")
+
+  query_string <- paste0(study_accession, experiment_accession, data_type)
+  cat("  Full query string:", query_string, "\n")
+  cat("===============================\n")
+
+
   xprofile <<- update_db(operation = "select",
                         schema = "madi_results",
                         table_name = "xmap_profile",
@@ -124,14 +136,17 @@ create_ui_for_type <- function(data_type, study_accession = NULL, experiment_acc
       time_exp_val <- selected_col[1]
     }
 
+  # imported_h_study(study_accession)
+  # imported_h_experiment(experiment_accession)
+
   header_info <- fluidRow(
     column(
       12,
       div(
         style = "margin-bottom: 10px;",
-        tags$span(style = "font-weight: bold;", "Study: "), textOutput("imported_h_study", inline = TRUE),
+        tags$span(style = "font-weight: bold;", "Study: "), study_accession,#textOutput("imported_h_studyimported_h_study", inline = TRUE),
         " | ",
-        tags$span(style = "font-weight: bold;", "Experiment: "), textOutput("imported_h_experiment", inline = TRUE),
+        tags$span(style = "font-weight: bold;", "Experiment: "), experiment_accession,#textOutput("imported_h_experiment", inline = TRUE),
         " | ",
         tags$span(style = "font-weight: bold;", "plate_id: "), textOutput("imported_h_plate_id", inline = TRUE)
       )
@@ -252,6 +267,9 @@ create_ui_for_type <- function(data_type, study_accession = NULL, experiment_acc
 
 observe({
 
+  req(input$readxMap_study_accession)
+  req(input$readxMap_experiment_accession_import)
+
   if(!is.null(unique_plate_types())){
 
     type_vector <- unique_plate_types()
@@ -259,7 +277,9 @@ observe({
     create_ui_output <- function(type) {
       output_name <- paste0("ui_", type)
       output[[output_name]] <- renderUI({
-        create_ui_for_type(type, study_accession = input$readxMap_study_accession, experiment_accession = input$readxMap_experiment_accession)
+        req(input$readxMap_experiment_accession_import)
+
+        create_ui_for_type(type, study_accession = input$readxMap_study_accession, experiment_accession = input$readxMap_experiment_accession_import)
       })
     }
 
@@ -268,6 +288,7 @@ observe({
        create_ui_output(type)
       } else {
         output$ui_P <- renderUI({
+          req(input$readxMap_experiment_accession_import)
           req(header_info())
           tagList(
             p("Edit editable fields in the table to assign plate information. The sample dilution factor must be between 1 and 100,000.
@@ -393,10 +414,10 @@ observeEvent(input$table_plates, {
 
   # Update the reactiveVals whenever the table is updated
   import_study <- updated_table[updated_table$variable == "study_accession", ]$value
-  imported_h_study(import_study)
+  #imported_h_study(import_study)
 
   import_experiment <- updated_table[updated_table$variable == "experiment_accession", ]$value
-  imported_h_experiment(import_experiment)
+  #imported_h_experiment(import_experiment)
 
   import_plate_id <- updated_table[updated_table$variable == "plate_id", ]$value
   imported_h_plate_id(import_plate_id)
@@ -553,6 +574,9 @@ observe({
     }
   })
 
+
+  #imported_h_study(input$readxMap_study_accession)
+  #imported_h_experiment(input$readxMap_experiment_accession_import)
   # if (plate_exists) {
   #   shinyjs::disable("assign_header")
   #   #showNotification("Header already uploaded, assign button disabled", type = "warning")
@@ -794,15 +818,18 @@ parse_metadata_df <- function(df) {
 }
 
 
-output$imported_h_study <- renderText({
-  req(imported_h_study())
-  imported_h_study()
-})
-
-output$imported_h_experiment <- renderText({
-  req(imported_h_experiment())
-  imported_h_experiment()
-})
+# output$imported_h_study <- renderText({
+#  # req(input$readxMap_study_accession)
+#   input$readxMap_study_accession
+#   # req(imported_h_study())
+#   # imported_h_study()
+# })
+#
+# output$imported_h_experiment <- renderText({
+# #  req(input$readxMap_experiment_accession_import)
+#   input$readxMap_experiment_accession_import
+#   #imported_h_experiment()
+# })
 
 output$imported_h_plate_id <- renderText({
   req(imported_h_plate_id())
@@ -1014,7 +1041,7 @@ observeEvent(input$upload_type_X, {
 
       showNotification("Uploaded successfully", type = "message")
 
-       reactive_df_study_exp(reloadReactive(conn, userWorkSpaceID()))
+       #reactive_df_study_exp(reloadReactive(conn, userWorkSpaceID()))
        print("reactive_df_study_exp:loaded")
 
        # refresh update that it is loaded.
@@ -1189,7 +1216,7 @@ observeEvent(input$upload_type_S, {
                        duration = NULL)
     }
   )
-      reactive_df_study_exp(reloadReactive(conn, userWorkSpaceID()))
+      #reactive_df_study_exp(reloadReactive(conn, userWorkSpaceID()))
       print("reactive_df_study_exp:loaded")
 
       # refresh update that it is loaded.
@@ -1334,7 +1361,7 @@ observeEvent(input$upload_type_C, {
                        duration = NULL)
     }
   )
-      reactive_df_study_exp(reloadReactive(conn, userWorkSpaceID()))
+     # reactive_df_study_exp(reloadReactive(conn, userWorkSpaceID()))
       print("reactive_df_study_exp:loaded")
 
       # refresh update that it is loaded.
@@ -1479,7 +1506,7 @@ observeEvent(input$upload_type_B, {
                        duration = NULL)
     }
   )
-      reactive_df_study_exp(reloadReactive(conn, userWorkSpaceID()))
+     # reactive_df_study_exp(reloadReactive(conn, userWorkSpaceID()))
       print("reactive_df_study_exp:loaded")
 
       # refresh update that it is loaded.

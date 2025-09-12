@@ -377,10 +377,10 @@ output$view_stored_experiments_ui <- renderUI({
   }
 
  if (input$readxMap_study_accession != "Click here") {
-   stored_plate_title <- paste("View, Proccess, and Export", input$readxMap_study_accession, "Data", sep = " ")
+   stored_plate_title <- paste("View, Process, and Export", input$readxMap_study_accession, "Data", sep = " ")
 
  } else {
-   stored_plate_title <- paste("No study selected for View, Proccess, and Export Data")
+   stored_plate_title <- paste("No study selected for View, Process, and Export Data")
  }
   tagList(
     fluidPage(

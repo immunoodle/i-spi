@@ -143,8 +143,13 @@ output$readxMapData <- renderUI({
 observeEvent(input$readxMap_study_accession, {
   print(paste("readxMap_study_accession clicked:", input$readxMap_study_accession))
 
+ # imported_h_study(input$readxMap_study_accession)
+
+  # study_exp is a data frame with study and experiment names filtered by user/project workspace
   study_exp <- reactive_df_study_exp()
+  # filter study_exp by current study selected in navigation
   filtered_exp <- study_exp[study_exp$study_accession == input$readxMap_study_accession, ]
+
 
   if (nrow(filtered_exp) > 0) {
     expvector <- setNames(filtered_exp$experiment_accession, filtered_exp$experiment_name)
@@ -154,6 +159,7 @@ observeEvent(input$readxMap_study_accession, {
 
   experiment_drop <- c("Click OR Create New" = "Click here", expvector)
 
+
   updateSelectizeInput(
     session,
     inputId = "readxMap_experiment_accession_import",
@@ -161,8 +167,21 @@ observeEvent(input$readxMap_study_accession, {
     choices = experiment_drop,
     selected = "Click here"
   )
+
+
 })
 
+
+
+# observeEvent(input$readxMap_experiment_accession_import, {
+#   req(input$readxMap_experiment_accession_import)
+#   req(input$readxMap_experiment_accession_import != "Click here")
+#
+#   print(paste("readxMap_experiment_accession_import observe:", input$readxMap_experiment_accession_import))
+#
+#   imported_h_experiment(input$readxMap_experiment_accession_import)
+#
+# })
 # observeEvent(input$readxMap_study_accession_import, {
 #   print(paste("readxMap_study_accession_import clicked",input$readxMap_study_accession_import))
 #   study_exp <- reactive_df_study_exp()
@@ -206,6 +225,9 @@ observeEvent(input$readxMap_study_accession, {
 ### read template and create the preview template tab
 observeEvent(input$upload_to_shiny,{
 
+  req(input$readxMap_study_accession)
+  req(input$readxMap_experiment_accession_import)
+  availableSheets(NULL)
   print("file_uploaded")
 
   # Store the uploaded file
@@ -232,6 +254,8 @@ observeEvent(input$upload_to_shiny,{
         actionButton("view_raw_header", "View Raw Header")
       )
     }
+
+
   })
 
 
