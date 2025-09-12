@@ -176,6 +176,7 @@ observeEvent(input$parse_xPonent_types, {
         )
       )
 
+
       # Render the UI
       output[[paste0("ui_xponent_type_", my_xponent_type)]] <- renderUI({
         tagList(
@@ -214,7 +215,7 @@ observeEvent(input$upload_xponent_type_X, {
 
   print("upload for xponent type X")
   xponent_type_x_table <<- hot_to_r(input$xponent_type_X)
-  study_name_import <- as.character(input$readxMap_study_accession_import)
+  study_name_import <- as.character(input$readxMap_study_accession) # was import
   experiment_name_import <- as.character(input$readxMap_experiment_accession_import)
 
   # Extract plate_id
@@ -252,7 +253,7 @@ observeEvent(input$upload_xponent_type_X, {
                                 table = "xmap_header"),
                        xponent_header_ready)
     showNotification("Uploaded header successfully", type = "message")
-      reactive_df_study_exp(reloadReactive(conn, userWorkSpaceID()))
+      #reactive_df_study_exp(reloadReactive(conn, userWorkSpaceID()))
       print("reactive_df_study_exp:loaded")
 
   }
@@ -306,7 +307,7 @@ observeEvent(input$upload_xponent_type_S, {
 
   print("upload for xponent type S")
   xponent_type_s_table <<- hot_to_r(input$xponent_type_S)
-  study_name_import <- as.character(input$readxMap_study_accession_import)
+  study_name_import <- as.character(input$readxMap_study_accession) # was import
   experiment_name_import <- as.character(input$readxMap_experiment_accession_import)
 
   # Extract plate_id
@@ -342,7 +343,7 @@ observeEvent(input$upload_xponent_type_S, {
                                 table = "xmap_header"),
                        xponent_header_ready)
     showNotification("Uploaded header successfully", type = "message")
-      reactive_df_study_exp(reloadReactive(conn, userWorkSpaceID()))
+      #reactive_df_study_exp(reloadReactive(conn, userWorkSpaceID()))
       print("reactive_df_study_exp:loaded")
 
   }
@@ -388,7 +389,7 @@ observeEvent(input$upload_xponent_type_C, {
 
   print("upload for type C")
   xponent_type_c_table <<- hot_to_r(input$xponent_type_C)
-  study_name_import <- as.character(input$readxMap_study_accession_import)
+  study_name_import <- as.character(input$readxMap_study_accession) # was import
   experiment_name_import <- as.character(input$readxMap_experiment_accession_import)
 
   # Extract plate_id
@@ -424,7 +425,7 @@ observeEvent(input$upload_xponent_type_C, {
                                 table = "xmap_header"),
                        xponent_header_ready)
     showNotification("Uploaded header successfully", type = "message")
-      reactive_df_study_exp(reloadReactive(conn, userWorkSpaceID()))
+      #reactive_df_study_exp(reloadReactive(conn, userWorkSpaceID()))
       print("reactive_df_study_exp:loaded")
 
   }
@@ -467,7 +468,7 @@ observeEvent(input$upload_xponent_type_C, {
 observeEvent(input$upload_xponent_type_B, {
   print("upload for type B")
   xponent_type_b_table <<- hot_to_r(input$xponent_type_B)
-  study_name_import <- as.character(input$readxMap_study_accession_import)
+  study_name_import <- as.character(input$readxMap_study_accession) # was import
   experiment_name_import <- as.character(input$readxMap_experiment_accession_import)
 
   # Extract plate_id
@@ -503,7 +504,7 @@ observeEvent(input$upload_xponent_type_B, {
                                 table = "xmap_header"),
                        xponent_header_ready)
     showNotification("Uploaded header successfully", type = "message")
-      reactive_df_study_exp(reloadReactive(conn, userWorkSpaceID()))
+      #reactive_df_study_exp(reloadReactive(conn, userWorkSpaceID()))
       print("reactive_df_study_exp:loaded")
 
   }
