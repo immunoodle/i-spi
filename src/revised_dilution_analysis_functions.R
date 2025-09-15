@@ -1,8 +1,13 @@
 
 compute_classified_merged_update <- function(classified_sample, selectedDilutions, study_configuration) {
 
+  # classified_sample <<- classified_sample
+  # selectedDilutionss <<- selectedDilutions
+  # study_configuration <<- study_configuration
+
  # classified_sample <- classified_sample[classified_sample$antigen %in% selectedAntigens,]
-  classified_sample <- classified_sample[classified_sample$dilution %in% selectedDilutions,]
+  classified_sample <- classified_sample[!is.na(classified_sample$dilution) &
+                                           classified_sample$dilution %in% selectedDilutions,]
 
   #classified_sample <<- classified_sample
   print(names(classified_sample))
@@ -77,16 +82,26 @@ compute_classified_merged_update <- function(classified_sample, selectedDilution
   #study_configuration_v <<- study_configuration
   desired_params <- c("zero_pass_diluted_Tx", "zero_pass_concentrated_Tx", "zero_pass_concentrated_diluted_Tx", "one_pass_acceptable_Tx", "two_plus_pass_acceptable_Tx")
   au_treats <- study_configuration[study_configuration$param_name %in% desired_params, c("param_name", "param_character_value")]
-  au_treats$n_pass_d <- ifelse(grepl("^zero", au_treats$param_name), 0,
-                               ifelse(grepl("^one", au_treats$param_name), 1, 2))
-  au_treats$concentration_status <- c("Too Diluted", "Too Concentrated", "Too Concentrated_Too Diluted", "Acceptable", "Acceptable")
+   au_treats$n_pass_d <- ifelse(grepl("^zero", au_treats$param_name), 0,
+                                ifelse(grepl("^one", au_treats$param_name), 1, 2))
+
+   concentration_status_map <- c(
+     "zero_pass_diluted_Tx" = "Too Diluted",
+     "zero_pass_concentrated_Tx" = "Too Concentrated",
+     "zero_pass_concentrated_diluted_Tx" = "Too Concentrated_Too Diluted",
+     "one_pass_acceptable_Tx" = "Acceptable",
+     "two_plus_pass_acceptable_Tx" = "Acceptable"
+   )
+
+   au_treats$concentration_status <- concentration_status_map[au_treats$param_name]
+
+  #au_treats$concentration_status <- c("Too Diluted", "Too Concentrated", "Too Concentrated_Too Diluted", "Acceptable", "Acceptable")
 
   names(au_treats)[names(au_treats) == "param_character_value"] <- "au_treatment"
 
 
-
-  new_treatments <- data.frame(param_name = c("None","None", "None", "None"), au_treatment = c("exclude_au", "exclude_au", "exclude_au", "exclude_au"),
-             n_pass_d = c(1,1,2,2), concentration_status = c("Too Concentrated", "Too Diluted", "Too Concentrated", "Too Diluted"))
+ new_treatments <- data.frame(param_name = c("None","None", "None", "None"), au_treatment = c("exclude_au", "exclude_au", "exclude_au", "exclude_au"),
+              n_pass_d = c(1,1,2,2), concentration_status = c("Too Concentrated", "Too Diluted", "Too Concentrated", "Too Diluted"))
 
 
   au_treats <- rbind(au_treats, new_treatments)
@@ -107,6 +122,11 @@ compute_classified_merged_update <- function(classified_sample, selectedDilution
 }
 
 produce_margin_table <- function(classified_merged, selectedAntigen, selectedDilutions, time_order) {
+
+  # classified_merged <<- classified_merged
+  # selectedAntigen <<- selectedAntigen
+  # selectedDilutions <<- selectedDilutions
+  # time_order <<- time_order
 
   margin_merged <- classified_merged[classified_merged$param_name != "None",]
   margin_merged <- margin_merged[margin_merged$dilution %in% selectedDilutions,]

@@ -15,8 +15,8 @@ observeEvent(list(
  # req(input$inLoadedData, input$readxMap_experiment_accession)
  # input$readxMap_experiment_accession
   if (input$advanced_qc_component == "Dilution Analysis") {
-    selected_study <- selected_studyexpplate$study_accession
-    selected_experiment <- selected_studyexpplate$experiment_accession
+    selected_study <- input$readxMap_study_accession # selected_studyexpplate$study_accession
+    selected_experiment <- input$readxMap_experiment_accession #selected_studyexpplate$experiment_accession
 
     # Load sample data
     sample_data <- stored_plates_data$stored_sample
@@ -490,10 +490,10 @@ observeEvent(list(
 
       selectInput("dilution_da_selector",
                   label = "Select Dilutions",
-                  choices = unique(gated_data$dilution),
+                  choices = unique(na.omit(gated_data$dilution)),
                   multiple = T,
                   # include all dilutions initially
-                  selected = unique(gated_data$dilution))
+                  selected = unique(na.omit(gated_data$dilution)))
     })
 
     # antigen selector
