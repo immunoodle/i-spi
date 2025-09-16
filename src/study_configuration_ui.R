@@ -218,7 +218,11 @@ render_study_parameters <- reactive({
     antigen_order_params <- study_config[study_config$param_name == "antigen_order",]
 
     antigen_family_choices <- unique(antigen_families_rv()$antigen_family)
-    antigen_choices <- unique(antigen_families_rv()$antigen)
+    #antigen_choices <- unique(antigen_families_rv()$antigen)
+    query <- paste0("SELECT DISTINCT antigen FROM madi_results.xmap_sample
+                 WHERE study_accession = '", selected_study, "'")
+    sample_df  <- dbGetQuery(conn, query)
+    antigen_choices <- unique(sample_df$antigen)
 
     antigen_family_order_val <- antigen_family_order_params$param_character_value
     if (!is.null(antigen_family_order_val) && length(antigen_family_order_val) > 0 && !all(is.na(antigen_family_order_val))) {
@@ -232,11 +236,24 @@ render_study_parameters <- reactive({
     #   #if (!default_db_timeperiod_order %in% timeperiod_choices) {
     #   default_db_antigen_family_order <- antigen_family_choices# fallback
     # }
+
+
+    # db_antigen_order_val <- antigen_order_params$param_character_value
+    # if (!is.null(db_antigen_order_val) && length(db_antigen_order_val) > 0 && !all(is.na(db_antigen_order_val))) {
+    #   default_db_antigen_order <- strsplit(db_antigen_order_val, ",")[[1]]
+    # } else {
+    #   default_db_antigen_order <- antigen_choices# fallback
+    # }
     db_antigen_order_val <- antigen_order_params$param_character_value
-    if (!is.null(db_antigen_order_val) && length(db_antigen_order_val) > 0 && !all(is.na(db_antigen_order_val))) {
-      default_db_antigen_order <- strsplit(db_antigen_order_val, ",")[[1]]
+    default_db_antigen_order <- if (!is.null(db_antigen_order_val) &&
+                                    length(db_antigen_order_val) > 0 &&
+                                    !all(is.na(db_antigen_order_val))) {
+      db_order <- strsplit(db_antigen_order_val, ",")[[1]]
+      # keep only valid antigens, then append any new ones
+      unique(c(db_order[db_order %in% antigen_choices],
+               setdiff(antigen_choices, db_order)))
     } else {
-      default_db_antigen_order <- antigen_choices# fallback
+      antigen_choices
     }
     # default_db_antigen_order <- strsplit(antigen_order_params$param_character_value, ",")[[1]]
     # if (!all(default_db_antigen_order %in% antigen_choices)) {
@@ -291,6 +308,8 @@ render_study_parameters <- reactive({
     # ) # end panel
     )
   })
+
+
 
   output$antigen_family_table <- renderDT({
     req(antigen_families_rv())
@@ -808,7 +827,6 @@ of the values as another point of the standard curve. The median fluorescence in
 }) # end render
 
 
-
 observe({
   req(input$main_tabs == "study_settings")
  # req(study_level_tabs == "Study Parameters")
@@ -820,6 +838,25 @@ observe({
 
   # start async polling
   check_and_render_study_parameters(study_accession, user)
+
+#  Pull actual antigens once rendered again
+#   query <- paste0("SELECT DISTINCT antigen FROM madi_results.xmap_sample
+#                 WHERE study_accession = '", study_accession, "'")
+#
+#   sample_df  <- dbGetQuery(conn, query)
+#   current_antigens <- unique(sample_df$antigen)
+#   # from database
+#   study_config <- fetch_study_configuration(study_accession = study_accession, user = currentuser())
+#   antigen_order_params <- strsplit(study_config[study_config$param_name == "antigen_order",]$param_character_value, ",")[[1]]
+#   # a_order <<- isolate(input$antigen_order)
+#   if (!(all(sort(antigen_order_params) == sort(current_antigens)))) {
+#       updateOrderInput(session = session,
+#                  "antigen_order",
+#                  label = "Antigen Order:",
+#                  items = current_antigens)
+# }
+
+
 })
 
 study_params_ready <- reactiveVal(FALSE)
