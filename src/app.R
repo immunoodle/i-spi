@@ -98,7 +98,7 @@ authenticated_body_content <- function() {
 
 # --- Define header, sidebar, body shell (From your HEAD version) ---
 header <- dashboardHeader(
-  tags$li(a(img(src = "apple-touch-icon.png", title = "MADI Logo", height = "30px"), style = "padding-top:10px; padding-bottom:10px;"), class = "dropdown"), # Ensure www/apple-touch-icon.png
+  #tags$li(a(img(src = "apple-touch-icon.png", title = "MADI Logo", height = "30px"), style = "padding-top:10px; padding-bottom:10px;"), class = "dropdown"), # Ensure www/apple-touch-icon.png
   title = "Interactive Serology Plate Inspector",
   titleWidth = 350
 )
@@ -223,9 +223,33 @@ ui <- tagList(
 sidebar <- dashboardSidebar(
   uiOutput("userpanel"),
   uiOutput("project_info"),
+  # selectizeInput(
+  #   "readxMap_study_accession",
+  #   "Choose Existing Study Name OR Create a New Study Name (by typing up to 15 characters)",
+  #   choices = "Click here",
+  #   selected = "Click here",
+  #   multiple = FALSE,
+  #   options = list(create = TRUE),
+  #   width = '500px'
+  # ),
+  sidebarMenu(
+    id = "main_tabs",
+    menuItem("Home", tabName = "home_page", icon = icon("home")),
+    menuItem("Create, Add, and Load Projects", tabName = "manage_project_tab", icon = icon("chart-line"))),
+
   uiOutput("main_study_selector"),
-  sidebarMenuOutput("sidebar_tabs"),
-  width = 350# dynamic sidebar menu
+
+    # menuItem("Import Plate Data", tabName = "import_tab", icon = icon("file")),
+    # menuItem("View, Process, and Export Data", tabName = "view_files_tab", icon = icon("dashboard")),
+    # menuItem("Change Study Settings", tabName = "study_settings", icon = icon("cog"))),
+  #sidebarMenuOutput("sidebar_tabs"),
+sidebarMenu(
+  id = "study_tabs",
+  menuItem("Import Plate Data", tabName = "import_tab", icon = icon("file")),
+  menuItem("View, Process, and Export Data", tabName = "view_files_tab", icon = icon("dashboard")),
+  menuItem("Change Study Settings", tabName = "study_settings", icon = icon("cog"))
+),
+width = 350# dynamic sidebar menu
 )
 # sidebar <- dashboardSidebar(uiOutput("userpanel"), width = 350)
 body <- dashboardBody(
@@ -275,7 +299,8 @@ body <- dashboardBody(
     }
 
       "))
-),uiOutput("body_content_ui")) # Content depends on auth state
+), uiOutput("landing_page_ui"),
+  uiOutput("body_content_ui")) # Content depends on auth state
 
 
 # --- Main UI Definition (From your HEAD version, as it handles auth) ---
@@ -662,6 +687,7 @@ server <- function(input, output, session) {
     if (!is.null(ud) && isTRUE(ud$is_authenticated)) {
       message("Rendering authenticated body content.")
       cat(input$main_tabs_panel)
+      cat(input$readxMap_study_accession )
       authenticated_body_content()
     } else {
       message("Rendering login button page.")
@@ -756,6 +782,7 @@ server <- function(input, output, session) {
       userWorkSpaceID <- reactiveVal(NULL)
       userProjectName <- reactiveVal("unknown")
       reactive_df_study_exp <- reactiveVal(NULL)
+      study_choices_rv <- reactiveVal(NULL)
       currentuser <- reactiveVal("unknown user")
       usersession <- reactiveVal("unknown session")
 
@@ -802,6 +829,7 @@ server <- function(input, output, session) {
       rv_value_button <- reactiveValues(valueButton = 0)
       header_rvdata <- reactiveValues()
       tab_counter <- reactiveVal(0) # for dynamic tabs
+      manual_studies <- reactiveValues(entries = character(0))
 
       standard_rvdata <- reactiveValues()
       sample_rvdata <- reactiveValues()

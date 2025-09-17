@@ -95,8 +95,13 @@ render_study_parameters <- reactive({
 #  req(input$readxMap_study_accession)
   #req(study_config)
   # Get selected study
-  selected_study <- ifelse(input$readxMap_study_accession == "Click here", "reset", input$readxMap_study_accession)
-
+  selected_study <-  input$readxMap_study_accession#ifelse(input$readxMap_study_accession == "Click here", "reset", input$readxMap_study_accession)
+  main_tab_selected <- input$main_tabs
+  cat("Study in parameters: ")
+  cat(selected_study)
+  cat(main_tab_selected)
+ if (selected_study != "Click here") {
+   cat("in study not click here")
   study_sources <- fetch_study_sources(study_accession = selected_study)
   study_arms <- fetch_study_arms(study_accession = selected_study)
   study_timeperiods <- fetch_study_timeperiods(study_accession = selected_study)
@@ -125,11 +130,12 @@ render_study_parameters <- reactive({
 
  study_config <- fetch_study_configuration(study_accession = selected_study, user = currentuser())
   output$studyParameters_UI <- renderUI({
-    tagList(
-    conditionalPanel(
-      condition = "input.readxMap_study_accession == 'Click here'",
-      HTML("<h3>No study selected. Choose or create a study to change study settings.</h3>")
-    ),
+    # if (input$main_tabs != "home_page" & input$main_tabs != "manage_project_tab") {
+    # tagList(
+    # conditionalPanel(
+    #   condition = "input.readxMap_study_accession == 'Click here'",
+    #   HTML("<h3>Choose or create a study to change study settings.</h3>")
+    # ),
 
   #  req(selected_study, currentuser())
     conditionalPanel(condition = "input.readxMap_study_accession != 'Click here'",
@@ -204,7 +210,9 @@ render_study_parameters <- reactive({
       ),
     )
     )
-    )
+    # } else {
+    #   NULL
+    # }
   })
 
 
@@ -824,6 +832,19 @@ of the values as another point of the standard curve. The median fluorescence in
 
   })
 
+ }
+  else {
+    output$studyParameters_UI <- renderUI({
+      if (main_tab_selected != "home_page" & main_tab_selected != "manage_project_tab") {
+        tagList(
+          conditionalPanel(
+            condition = "input.readxMap_study_accession == 'Click here'",
+            HTML("<h3>Choose or create a study to change study settings.</h3>")
+          )
+        )
+      }
+    })
+  }
 }) # end render
 
 

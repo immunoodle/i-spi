@@ -36,7 +36,7 @@ observe({
   userProjectName(current_project_details$name)
 
   select_query <- glue::glue_sql("
-    SELECT
+    SELECT DISTINCT
       xmap_header.study_accession,
       xmap_header.experiment_accession,
       xmap_header.study_accession AS study_name,
@@ -50,6 +50,12 @@ observe({
 
   query_result <- dbGetQuery(conn, select_query)
   reactive_df_study_exp(query_result)
+  ## Study choices
+  study_choices <- c("Click here" = "Click here",
+                     setNames(unique(query_result$study_accession),
+                              unique(query_result$study_name)))
+  study_choices_rv(study_choices)
+
   print("reactive_df_study_exp:loaded")
 
   output$main_tab_selector <- renderUI({
@@ -443,4 +449,5 @@ observe({
       )
     )
   )
+
 })

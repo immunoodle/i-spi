@@ -2,7 +2,7 @@ observeEvent(input$study_level_tabs, {
 
   req(input$readxMap_study_accession != "Click here",
       input$study_level_tabs == "Study Overview",
-      input$main_tabs == "view_files_tab")
+      input$study_tabs == "view_files_tab")
 
   if (input$study_level_tabs == "Study Overview") {
     cat("before preproccess data")
