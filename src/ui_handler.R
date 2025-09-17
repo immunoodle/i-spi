@@ -585,18 +585,15 @@ output$view_stored_experiments_ui <- renderUI({
                           ),
                           conditionalPanel(
                             condition = "input.qc_component == 'Bead Count'",
-                            textOutput("Bead Count")
-                            #uiOutput("bead_count_module_ui")
+                            uiOutput("bead_count_module_ui")
                           ),
                           conditionalPanel(
                             condition = "input.qc_component == 'Standard Curve'",
-                            textOutput("Standard Curve Fitting")
-                           # uiOutput("sc_fit_module_ui")
+                           uiOutput("sc_fit_module_ui")
                           ),
                           conditionalPanel(
                             condition = "input.qc_component == 'Standard Curve Summary'",
-                          #  uiOutput("standardCurveSummaryUI")
-                          textOutput("Standard Curve Summary")
+                            uiOutput("standardCurveSummaryUI")
                           )
                         ),
 
@@ -614,28 +611,23 @@ output$view_stored_experiments_ui <- renderUI({
                           # Conditional panels for advanced QC only
                           conditionalPanel(
                             condition = "input.advanced_qc_component == 'Dilution Analysis'",
-                            textOutput("Dilution Analysis")
-                          #  uiOutput("dilutionAnalysisUI")
+                           uiOutput("dilutionAnalysisUI")
                           ),
                           conditionalPanel(
                             condition = "input.advanced_qc_component == 'Dilutional Linearity'",
-                            textOutput("Dilution Linearity")
-                           # uiOutput("dilutional_linearity_mod_ui")
+                           uiOutput("dilutional_linearity_mod_ui")
                           ),
                           conditionalPanel(
                             condition = "input.advanced_qc_component == 'Outliers'",
-                            textOutput("Outliers")
-                          #  uiOutput("outlierTab")
+                             uiOutput("outlierTab")
                           ),
                           conditionalPanel(
                             condition = "input.advanced_qc_component == 'Subgroup Detection'",
-                            textOutput("Subgroup Detection")
-                           # uiOutput("subgroupDetectionUI")
+                            uiOutput("subgroupDetectionUI")
                           ),
                           conditionalPanel(
                             condition = "input.advanced_qc_component == 'Subgroup Detection Summary'",
-                            textOutput("Subgroup Summary")
-                          #  uiOutput("subgroup_summary_UI")
+                            uiOutput("subgroup_summary_UI")
                           )
                         )
                       ),
@@ -646,8 +638,7 @@ output$view_stored_experiments_ui <- renderUI({
           # Study Overview Tab
           tabPanel("Study Overview",
                    id = "study_overview_tab",
-                   textOutput("Study Overview")
-                  # uiOutput("study_overview_page")
+                   uiOutput("study_overview_page")
           ),# end TabsetPanel
         #) # end study level tabs
       ) # end  Study Level Content
