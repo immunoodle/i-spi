@@ -18,131 +18,138 @@ outputOptions(output, 'fileUploaded', suspendWhenHidden=FALSE)
 
 output$readxMapData <- renderUI({
   tabRefreshCounter()$import_tab
+  if (input$main_tabs != "home_page" & input$main_tabs != "manage_project_tab" & input$study_tabs == "import_tab") {
   if (input$readxMap_study_accession != "Click here") {
     import_plate_data_title <- paste("Import", input$readxMap_study_accession, "Plate Data", sep = " ")
-  } else {
-    import_plate_data_title<- paste("No study selected for Importing Plate Data")
-  }
-  tagList(
-    fluidPage(
-          tagList(
-            h3(import_plate_data_title),
-            if (input$readxMap_study_accession != "Click here") {
-              bsCollapsePanel(
-                "Instructions",
-                p("This is where we can load plate data from either Raw excel files or from the xPONENT format."),
-                p("1. Choose an existing study OR Create a new study."),
-                p("2. Choose an existing experiment OR Create a new experiment."),
-                p("3. Choose an xPONENT format OR a RAW format to upload."),
-                p("4. Browse to your plate data and import it in the correct format."),
-                p("5. Parse the plate data into correct columns/fields appropriate and required for each data component/type."),
-                p("6. Upload each data component/type."),
-                style = "success"
-              )
-            }
-          ),
-      # tagList(
-      #   h3(import_plate_data_title),
-      #   bsCollapsePanel(
-      #     "Instructions",
-      #     p("This is where we can load plate data from either Raw excel files or from the xPONENT format."),
-      #     p("1. Choose an existing study OR Create a new study."),
-      #     p("2. Choose an existing experiment OR Create a new experiment."),
-      #     p("3. Choose an xPONENT format OR a RAW format to upload."),
-      #     p("4. Browse to your plate data and import it in the correct format."),
-      #     p("5. Parse the plate data into correct columns/fields appropriate and required for each data component/type."),
-      #     p("6. Upload each data component/type."),
-      #     style = "success"
-      #   )
-      # ),
-      br()
-      ,
-      fluidRow(
-       # column(5,
-#
-#                selectizeInput("readxMap_study_accession_import",
-#                               "Choose Existing Study Name OR Create a New Study Name (up to 15 characters)",
-#                               choices <- c(c("Click OR Create New" = "Click here"),
-#                                            setNames(unique(reactive_df_study_exp()$study_accession),
-#                                                     unique(reactive_df_study_exp()$study_name)
-#                                            )
-#                               ),
-#                               selected = "Click here",
-#                               multiple = FALSE,
-#                               options = list(create = TRUE), width = '500px'
-#                )
-#         ),
-        column(5,
-               conditionalPanel(
-                 condition = "input.readxMap_study_accession != 'Click here'",
-                 selectizeInput("readxMap_experiment_accession_import",
-                                "Choose Existing Experiment Name OR Create a New Experiment Name (up to 15 characters)",
-                                choices <- c("Click OR Create New" = "Click here"),
-                                selected = "Click here",
-                                multiple = FALSE,
-                                options = list(create = TRUE), width = '700px'
-                 )
-               )
-        )
-      )
-      ,
-      fluidRow(
-        column(9,
-               conditionalPanel(
-                 condition = "input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession_import != 'Click here' && input.readxMap_experiment_accession_import != ''",
-                 # shinyWidgets::switchInput("xPonentFile",
-                 #                           onLabel = "xPONENT",
-                 #                           offLabel = "RAW",
-                 #                           onStatus = "success",
-                 #                           offStatus = "danger",
-                 #                           value = FALSE,
-                 #                           size = "large",
-                 #                           label = "File Format",
-                 #                           labelWidth = "150px",
-                 #                           handleWidth = "100px",
-                 #                           width = "auto"),
-                 shinyWidgets::radioGroupButtons(
-                   inputId = "xPonentFile",
-                   label = "File Format",
-                   choices = c("xPONENT", "RAW"),
-                   selected = "RAW",
-                   justified = TRUE,
-                   checkIcon = list(
-                     yes = icon("check", lib = "font-awesome")
+    tagList(
+      fluidPage(
+        tagList(
+          h3(import_plate_data_title),
+         # if (input$readxMap_study_accession != "Click here") {
+            bsCollapsePanel(
+              "Instructions",
+              p("This is where we can load plate data from either Raw excel files or from the xPONENT format."),
+              p("1. Choose an existing study OR Create a new study."),
+              p("2. Choose an existing experiment OR Create a new experiment."),
+              p("3. Choose an xPONENT format OR a RAW format to upload."),
+              p("4. Browse to your plate data and import it in the correct format."),
+              p("5. Parse the plate data into correct columns/fields appropriate and required for each data component/type."),
+              p("6. Upload each data component/type."),
+              style = "success"
+            )
+        #  }
+        ),
+        # tagList(
+        #   h3(import_plate_data_title),
+        #   bsCollapsePanel(
+        #     "Instructions",
+        #     p("This is where we can load plate data from either Raw excel files or from the xPONENT format."),
+        #     p("1. Choose an existing study OR Create a new study."),
+        #     p("2. Choose an existing experiment OR Create a new experiment."),
+        #     p("3. Choose an xPONENT format OR a RAW format to upload."),
+        #     p("4. Browse to your plate data and import it in the correct format."),
+        #     p("5. Parse the plate data into correct columns/fields appropriate and required for each data component/type."),
+        #     p("6. Upload each data component/type."),
+        #     style = "success"
+        #   )
+        # ),
+        br()
+        ,
+        fluidRow(
+          # column(5,
+          #
+          #                selectizeInput("readxMap_study_accession_import",
+          #                               "Choose Existing Study Name OR Create a New Study Name (up to 15 characters)",
+          #                               choices <- c(c("Click OR Create New" = "Click here"),
+          #                                            setNames(unique(reactive_df_study_exp()$study_accession),
+          #                                                     unique(reactive_df_study_exp()$study_name)
+          #                                            )
+          #                               ),
+          #                               selected = "Click here",
+          #                               multiple = FALSE,
+          #                               options = list(create = TRUE), width = '500px'
+          #                )
+          #         ),
+          column(5,
+                # conditionalPanel(
+                 #  condition = "input.readxMap_study_accession != 'Click here'",
+                   selectizeInput("readxMap_experiment_accession_import",
+                                  "Choose Existing Experiment Name OR Create a New Experiment Name (by typing up to 15 characters)",
+                                  choices <- c("Click OR Create New" = "Click here"),
+                                  selected = "Click here",
+                                  multiple = FALSE,
+                                  options = list(create = TRUE), width = '700px'
                    )
-                 ),
+                # )
+          )
+        )
+        ,
+        fluidRow(
+          column(9,
+                 conditionalPanel(
+                   condition = "input.readxMap_experiment_accession_import != 'Click here' && input.readxMap_experiment_accession_import != ''",
+                   # shinyWidgets::switchInput("xPonentFile",
+                   #                           onLabel = "xPONENT",
+                   #                           offLabel = "RAW",
+                   #                           onStatus = "success",
+                   #                           offStatus = "danger",
+                   #                           value = FALSE,
+                   #                           size = "large",
+                   #                           label = "File Format",
+                   #                           labelWidth = "150px",
+                   #                           handleWidth = "100px",
+                   #                           width = "auto"),
+                   shinyWidgets::radioGroupButtons(
+                     inputId = "xPonentFile",
+                     label = "File Format",
+                     choices = c("xPONENT", "RAW"),
+                     selected = "RAW",
+                     justified = TRUE,
+                     checkIcon = list(
+                       yes = icon("check", lib = "font-awesome")
+                     )
+                   ),
+                   conditionalPanel(
+                     condition = "input.xPonentFile == 'xPONENT'",
+                     uiOutput("xPonentReader_fileinput_ui")
+                   ),
+                   conditionalPanel(
+                     condition = "input.xPonentFile == 'RAW'",
+                     fileInput("upload_to_shiny"
+                               , label="Upload a plate/batch file (only accepts xlsx, xls)"
+                               , accept=c(".xlsx",".xls")
+                               , multiple=FALSE)
+                     ,uiOutput("sheet_ui")
+                   )
+                 )
+          ),
+          column(9,
                  conditionalPanel(
                    condition = "input.xPonentFile == 'xPONENT'",
-                   uiOutput("xPonentReader_fileinput_ui")
+                   uiOutput("xPonent_fileparse_ui")
                  ),
                  conditionalPanel(
                    condition = "input.xPonentFile == 'RAW'",
-                   fileInput("upload_to_shiny"
-                             , label="Upload a plate/batch file (only accepts xlsx, xls)"
-                             , accept=c(".xlsx",".xls")
-                             , multiple=FALSE)
-                   ,uiOutput("sheet_ui")
+                   uiOutput("segment_selector")
                  )
-               )
-        ),
-        column(9,
-               conditionalPanel(
-                 condition = "input.xPonentFile == 'xPONENT'",
-                 uiOutput("xPonent_fileparse_ui")
-               ),
-               conditionalPanel(
-                 condition = "input.xPonentFile == 'RAW'",
-                 uiOutput("segment_selector")
-               )
+          )
         )
       )
     )
-  )
+  } else {
+    import_plate_data_title<- paste("Choose or create a study for Importing Plate Data")
+  }
+
+   }
+  #else {
+  #   NULL
+  # }
 })
 
 observeEvent(input$readxMap_study_accession, {
   print(paste("readxMap_study_accession clicked:", input$readxMap_study_accession))
 
+  if (input$readxMap_study_accession != "Click here") {
  # imported_h_study(input$readxMap_study_accession)
 
   # study_exp is a data frame with study and experiment names filtered by user/project workspace
@@ -167,6 +174,8 @@ observeEvent(input$readxMap_study_accession, {
     choices = experiment_drop,
     selected = "Click here"
   )
+
+  }
 
 
 })
@@ -387,7 +396,7 @@ observeEvent(input$savexMapButton, {
   removeTab(inputId = "body_panel_id", target="readxMap")
 
   select_query <- glue::glue_sql("
-    SELECT
+    SELECT DISTINCT
       xmap_header.study_accession,
       xmap_header.experiment_accession,
       xmap_header.study_accession AS study_name,

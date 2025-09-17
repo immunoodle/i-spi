@@ -50,6 +50,7 @@ observeEvent(input$stored_header_rows_selected, {
 
 observeEvent(input$readxMap_study_accession, {
 
+  if (input$readxMap_study_accession != "Click here") {
   initial_source <- obtain_initial_source(input$readxMap_study_accession)
   # std <<- stored_plates_data$stored_standard
   # initial_source <<- unique(stored_plates_data$stored_standard$source)[1]
@@ -61,6 +62,7 @@ observeEvent(input$readxMap_study_accession, {
     intitialize_study_configurations(study_accession = input$readxMap_study_accession,
                                      user = currentuser(), initial_source = initial_source)
 
+  }
   }
 })
 

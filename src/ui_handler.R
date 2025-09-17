@@ -120,31 +120,31 @@ getProjectName <- function(conn, current_user){
 #   ))
 # })
 
-output$sidebar_tabs <- renderMenu({
-  current_count <- tab_counter()
-
-  # dynamic_items <- lapply(seq_len(current_count), function(i) {
-  #   menuItem(
-  #     paste("Dynamic Tab", i),
-  #     tabName = paste0("dynamic_tab_", i),
-  #     icon = icon("folder")
-  #   )
-  # })
-
-  do.call(sidebarMenu, c(
-    list(
-      id = "main_tabs",
-    #  selected = "view_files_tab",  # initial selected tab
-      #menuItem("Home", tabName = "home_tab", icon = icon("home")),      # landing page content
-      menuItem("View, Process, and Export Data", tabName = "view_files_tab", icon = icon("dashboard")),
-      menuItem("Change Study Settings", tabName = "study_settings", icon = icon("cog")),
-      menuItem("Import Plate Data", tabName = "import_tab", icon = icon("file")),
-      menuItem("Create, Add, and Load Projects", tabName = "manage_project_tab", icon = icon("chart-line"))
-
-    )
-    #dynamic_items  # add dynamic tabs at the end
-  ))
-})
+# output$sidebar_tabs <- renderMenu({
+#   current_count <- tab_counter()
+#
+#   # dynamic_items <- lapply(seq_len(current_count), function(i) {
+#   #   menuItem(
+#   #     paste("Dynamic Tab", i),
+#   #     tabName = paste0("dynamic_tab_", i),
+#   #     icon = icon("folder")
+#   #   )
+#   # })
+#
+#   do.call(sidebarMenu, c(
+#     list(
+#       id = "main_tabs",
+#     #  selected = "view_files_tab",  # initial selected tab
+#       menuItem("Home", tabName = "home_page", icon = icon("home")),      # landing page content
+#       menuItem("Create, Add, and Load Projects", tabName = "manage_project_tab", icon = icon("chart-line")),
+#       menuItem("Import Plate Data", tabName = "import_tab", icon = icon("file")),
+#       menuItem("Change Study Settings", tabName = "study_settings", icon = icon("cog")),
+#       menuItem("View, Process, and Export Data", tabName = "view_files_tab", icon = icon("dashboard"))
+#
+#     )
+#     #dynamic_items  # add dynamic tabs at the end
+#   ))
+# })
 
 output$project_info <- renderUI({
   tagList(
@@ -165,29 +165,181 @@ output$project_info <- renderUI({
 
 output$main_study_selector <- renderUI({
   req(reactive_df_study_exp())
-
+  req(study_choices_rv())
   # Get data
   df <- reactive_df_study_exp()
   df <- df[df$study_accession != "Click here", ]
 
 
   # Build choices safely
-  study_choices <- c("Click here" = "Click here",
-                     setNames(unique(df$study_accession),
-                              unique(df$study_name)))
+  # study_choices <- c("Click here" = "Click here",
+  #                    setNames(unique(df$study_accession),
+  #                             unique(df$study_name)))
+  #
 
   selectizeInput("readxMap_study_accession",
-               "Choose Existing Study Name OR Create a New Study Name (up to 15 characters)",
+               "Choose Existing Study Name OR Create a New Study Name (by typing up to 15 characters)",
                # choices <- c(c("Click OR Create New" = "Click here"),
                #              setNames(unique(reactive_df_study_exp()$study_accession),
                #                       unique(reactive_df_study_exp()$study_name)
                #              )
                # ),
-               choices = study_choices,
-               selected = "Click here",
+               choices = study_choices_rv(),
+               #selected = "Click here",
                multiple = FALSE,
                options = list(create = TRUE), width = '500px'
 )
+})
+
+# add value to manual studies when new study is added
+# observeEvent(input$readxMap_study_accession, {
+#   val <- input$readxMap_study_accession
+#   # ignore initial "Click here"
+#   if (is.null(val) || val == "Click here") return()
+#   # get source list
+#   src_df <- reactive_df_study_exp()
+#   src_acc <- if (!is.null(src_df)) unique(src_df$study_accession) else character(0)
+#
+#   if (!(val %in% src_acc) && !(val %in% manual_studies$entries)) {
+#     manual_studies$entries <- c(manual_studies$entries, val)
+#   }
+# }, ignoreNULL = TRUE)
+
+
+# observe({
+#   req(reactive_df_study_exp())   # wait until source is available
+#   df <- reactive_df_study_exp()
+#
+#   # remove any rows with "Click here"
+#   df <- df[!is.na(df$study_accession) & df$study_accession != "Click here", , drop = FALSE]
+#
+#   # unique mapping: study_accession -> study_name for labeling
+#   uniq <- df[!duplicated(df$study_accession), c("study_accession", "study_name"), drop = FALSE]
+#
+#   # named vector: value = accession, name = study_name
+#   named_src <- if (nrow(uniq) > 0) setNames(as.character(uniq$study_accession),
+#                                             as.character(uniq$study_name)) else character(0)
+#
+#   # combine: Click here first, then source, then manual typed entries
+#   named_choices <- c("Click here" = "Click here")
+#
+#   if (length(named_src) > 0) named_choices <- c(named_choices, named_src)
+#
+#   if (length(manual_studies$entries) > 0) {
+#     # add manual entries (label == value)
+#     named_choices <- c(named_choices,
+#                        setNames(manual_studies$entries, manual_studies$entries))
+#   }
+#
+#   # keep user's current selection if possible; otherwise fall back to "Click here"
+#   current <- input$readxMap_study_accession
+#   if (is.null(current) || !(current %in% c("Click here", names(named_choices), as.character(named_choices)))) {
+#     current <- "Click here"
+#   }
+#
+#   # update the UI — don't rebuild the widget, just change choices/selection
+#   updateSelectizeInput(
+#     session,
+#     "readxMap_study_accession",
+#     choices = named_choices,
+#     selected = current,
+#     options = list(create = TRUE)   # keep create enabled
+#   )
+# })
+
+
+
+
+# observe({
+#   req(reactive_df_study_exp())
+#
+#   # Get data
+#   df <- reactive_df_study_exp()
+#   df <- df[df$study_accession != "Click here", ]
+#
+#   # Build updated choices
+#   study_choices <- c("Click here" = "Click here",
+#                      setNames(unique(df$study_accession),
+#                               unique(df$study_name)))
+#
+#   # # If user typed a new value, make sure it’s kept in the dropdown
+#   current <- input$readxMap_study_accession
+#   if (!is.null(current) && !(current %in% study_choices)) {
+#     study_choices <- c(study_choices, setNames(current, current))
+#   }
+#   #
+#   # Update the selectize input (keeps selection unless you override)
+#   updateSelectizeInput(
+#     session,
+#     "readxMap_study_accession",
+#     choices = study_choices,
+#     selected = current
+#   )
+# })
+
+output$landing_page_ui <- renderUI({
+  cat(input$main_tabs)
+  if (is.null(input$main_tabs) || input$main_tabs == "home_page") {   # nothing selected yet
+    fluidRow(
+      div(style = "padding-left: 50px; padding-right: 50px;",
+      tagList(
+       # img(src = "I_SPI_logo.png"),
+        img(src = "I_SPI_logo_transparent.png",
+            style = "max-width:40%; height:auto;"),
+        br(),
+        br(),
+        p(strong("Overview")),
+        p("The Interactive Serology Plate Inspector, also known as I-SPI, is an open-source web application designed to streamline quality control
+        (QC) and quality assurance (QA) for multiplex immunoassays.
+          It provides a unified workflow that supports both automation and user decision making while remaining grounded in
+          objective statistical algorithms."),
+        p(strong("Quick Start Guide")),
+        tags$ol(
+          tags$li(
+            tags$p("Create or Load a Project"),
+            tags$p("To get started, the first step is to create a new project or load an existing project.
+            To do this, click Create, Add, and Load Projects in the sidebar.
+            Project access keys allowing  you to share projects with others can be found here.")
+          ),
+          tags$li(
+            tags$p("Create or Load a Study"),
+            tags$p("To import your data into a study, click Import Plate Data in the sidebar. Select an existing study or create a new study by typing a new name into the study field in the sidebar.
+                   Plate data can be imported into I-SPI once a study is selected.")
+          ),
+          tags$li(
+            tags$p("Change Study Settings"),
+            tags$p("If you need to change a study’s settings, click Change Study Settings in the sidebar.")
+          ),
+          tags$li(
+            tags$p("Conduct Analyses"),
+            tags$p("To conduct QA and QC analyses on your study data, click View, Process, and Export Data in the sidebar.")
+          )
+        ),
+        p("The organization of projects, studies and experiments and how data and QC/QA results can be shared is outlined in the figure below."),
+        img(src = "research_ISPI_organization.png", style = "max-width: 80%;"),
+        br(),
+        br(),
+        HTML(
+          'For more detailed documentation on I-SPI please visit
+   <a href="https://immunoodle.org/" target="_blank">Immunoodle</a>.
+   All the Immunoodle tools are available through
+   <a href="https://github.com/immunoodle/deployment" target="_blank">GitHub</a>.
+          To download the source code for I-SPI please visit the <a href = "https://github.com/immunoodle/i-spi", target="_blank"> I-SPI repository</a>.
+          We welcome feedback which can be given on the <a href = "https://github.com/immunoodle/i-spi/issues", target ="_blank"> issues page </a> of our repository for I-SPI.'
+        ),
+        br(),
+        br(),
+        p(strong("Citing I-SPI")),
+        p("Citation information is coming soon.")
+        # p("For more detailed documentation on I-SPI please visit ",
+        # a("Immunoodle", href = "https://immunoodle.org/", target = "_blank"), ".All the Immunoodle tools are available through",
+        # a("GitHub", href = "https://github.com/immunoodle/deployment"), ".", target = "_blank")
+
+
+      )
+    )
+    )
+  }
 })
 
 
@@ -353,71 +505,46 @@ output$userProjectsTableNonOwner <- DT::renderDataTable({
 })
 
 output$view_stored_experiments_ui <- renderUI({
-  tabRefreshCounter()$view_files_tab
-  req(reactive_df_study_exp())
+  if (input$main_tabs != "home_page" & input$main_tabs != "manage_project_tab" & input$study_tabs == "view_files_tab") {
+    if (input$readxMap_study_accession != "Click here") {
 
+ # tabRefreshCounter()$view_files_tab
+  req(reactive_df_study_exp())
   # Get data
   df <- reactive_df_study_exp()
-  df <- df[df$study_accession != "Click here", ]
+  #df <- df[df$study_accession != "Click here", ]
   #df_v <<- df
   # Build choices safely
-  study_choices <- c("Click here" = "Click here",
-                     setNames(unique(df$study_accession),
-                              unique(df$study_name)))
-  experiment_choices <- c("Click here" = "Click here",
-                    setNames(unique(df$experiment_accession),
-                             unique(df$experiment_name)))
+  # study_choices <- c("Click here" = "Click here",
+  #                    setNames(unique(df$study_accession),
+  #                             unique(df$study_name)))
+  # experiment_choices <- c("Click here" = "Click here",
+  #                   setNames(unique(df$experiment_accession),
+  #                            unique(df$experiment_name)))
 
-  if (!is.null(input$readxMap_study_accession) && input$readxMap_study_accession != "Click here") {
+ # if (!is.null(input$readxMap_study_accession)) {
     df_filtered <- df[df$study_accession == input$readxMap_study_accession, ]
     experiment_choices <- c(
       "Click here" = "Click here",
       setNames(df_filtered$experiment_accession, df_filtered$experiment_name)
     )
-  }
+  #}
 
- if (input$readxMap_study_accession != "Click here") {
+# if (input$readxMap_study_accession != "Click here") {
    stored_plate_title <- paste("View, Process, and Export", input$readxMap_study_accession, "Data", sep = " ")
 
- } else {
-   stored_plate_title <- paste("No study selected for View, Process, and Export Data")
- }
+ # } else if (input$main_tabs != "home_page" & input$main_tabs != "manage_project_tab") {
+ #   stored_plate_title <- paste("Choose or create a study to View, Process, and Export Data")
+ # } else {
+ #   stored_plate_title <- ""
+ # }
   tagList(
     fluidPage(
       h3(stored_plate_title),
 
-      # Study Selection
-      # fluidRow(
-      #   column(5,
-      #          selectInput("readxMap_study_accession",
-      #                      "Choose Study Name",
-      #                      choices = study_choices,
-      #                      # choices = c("Click here" = "Click here",
-      #                      #             setNames(unique(reactive_df_study_exp()$study_accession),
-      #                      #                      unique(reactive_df_study_exp()$study_name))),
-      #                      selected = "Click here",
-      #                      multiple = FALSE
-      #          )
-      #   )
-      # ),
-
       # Study Level Content
-      conditionalPanel(
-        condition = "input.readxMap_study_accession != 'Click here'",
         tabsetPanel(
           id = "study_level_tabs",
-          # tabPanel("Study Parameters",
-          #          id = "study_parameters_tab",
-          #          uiOutput("studyParameters_UI")
-          # ),
-          # tabPanel("Plate Management",
-          #          id = "plate_management_tab",
-          #          uiOutput("plate_management_UI")),
-
-
-
-
-
           # Experiment Level Tab
           tabPanel("Experiments",
                    fluidRow(
@@ -434,37 +561,8 @@ output$view_stored_experiments_ui <- renderUI({
                     # ),
                      #column(6,
                      conditionalPanel(
-                       condition = "input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
-
-                      # tabsetPanel(
-                      #   id = "basic_advance_tabs",
-                      #   tabPanel(id = "basic_qc",
-                      #     title = "Quality Control",
-                      #     radioGroupButtons(
-                      #       inputId = "qc_component",
-                      #       label = "QC Phase",
-                      #       choices = c("Data", "Bead Count", "Standard Curve","Standard Curve Summary", "Dilution Analysis", "Dilutional Linearity",
-                      #                   # "Plate Normalization",
-                      #                   "Outliers", "Subgroup Detection", "Subgroup Detection Summary"),
-                      #       selected = "Data",
-                      #       #  justified = TRUE,
-                      #       #  multiple = FALSE
-                      #     )
-                      #   ),
-                      #   tabPanel(id = "advance_qc",
-                      #            title = "Advanced Diagnostics",
-                      #            radioGroupButtons(
-                      #              inputId = "advanced_qc_component",
-                      #              label = "Advanced QC Phase",
-                      #              choices = c("Dilution Analysis", "Dilutional Linearity",
-                      #                          # "Plate Normalization",
-                      #                          "Outliers", "Subgroup Detection", "Subgroup Detection Summary"),
-                      #              selected = "Dilution Analysis",
-                      #              #  justified = TRUE,
-                      #              #  multiple = FALSE
-                      #            ))
-                      #
-                      # ),
+                       condition = "input.readxMap_experiment_accession != 'Click here' &&
+                       input.study_level_tabs == 'Experiments' && input.study_tabs== 'view_files_tab'",
 
                       tabsetPanel(
                         id = "basic_advance_tabs",
@@ -483,25 +581,22 @@ output$view_stored_experiments_ui <- renderUI({
                             inputId = "qc_component",
                             label = "",
                             choices = c("Bead Count", "Standard Curve","Standard Curve Summary"),
-                            selected = "Bead Count"
+                            selected = character(0)
                           ),
-
-                          # Conditional panels for basic QC only
-                          # conditionalPanel(
-                          #   condition = "input.qc_component == 'Data'",
-                          #   uiOutput("dynamic_data_ui")
-                          # ),
                           conditionalPanel(
                             condition = "input.qc_component == 'Bead Count'",
-                            uiOutput("bead_count_module_ui")
+                            textOutput("Bead Count")
+                            #uiOutput("bead_count_module_ui")
                           ),
                           conditionalPanel(
                             condition = "input.qc_component == 'Standard Curve'",
-                            uiOutput("sc_fit_module_ui")
+                            textOutput("Standard Curve Fitting")
+                           # uiOutput("sc_fit_module_ui")
                           ),
                           conditionalPanel(
                             condition = "input.qc_component == 'Standard Curve Summary'",
-                            uiOutput("standardCurveSummaryUI")
+                          #  uiOutput("standardCurveSummaryUI")
+                          textOutput("Standard Curve Summary")
                           )
                         ),
 
@@ -513,128 +608,56 @@ output$view_stored_experiments_ui <- renderUI({
                             label = "Advanced QC Phase",
                             choices = c("Dilution Analysis", "Dilutional Linearity",
                                         "Outliers", "Subgroup Detection", "Subgroup Detection Summary"),
-                            selected = "Dilution Analysis"
+                            selected = character(0)
                           ),
 
                           # Conditional panels for advanced QC only
                           conditionalPanel(
                             condition = "input.advanced_qc_component == 'Dilution Analysis'",
-                            uiOutput("dilutionAnalysisUI")
+                            textOutput("Dilution Analysis")
+                          #  uiOutput("dilutionAnalysisUI")
                           ),
                           conditionalPanel(
                             condition = "input.advanced_qc_component == 'Dilutional Linearity'",
-                            uiOutput("dilutional_linearity_mod_ui")
+                            textOutput("Dilution Linearity")
+                           # uiOutput("dilutional_linearity_mod_ui")
                           ),
                           conditionalPanel(
                             condition = "input.advanced_qc_component == 'Outliers'",
-                            uiOutput("outlierTab")
+                            textOutput("Outliers")
+                          #  uiOutput("outlierTab")
                           ),
                           conditionalPanel(
                             condition = "input.advanced_qc_component == 'Subgroup Detection'",
-                            uiOutput("subgroupDetectionUI")
+                            textOutput("Subgroup Detection")
+                           # uiOutput("subgroupDetectionUI")
                           ),
                           conditionalPanel(
                             condition = "input.advanced_qc_component == 'Subgroup Detection Summary'",
-                            uiOutput("subgroup_summary_UI")
+                            textOutput("Subgroup Summary")
+                          #  uiOutput("subgroup_summary_UI")
                           )
                         )
                       ),
-
-
-
-
-
-                       # radioGroupButtons(
-                       #   inputId = "qc_component",
-                       #   label = "QC Phase",
-                       #   choices = c("Data", "Bead Count", "Standard Curve","Standard Curve Summary", "Dilution Analysis", "Dilutional Linearity",
-                       #              # "Plate Normalization",
-                       #               "Outliers", "Subgroup Detection", "Subgroup Detection Summary"),
-                       #   selected = "Data",
-                       # #  justified = TRUE,
-                       # #  multiple = FALSE
-                       # )
-                      # verbatimTextOutput(paste(input$qc_component, input$readxMap_study_accession, input$readxMap_experiment_accession, input$study_level_tabs, input$main_tabs, sep = ", "))
-
-
                     )
                    #)
                    ),
-
-                   # Experiment Level Content
-                   # conditionalPanel(
-                   #   condition = "input.readxMap_experiment_accession != 'Click here'",
-                   #   uiOutput("stored_plates_ui")
-                   # )
-                   # tabPanel(
-                   #   id = "check_conditions",
-                   #   verbatimTextOutput(paste(input$qc_component, input$readxMap_study_accession, input$readxMap_experiment_accession, input$study_level_tabs, input$main_tabs, sep = ", "))
-                   # ),
-
-
-                   # OLD conditions
-                   # conditionalPanel(
-                   #   condition = "input.qc_component == 'Data' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
-                   #   uiOutput("dynamic_data_ui")
-                   #
-                   #   #render_dynamic_ui_content()
-                   # ),
-                   # conditionalPanel(
-                   #   #condition = "input.qc_component == 'Bead Count' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
-                   #  condition = "input.qc_component == 'Bead Count'",
-                   #  uiOutput("bead_count_module_ui")
-                   # ),
-                   # conditionalPanel(
-                   #   condition = "input.qc_component == 'Standard Curve' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
-                   #   uiOutput("sc_fit_module_ui")
-                   # ),
-                   # conditionalPanel(
-                   #   condition = "input.qc_component == 'Standard Curve Summary' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
-                   # #  uiOutput("sc_summary_module_ui")
-                   # uiOutput("standardCurveSummaryUI")
-                   # ),
-                   # conditionalPanel(
-                   #   condition = "input.qc_component == 'Dilution Analysis' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
-                   #   uiOutput("dilutionAnalysisUI")
-                   # ),
-                   # conditionalPanel(
-                   #   condition = "input.qc_component == 'Dilutional Linearity' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
-                   #   uiOutput("dilutional_linearity_mod_ui")
-                   # ),
-                   #
-                   # conditionalPanel(
-                   #   condition = "input.qc_component == 'Outliers'  && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
-                   #   uiOutput("outlierTab")
-                   # ),
-                   # conditionalPanel(
-                   #   condition = "input.qc_component == 'Subgroup Detection' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
-                   #   # uiOutput("dynamic_data_ui"),
-                   #   # uiOutput("beadCountAnalysisUI"),
-                   #   # uiOutput("standard_curve_section"),
-                   #   # uiOutput("dilution_analysis_section"),
-                   #   # uiOutput("outlierTab"),
-                   #   uiOutput("subgroupDetectionUI")
-                   #  # uiOutput("subgroup_detection_section")
-                   # ),
-                   # conditionalPanel(
-                   #   condition = "input.qc_component == 'Subgroup Detection Summary' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
-                   #    uiOutput("subgroup_summary_UI")
-                   #   )
-                   # conditionalPanel(
-                   #   condition = "input.qc_component == 'Test' && input.readxMap_study_accession != 'Click here' && input.readxMap_experiment_accession != 'Click here' && input.study_level_tabs == 'Experiments' && input.main_tabs == 'view_files_tab'",
-                   #   uiOutput("sg_module_ui")
-                   # )
-
           ),
           # Study Overview Tab
           tabPanel("Study Overview",
                    id = "study_overview_tab",
-                   uiOutput("study_overview_page")
+                   textOutput("Study Overview")
+                  # uiOutput("study_overview_page")
           ),# end TabsetPanel
-        ) # end study level tabs
+        #) # end study level tabs
       ) # end  Study Level Content
       ) # end fluidPage
     ) #end tagList
+    } # end test for click here
+    else {
+      stored_plate_title <- paste("Choose or create a study to View, Process, and Export Data")
+    }
+  } # end outer if for nav
 })
 
 # observeEvent({
@@ -735,6 +758,30 @@ output$dynamic_data_ui <- renderUI({
     NULL  # Removes the bsCollapse completely
   }
 })
+
+
+# deselect whatever was selected for when you come back to the options.
+# observeEvent(input$basic_advance_tabs, {
+#   if (input$basic_advance_tabs != "basic_qc") {
+#     updateRadioGroupButtons(session, "qc_component", selected = character(0))
+#   }
+#   if (input$basic_advance_tabs != "advance_qc") {
+#     updateRadioGroupButtons(session, "advanced_qc_component", selected = character(0))
+#   }
+# })
+observeEvent(input$basic_advance_tabs, {
+  if (input$basic_advance_tabs == "basic_qc") {
+    updateRadioGroupButtons(session, "advanced_qc_component", selected = character(0))
+  }
+  # if (input$basic_advance_tabs == "advance_qc") {
+  #   updateRadioGroupButtons(session, "qc_component", selected = character(0))
+  # }
+  # if (input$basic_advance_tabs == "Data") {
+  #   updateRadioGroupButtons(session, "qc_component", selected = character(0))
+  #   updateRadioGroupButtons(session, "advanced_qc_component", selected = character(0))
+  # }
+})
+
 
 observeEvent(input$advanced_qc_component, {
   req(input$readxMap_study_accession)
@@ -1205,6 +1252,7 @@ reset_view_values <- function() {
 }
 
 output$manage_project_ui <- renderUI({
+  if (input$main_tabs != "home_page") {
   fluidRow(
     column(12,
            # Create Project Section
@@ -1252,5 +1300,8 @@ output$manage_project_ui <- renderUI({
            )
     )
   )
+  } else {
+     NULL
+  }
 })
 
