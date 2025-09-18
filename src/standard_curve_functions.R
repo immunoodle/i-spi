@@ -2721,6 +2721,9 @@ compute_drda_5_param <- function(data, bkg, is_log_mfi_axis ) {
 
 
 
+  # bendlower <<- bendlower
+  # bendupper <<- bendupper
+  # geom_blank_v <<- geom_blank
   if ((bendlower == bendupper) & (bendlower > llod)) {
     if (!is.na(geom_blank)) {
       if (is_log_mfi_axis) {
@@ -4355,7 +4358,7 @@ if (bkg == "subtracted") {
 }
 
 
-save_fit_au <- function(dat, sample_data, selectedExperiment, selectedSource, buffer_data, bkg, aggregate_mfi_dilution, apply_prozone_correction, is_log_mfi_axis) {
+save_fit_au <- function(dat, sample_data, selectedExperiment, buffer_data, bkg, aggregate_mfi_dilution, apply_prozone_correction, is_log_mfi_axis) {
 
   # Account for log MFI user setting
   if (is_log_mfi_axis) {

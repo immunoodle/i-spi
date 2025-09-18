@@ -274,66 +274,94 @@ standardCurveFittingServer <- function(id, selected_study, selected_experiment, 
 
 
     source_rv <- reactiveVal(NULL)
+    # output$sourceSelectionUI <- renderUI({
+    #   req(std_curve_data_sc$study_accession, std_curve_data_sc$experiment_accession)
+    #  # req(input$readxMap_study_accession, input$readxMap_experiment_accession,
+    #   req(input$plateSelection)
+    #   req(study_configuration)
+    #   # initial_source <- study_configuration[study_configuration$param_name == "default_source",]$param_character_value
+    #   # cat("\nInitial Source:\n")
+    #   # print(initial_source)
+    #
+    #
+    #
+    #   # if (is.null(initial_source) || is.na(initial_source)) {
+    #   #   initial_source <- obtain_initial_source(selected_study())
+    #   # } else {
+    #   #   initial_source <- initial_source
+    #   # }
+    #
+    #
+    #   # if (is.null(initial_source) || is.na(initial_source)) {
+    #   #    # <- obtain_initial_source(selected_study())
+    #   #   updateRadioButtons(session, "sourceSelection", selected = NULL)
+    #   # } else {
+    #   #   updateRadioButtons(session, "sourceSelection", selected = initial_source)
+    #   # }
+    #
+    #   #  updateRadioButtons(session, "sourceSelection", selected = NULL)
+    #
+    #   dat_source <- std_curve_data_sc[std_curve_data_sc$study_accession %in% selected_study() &
+    #                                     std_curve_data_sc$experiment_accession %in% selected_experiment() &
+    #                                     std_curve_data_sc$plateid %in% input$plateSelection &
+    #                                     std_curve_data_sc$antigen %in% input$antigenSelection, ]
+    #   req(nrow(dat_source) > 0)
+    #
+    #   #if (!(initial_source %in% unique(dat_source$source))) {
+    #     initial_source <- unique(dat_source$source)[1]
+    # #  }
+    #
+    #   source_rv(initial_source)
+    #
+    #   radioButtons("sourceSelection",
+    #                label = "Source",
+    #                choices = unique(dat_source$source),
+    #                selected = initial_source
+    #               )
+    #
+    # })
     output$sourceSelectionUI <- renderUI({
-      req(std_curve_data_sc$study_accession, std_curve_data_sc$experiment_accession)
-     # req(input$readxMap_study_accession, input$readxMap_experiment_accession,
-      req(input$plateSelection)
-      req(study_configuration)
-      initial_source <- study_configuration[study_configuration$param_name == "default_source",]$param_character_value
-      cat("\nInitial Source:\n")
-      print(initial_source)
+      req(std_curve_data_sc, input$plateSelection, input$antigenSelection)
 
-      if (is.null(initial_source) || is.na(initial_source)) {
-        initial_source <- obtain_initial_source(selected_study())
-      } else {
-        initial_source <- initial_source
-      }
-      # if (is.null(initial_source) || is.na(initial_source)) {
-      #    # <- obtain_initial_source(selected_study())
-      #   updateRadioButtons(session, "sourceSelection", selected = NULL)
-      # } else {
-      #   updateRadioButtons(session, "sourceSelection", selected = initial_source)
-      # }
+      dat_source <- std_curve_data_sc[
+        std_curve_data_sc$study_accession %in% selected_study() &
+          std_curve_data_sc$experiment_accession %in% selected_experiment() &
+          std_curve_data_sc$plateid %in% input$plateSelection &
+          std_curve_data_sc$antigen %in% input$antigenSelection, ]
 
-      #  updateRadioButtons(session, "sourceSelection", selected = NULL)
-
-      dat_source <- std_curve_data_sc[std_curve_data_sc$study_accession %in% selected_study() &
-                                        std_curve_data_sc$experiment_accession %in% selected_experiment() &
-                                        std_curve_data_sc$plateid %in% input$plateSelection &
-                                        std_curve_data_sc$antigen %in% input$antigenSelection, ]
       req(nrow(dat_source) > 0)
 
-      if (!(initial_source %in% unique(dat_source$source))) {
-        initial_source <- unique(dat_source$source)[1]
-      }
-
-      source_rv(initial_source)
-
-      radioButtons("sourceSelection",
-                   label = "Source",
-                   choices = unique(dat_source$source),
-                   selected = initial_source
-                  )
-
+      radioButtons(
+        ns("sourceSelection"),
+        label = "Source",
+        choices = unique(dat_source$source),
+        selected = unique(dat_source$source)[1]
+      )
     })
 
-    observeEvent(input$sourceSelection, {
-      if (is.null(input$sourceSelection)) {
-        req(study_configuration)
-        initial_source <- study_configuration[study_configuration$param_name == "default_source",]$param_character_value
-        cat("\nInitial Source:\n")
-        print(initial_source)
 
-        if (is.null(initial_source) || is.na(initial_source)) {
-          initial_source <- obtain_initial_source(selected_study())
-        } else {
-          initial_source <- initial_source
-        }
-        source_rv(initial_source)
-      } else {
-        source_rv(input$sourceSelection)
-      }
-    })
+
+
+    # This was for souurce in parameters
+    # observeEvent(input$sourceSelection, {
+    #   if (is.null(input$sourceSelection)) {
+    #     req(study_configuration)
+    #     initial_source <- study_configuration[study_configuration$param_name == "default_source",]$param_character_value
+    #     cat("\nInitial Source:\n")
+    #     print(initial_source)
+    #
+    #     if (is.null(initial_source) || is.na(initial_source)) {
+    #       initial_source <- obtain_initial_source(selected_study())
+    #     } else {
+    #       initial_source <- initial_source
+    #     }
+    #     source_rv(initial_source)
+    #   } else {
+    #     source_rv(input$sourceSelection)
+    #   }
+    # })
+    ### end above comment
+
       # output$sourceSelectionUI <- renderUI({
       #   req(std_curve_data_sc$study_accession, std_curve_data_sc$experiment_accession)
       #   req(input$plateSelection)
@@ -373,7 +401,8 @@ standardCurveFittingServer <- function(id, selected_study, selected_experiment, 
       filtered_data_rv <- reactive({
         req(std_curve_data_sc)
         req(study_configuration)
-        req(source_rv())
+        req(input$sourceSelection)
+
         bkg_method <- study_configuration[study_configuration$param_name == "blank_option",]$param_character_value
         apply_prozone <- as.logical(toupper(study_configuration[study_configuration$param_name == "applyProzone",]$param_boolean_value))
         is_log_mfi <- as.logical(toupper(study_configuration[study_configuration$param_name == "is_log_mfi_axis",]$param_boolean_value))
@@ -408,10 +437,10 @@ standardCurveFittingServer <- function(id, selected_study, selected_experiment, 
         print(plate_val)
         print(antigen_val)
         print(selected_experiment())
-        print(source_rv())
+        print(input$sourceSelection)
        # updateRadioButtons(session = session, "sourceSelection", initial_source)
         #std_curve_data_s <<- std_curve_data_sc
-        filtered_data <- std_curve_data_sc[std_curve_data_sc$source == source_rv() &std_curve_data_sc$antigen == antigen_val
+        filtered_data <- std_curve_data_sc[std_curve_data_sc$source == input$sourceSelection & std_curve_data_sc$antigen == antigen_val
                                         & std_curve_data_sc$experiment_accession == selected_experiment() &
                                           std_curve_data_sc$plateid == plate_val,]
 
@@ -566,7 +595,7 @@ standardCurveFittingServer <- function(id, selected_study, selected_experiment, 
           return(NULL)
 
         } else {
-          #filtered_data_val_view <<- filtered_data_val
+         # filtered_data_val_view <<- filtered_data_val
           mod <- tryCatch({
             #set seed for reproducibility
             set.seed(11262024)
@@ -576,7 +605,7 @@ standardCurveFittingServer <- function(id, selected_study, selected_experiment, 
               plate = plate_val,#input$plateSelection,
               study_accession = selected_study(),
               experiment_accession = selected_experiment(),
-              source = source_rv(),#input$sourceSelection,
+              source = source_rv(),#input$sourceSelection, was source_rv()
               bkg =  bkg_method,
               is_log_mfi_axis = is_log_mfi,
               g_value = 0.5
@@ -897,7 +926,7 @@ standardCurveFittingServer <- function(id, selected_study, selected_experiment, 
         is_log_mfi <- as.logical(toupper(study_configuration[study_configuration$param_name == "is_log_mfi_axis",]$param_boolean_value))
         aggregate_mfi_dilution <- study_configuration[study_configuration$param_name == "mean_mfi",]$param_boolean_value
         apply_prozone_correction <- study_configuration[study_configuration$param_name == "applyProzone",]$param_boolean_value
-        config_source <- study_configuration[study_configuration$param_name == "default_source",]$param_character_value
+       # config_source <- study_configuration[study_configuration$param_name == "default_source",]$param_character_value
 
 
 
@@ -906,7 +935,7 @@ standardCurveFittingServer <- function(id, selected_study, selected_experiment, 
 
         cat("\nbefore save fit au\n")
         save_fit_au(dat = std_curve_data, sample_data = sample_data_in, selectedExperiment = selected_experiment(),
-                    selectedSource = config_source,
+                    #selectedSource = config_source, source is looped over in the function
                     #plate_list = input$plateSelection, antigen_list_input = input$antigenSelection,
                     buffer_data = buffer_data, bkg = bkg_method,
                     aggregate_mfi_dilution = aggregate_mfi_dilution,

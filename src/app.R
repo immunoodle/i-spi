@@ -5,7 +5,7 @@ source("global.R", local = TRUE)
 
 
 #Set to 1 for local and do not push in prod
-# Sys.setenv(LOCAL_DEV = "1")
+#Sys.setenv(LOCAL_DEV = "1")
 
 
 
