@@ -104,7 +104,14 @@ output$main_study_selector <- renderUI({
         choices = study_choices_rv(),
         selected = "Click here",
         multiple = FALSE,
-        options = list(create = TRUE),
+        options = list(create = TRUE,
+                       onType = I("
+      function(str) {
+        if (str.length > 15) {
+          this.setTextboxValue(str.substring(0, 15));
+        }
+      }
+    ")),
         width = "100%"
       )
     )
@@ -599,6 +606,85 @@ output$dynamic_data_ui <- renderUI({
     NULL  # Removes the bsCollapse completely
   }
 })
+
+# ReactiveVal to store experiments
+reactive_df_study_exp <- reactiveVal()
+
+# Refresh the list of studies and their experiments
+# for viewing, and conducing QC/QA
+observeEvent({
+  list(
+    input$main_tabs,
+    input$study_tabs,
+    input$readxMap_study_accession
+  )
+}, {
+  # Only run when tab is active
+  if (!is.null(input$main_tabs) &&
+      !is.null(input$study_tabs) &&
+      input$main_tabs != "home_page" &&
+      input$main_tabs != "manage_project_tab" &&
+      input$study_tabs == "view_files_tab") {
+
+    # guard study_accession
+    if (!is.null(input$readxMap_study_accession) &&
+        nzchar(input$readxMap_study_accession)) {
+
+      select_query <- glue::glue_sql("
+        SELECT DISTINCT
+          xmap_header.study_accession,
+          xmap_header.experiment_accession,
+          xmap_header.study_accession AS study_name,
+          xmap_header.experiment_accession AS experiment_name,
+          xmap_header.workspace_id,
+          xmap_users.project_name
+        FROM madi_results.xmap_header
+        JOIN madi_results.xmap_users
+          ON xmap_header.workspace_id = xmap_users.workspace_id
+        WHERE xmap_header.workspace_id = {userWorkSpaceID()}
+      ;", .con = conn)
+
+      query_result <- dbGetQuery(conn, select_query)
+      reactive_df_study_exp(query_result)
+    }
+  }
+}, ignoreNULL = TRUE, ignoreInit = TRUE)
+
+# observeEvent({
+#   list(
+#     input$main_tabs,
+#     input$study_tabs,
+#     input$readxMap_study_accession
+#   )
+# }, {
+#
+#  # req(input$readxMap_study_accession, cancelOutput = TRUE)
+#
+#   if (input$main_tabs != "home_page" &&
+#       input$main_tabs != "manage_project_tab" &&
+#       input$study_tabs == "view_files_tab") {
+#
+#     select_query <- glue::glue_sql("
+#       SELECT DISTINCT
+#         xmap_header.study_accession,
+#         xmap_header.experiment_accession,
+#         xmap_header.study_accession AS study_name,
+#         xmap_header.experiment_accession AS experiment_name,
+#         xmap_header.workspace_id,
+#         xmap_users.project_name
+#       FROM madi_results.xmap_header
+#       JOIN madi_results.xmap_users
+#         ON xmap_header.workspace_id = xmap_users.workspace_id
+#       WHERE xmap_header.workspace_id = {userWorkSpaceID()}
+#     ;", .con = conn)
+#
+#     query_result <- dbGetQuery(conn, select_query)
+#
+#     reactive_df_study_exp(query_result)
+#   }
+# })
+
+
 
 observeEvent(input$basic_advance_tabs, {
   if (input$basic_advance_tabs == "basic_qc") {

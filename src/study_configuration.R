@@ -29,6 +29,19 @@ obtain_initial_source <- function(study_accession) {
 
 }
 
+obtain_all_sc_source <- function(study_accession) {
+  study_sources_query <- paste0("SELECT DISTINCT  source
+	FROM madi_results.xmap_standard
+	WHERE study_accession = '",study_accession ,"'")
+
+  study_sources_df <- dbGetQuery(conn, study_sources_query)
+
+  initial_source <- unique(study_sources_df$source)
+  return(initial_source)
+
+}
+
+
 intitialize_study_configurations <- function(study_accession, user, initial_source) {
 
   ## Dilution Analysis Parameters
