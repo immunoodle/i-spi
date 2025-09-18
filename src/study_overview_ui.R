@@ -64,6 +64,10 @@ observeEvent(input$study_level_tabs, {
           "High Aggregate and Low Bead Count",
           uiOutput("analyte_selector_beadUI"),
           uiOutput("specimen_selector_beadUI"),
+          conditionalPanel(
+            condition = "input.specimen_selector_bead == 'standard'",
+            uiOutput("bead_sc_sourceUI")
+          ),
           uiOutput("no_failed_bead_message"),
           plotOutput("bead_count_summary_plot", height = "800px"),
           fluidRow(
@@ -819,11 +823,29 @@ observeEvent(input$study_level_tabs, {
       )
     })
 
+    output$bead_sc_sourceUI <- renderUI({
+      req(preped_data)
+      source_choices <- unique(na.omit(preped_data$source))
+      shinyWidgets::radioGroupButtons(
+        inputId = "source_selector_bead",
+        label = "Select Standard Curve Source:",
+        choices = source_choices,
+        selected = source_choices[1],
+        status = "success"
+      )
+    })
+
     plot_bead_count_summary_plot <- function() {
       req(preped_data)
       req(input$analyte_selector_bead)
       req(input$specimen_selector_bead)
+     # preped_data_v <- preped_data
       bead_data <- preped_data[preped_data$specimen_type %in% c("blank", "control", "standard", "sample"), ]
+
+      if (input$specimen_selector_bead == "standard" && !is.null(input$source_selector_bead)) {
+        bead_data <- bead_data[bead_data$source == input$source_selector_bead, ]
+      }
+
       bead_data <- bead_data[, c("analyte","antigen", "plate","specimen_type","nhighbeadagg","nlowbead")]
 
       names(bead_data)[names(bead_data) == "nhighbeadagg"] <- "HighAggregates"
@@ -843,6 +865,7 @@ observeEvent(input$study_level_tabs, {
                                  names_to = "Type", values_to = "N_wells")
       lbead_data$antigen <- factor(lbead_data$antigen)
       lbead_data$plate <- factor(lbead_data$plate)
+
 
       specimen_type = input$specimen_selector_bead
       analyte = input$analyte_selector_bead
