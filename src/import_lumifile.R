@@ -17,7 +17,7 @@ outputOptions(output, 'fileUploaded', suspendWhenHidden=FALSE)
 ### main observe that creates base tabs reading and processing the xMap
 
 output$readxMapData <- renderUI({
-  tabRefreshCounter()$import_tab
+ tabRefreshCounter()$import_tab
   if (input$main_tabs != "home_page" & input$main_tabs != "manage_project_tab" & input$study_tabs == "import_tab") {
   if (input$readxMap_study_accession != "Click here") {
     import_plate_data_title <- paste("Import", input$readxMap_study_accession, "Plate Data", sep = " ")
@@ -78,7 +78,12 @@ output$readxMapData <- renderUI({
                                   choices <- experiment_choices_rv(),
                                   selected = "Click here",
                                   multiple = FALSE,
-                                  options = list(create = TRUE), width = '700px'
+                                  options = list(create = TRUE,
+                                  onType = I("function(str) {
+                                                if (str.length > 15) {
+                                                  this.setTextboxValue(str.substring(0, 15));
+                                                }
+                                              }")), width = '700px'
                    )
                # )
                )

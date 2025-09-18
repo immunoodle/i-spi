@@ -556,6 +556,7 @@ observeEvent(list(
       experiment_fitted_rv <- reactive({
         req(fitted_curve_parameters)
         req(std_curve_data)
+        req(input$sourceSelection2)
        # req(background_control_rv())
         req(study_configuration)
         bkg_method <- study_configuration[study_configuration$param_name == "blank_option",]$param_character_value
@@ -569,6 +570,12 @@ observeEvent(list(
         fitted_curve_parameters <- fitted_curve_parameters[fitted_curve_parameters$bkg_method == bkg_method,]
 
          if (nrow(fitted_curve_parameters) > 0) {
+
+           # account for more than 1 source.
+          if (length(unique(fitted_curve_parameters$source)) > 1) {
+            fitted_curve_parameters <- fitted_curve_parameters[fitted_curve_parameters$source == input$sourceSelection2,]
+          }
+          #fitted_curve_parameters_v <<- fitted_curve_parameters
 
           experiment_fitted_df <- compute_fitted_df(fitted_curve_parameters, min_log_dilution)
           # Account if log mfi is selected or not in user settings - This will Take it 2x
