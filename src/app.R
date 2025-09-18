@@ -5,7 +5,7 @@ source("global.R", local = TRUE)
 
 
 #Set to 1 for local and do not push in prod
-#Sys.setenv(LOCAL_DEV = "1")
+# Sys.setenv(LOCAL_DEV = "1")
 
 
 
@@ -617,7 +617,6 @@ server <- function(input, output, session) {
     return(user_info)
   }
 
-
   observeEvent(input$user_is_inactive, {
     if (isTRUE(input$user_is_inactive)) {
       message("User has been inactive for 15 minutes. Triggering logout.")
@@ -626,7 +625,6 @@ server <- function(input, output, session) {
       shinyjs::click("logout_button")
     }
   })
-
 
   observeEvent(input$logout_button, {
 
@@ -736,7 +734,6 @@ server <- function(input, output, session) {
     }
   }, ignoreInit = TRUE, ignoreNULL = TRUE)
 
-
   # --- Core Application Logic - GATED EXECUTION (MERGED) ---
   observe({
     ud <- req(user_data())
@@ -766,6 +763,7 @@ server <- function(input, output, session) {
       userProjectName <- reactiveVal("unknown")
       reactive_df_study_exp <- reactiveVal(NULL)
       study_choices_rv <- reactiveVal(NULL)
+      experiment_choices_rv <- reactiveVal(NULL)
       currentuser <- reactiveVal("unknown user")
       usersession <- reactiveVal("unknown session")
 

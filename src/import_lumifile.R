@@ -56,31 +56,33 @@ output$readxMapData <- renderUI({
         br()
         ,
         fluidRow(
-          # column(5,
-          #
-          #                selectizeInput("readxMap_study_accession_import",
-          #                               "Choose Existing Study Name OR Create a New Study Name (up to 15 characters)",
-          #                               choices <- c(c("Click OR Create New" = "Click here"),
-          #                                            setNames(unique(reactive_df_study_exp()$study_accession),
-          #                                                     unique(reactive_df_study_exp()$study_name)
-          #                                            )
-          #                               ),
-          #                               selected = "Click here",
-          #                               multiple = FALSE,
-          #                               options = list(create = TRUE), width = '500px'
-          #                )
-          #         ),
           column(5,
+                 tagList(
+                   div(
+                     style = "width: 700px;",
+                     tags$label(
+                       `for` = "readxMap_experiment_accession_import",
+                       style = "display: block; padding-left: 15px;",
+                       "Select Experiment Name",
+                       tags$br(),
+                       tags$small(style = "font-weight: normal;",
+                                  "To create a new experiment, type in this box (up to 15 characters)."
+                       )
+                     ),
                 # conditionalPanel(
-                 #  condition = "input.readxMap_study_accession != 'Click here'",
+                #  condition = "input.readxMap_study_accession != 'Click here'",
                    selectizeInput("readxMap_experiment_accession_import",
-                                  "Choose Existing Experiment Name OR Create a New Experiment Name (by typing up to 15 characters)",
-                                  choices <- c("Click OR Create New" = "Click here"),
+                                  label = NULL,
+                                  # "Choose Existing Experiment Name OR Create a New Experiment Name (by typing up to 15 characters)",
+                                  # choices <- c("Click OR Create New" = "Click here"),
+                                  choices <- experiment_choices_rv(),
                                   selected = "Click here",
                                   multiple = FALSE,
                                   options = list(create = TRUE), width = '700px'
                    )
-                # )
+               # )
+               )
+             )
           )
         )
         ,
@@ -88,17 +90,6 @@ output$readxMapData <- renderUI({
           column(9,
                  conditionalPanel(
                    condition = "input.readxMap_experiment_accession_import != 'Click here' && input.readxMap_experiment_accession_import != ''",
-                   # shinyWidgets::switchInput("xPonentFile",
-                   #                           onLabel = "xPONENT",
-                   #                           offLabel = "RAW",
-                   #                           onStatus = "success",
-                   #                           offStatus = "danger",
-                   #                           value = FALSE,
-                   #                           size = "large",
-                   #                           label = "File Format",
-                   #                           labelWidth = "150px",
-                   #                           handleWidth = "100px",
-                   #                           width = "auto"),
                    shinyWidgets::radioGroupButtons(
                      inputId = "xPonentFile",
                      label = "File Format",
@@ -157,6 +148,7 @@ observeEvent(input$readxMap_study_accession, {
   # filter study_exp by current study selected in navigation
   filtered_exp <- study_exp[study_exp$study_accession == input$readxMap_study_accession, ]
 
+  print(paste("\n filtered_exp rows:", nrow(filtered_exp)))
 
   if (nrow(filtered_exp) > 0) {
     expvector <- setNames(filtered_exp$experiment_accession, filtered_exp$experiment_name)
@@ -165,15 +157,9 @@ observeEvent(input$readxMap_study_accession, {
   }
 
   experiment_drop <- c("Click OR Create New" = "Click here", expvector)
+  print(paste("\n experiment choices:", experiment_drop))
 
-
-  updateSelectizeInput(
-    session,
-    inputId = "readxMap_experiment_accession_import",
-    label = "Choose Existing Experiment Name OR Create a New Experiment Name (up to 15 characters)",
-    choices = experiment_drop,
-    selected = "Click here"
-  )
+  experiment_choices_rv(experiment_drop)
 
   }
 
@@ -269,8 +255,6 @@ observeEvent(input$upload_to_shiny,{
 
 
 })
-
-
 
 observeEvent(input$uploaded_sheet,{
 

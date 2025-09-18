@@ -160,6 +160,41 @@ observeEvent(input$readxMap_study_accession, {
     # when disabled, also clear selection (optional)
     updateTabItems(session, "study_tabs", selected = "study_none")
   }
+
+  # if (input$readxMap_study_accession != "Click here") {
+  #
+  #   initial_source <- obtain_initial_source(input$readxMap_study_accession)
+  #   # std <<- stored_plates_data$stored_standard
+  #   # initial_source <<- unique(stored_plates_data$stored_standard$source)[1]
+  #
+  #   # Initialize study parameters for a user and study
+  #   study_user_params_nrow <- nrow(fetch_study_configuration(study_accession = input$readxMap_study_accession
+  #                                                            , user = currentuser()))
+  #   if (study_user_params_nrow == 0) {
+  #     intitialize_study_configurations(study_accession = input$readxMap_study_accession,
+  #                                      user = currentuser(), initial_source = initial_source)
+  #
+  #   }
+  #
+  #   # study_exp is a data frame with study and experiment names filtered by user/project workspace
+  #   study_exp <- reactive_df_study_exp()
+  #   # filter study_exp by current study selected in navigation
+  #   filtered_exp <- study_exp[study_exp$study_accession == input$readxMap_study_accession, ]
+  #
+  #   print(paste("\n filtered_exp rows:", nrow(filtered_exp)))
+  #
+  #   if (nrow(filtered_exp) > 0) {
+  #     expvector <- setNames(filtered_exp$experiment_accession, filtered_exp$experiment_name)
+  #   } else {
+  #     expvector <- character(0)
+  #   }
+  #
+  #   experiment_drop <- c("Click OR Create New" = "Click here", expvector)
+  #   print(paste("\n experiment choices:", experiment_drop))
+  #
+  #   experiment_choices_rv(experiment_drop)
+  # }
+
 }, ignoreNULL = FALSE)
 
 output$landing_page_ui <- renderUI({
