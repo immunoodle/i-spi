@@ -1,5 +1,4 @@
 # ui handling
-
 reset_import_values <- function() {
   # Reset all reactive values
   isolate({
@@ -28,9 +27,6 @@ reset_import_values <- function() {
 
   })
 }
-
-
-
 
 get_user_projects <- function(conn, current_user) {
   query <- glue::glue("
@@ -69,83 +65,6 @@ getProjectName <- function(conn, current_user){
   return(list(name = name, id = id))
 }
 
-
-# output$sidebar_tabs <- renderMenu({
-#   current_count <- tab_counter()
-#   dynamic_items <- lapply(seq_len(current_count), function(i) {
-#     menuItem(paste("Dynamic Tab", i),
-#              tabName = paste0("dynamic_tab_", i), icon = icon("folder"))
-#   })
-#
-#   sidebarMenu(id = "sidebar_tabs",
-#               menuItem("View, Process, and Export Data", tabName = "view_files_tab", icon = icon("dashboard")),
-#               menuItem("Import Plate Data", tabName = "import_tab", icon = icon("file")),
-#               menuItem("Create, Add, and Load Projects", tabName = "manage_project_tab", icon = icon("chart-line")),
-#               dynamic_items
-#   )
-# })
-#
-# output$body_tabs <- renderUI({
-#   current_count <- tab_counter()
-#   dynamic_tabs <- lapply(seq_len(current_count), function(i) {
-#     tabItem(tabName = paste0("dynamic_tab_", i),
-#             uiOutput(paste0("dynamic_content_", i)))
-#   })
-#
-#   do.call(tabItems, c(
-#     list(
-#       tabItem(tabName = "view_files_tab", uiOutput("view_stored_experiments_ui")),
-#       tabItem(tabName = "import_tab", uiOutput("view_stored_experiments_ui")),
-#       tabItem(tabName = "manage_project_tab", uiOutput("manage_project_ui"))
-#     ),
-#     dynamic_tabs
-#   ))
-# })
-
-
-# output$sidebar_tabs <- renderMenu({
-#   current_count <- tab_counter()
-#   dynamic_items <- lapply(seq_len(current_count), function(i) {
-#     menuItem(paste("Dynamic Tab", i),
-#              tabName = paste0("dynamic_tab_", i), icon = icon("folder"))
-#   })
-#
-#   do.call(sidebarMenu, c(
-#     list(id = "sidebar_tabs",selected = "view_files_tab",
-#          menuItem("View, Process, and Export Data", tabName = "view_files_tab", icon = icon("dashboard")),
-#          menuItem("Import Plate Data", tabName = "import_tab", icon = icon("file")),
-#          menuItem("Create, Add, and Load Projects", tabName = "manage_project_tab", icon = icon("chart-line"))
-#     ),
-#     dynamic_items
-#   ))
-# })
-
-# output$sidebar_tabs <- renderMenu({
-#   current_count <- tab_counter()
-#
-#   # dynamic_items <- lapply(seq_len(current_count), function(i) {
-#   #   menuItem(
-#   #     paste("Dynamic Tab", i),
-#   #     tabName = paste0("dynamic_tab_", i),
-#   #     icon = icon("folder")
-#   #   )
-#   # })
-#
-#   do.call(sidebarMenu, c(
-#     list(
-#       id = "main_tabs",
-#     #  selected = "view_files_tab",  # initial selected tab
-#       menuItem("Home", tabName = "home_page", icon = icon("home")),      # landing page content
-#       menuItem("Create, Add, and Load Projects", tabName = "manage_project_tab", icon = icon("chart-line")),
-#       menuItem("Import Plate Data", tabName = "import_tab", icon = icon("file")),
-#       menuItem("Change Study Settings", tabName = "study_settings", icon = icon("cog")),
-#       menuItem("View, Process, and Export Data", tabName = "view_files_tab", icon = icon("dashboard"))
-#
-#     )
-#     #dynamic_items  # add dynamic tabs at the end
-#   ))
-# })
-
 output$project_info <- renderUI({
   tagList(
     div(
@@ -164,118 +83,84 @@ output$project_info <- renderUI({
 })
 
 output$main_study_selector <- renderUI({
-  req(reactive_df_study_exp())
   req(study_choices_rv())
-  # Get data
-  df <- reactive_df_study_exp()
-  df <- df[df$study_accession != "Click here", ]
 
+  tagList(
+    div(
+      style = "width: 250px;",
+      tags$label(
+        `for` = "readxMap_study_accession",
+        style = "display: block; padding-left: 15px;",
+        "Select Study Name",
+        tags$br(),
+        tags$small(style = "font-weight: normal;",
+                   "To create a new study, type in this box (up to 15 characters)."
+        )
+      ),
 
-  # Build choices safely
-  # study_choices <- c("Click here" = "Click here",
-  #                    setNames(unique(df$study_accession),
-  #                             unique(df$study_name)))
-  #
-
-  selectizeInput("readxMap_study_accession",
-               "Choose Existing Study Name OR Create a New Study Name (by typing up to 15 characters)",
-               # choices <- c(c("Click OR Create New" = "Click here"),
-               #              setNames(unique(reactive_df_study_exp()$study_accession),
-               #                       unique(reactive_df_study_exp()$study_name)
-               #              )
-               # ),
-               choices = study_choices_rv(),
-               #selected = "Click here",
-               multiple = FALSE,
-               options = list(create = TRUE), width = '500px'
-)
+      selectizeInput(
+        "readxMap_study_accession",
+        label = NULL,
+        choices = study_choices_rv(),
+        selected = "Click here",
+        multiple = FALSE,
+        options = list(create = TRUE),
+        width = "100%"
+      )
+    )
+  )
 })
 
-# add value to manual studies when new study is added
-# observeEvent(input$readxMap_study_accession, {
-#   val <- input$readxMap_study_accession
-#   # ignore initial "Click here"
-#   if (is.null(val) || val == "Click here") return()
-#   # get source list
-#   src_df <- reactive_df_study_exp()
-#   src_acc <- if (!is.null(src_df)) unique(src_df$study_accession) else character(0)
-#
-#   if (!(val %in% src_acc) && !(val %in% manual_studies$entries)) {
-#     manual_studies$entries <- c(manual_studies$entries, val)
-#   }
-# }, ignoreNULL = TRUE)
+output$study_sidebar <- renderUI({
+  val <- input$readxMap_study_accession
 
+  # treat NULL, empty string, or explicit "Click here" as "no selection"
+  enabled <- !is.null(val) && nzchar(trimws(val)) && val != "Click here"
 
-# observe({
-#   req(reactive_df_study_exp())   # wait until source is available
-#   df <- reactive_df_study_exp()
-#
-#   # remove any rows with "Click here"
-#   df <- df[!is.na(df$study_accession) & df$study_accession != "Click here", , drop = FALSE]
-#
-#   # unique mapping: study_accession -> study_name for labeling
-#   uniq <- df[!duplicated(df$study_accession), c("study_accession", "study_name"), drop = FALSE]
-#
-#   # named vector: value = accession, name = study_name
-#   named_src <- if (nrow(uniq) > 0) setNames(as.character(uniq$study_accession),
-#                                             as.character(uniq$study_name)) else character(0)
-#
-#   # combine: Click here first, then source, then manual typed entries
-#   named_choices <- c("Click here" = "Click here")
-#
-#   if (length(named_src) > 0) named_choices <- c(named_choices, named_src)
-#
-#   if (length(manual_studies$entries) > 0) {
-#     # add manual entries (label == value)
-#     named_choices <- c(named_choices,
-#                        setNames(manual_studies$entries, manual_studies$entries))
-#   }
-#
-#   # keep user's current selection if possible; otherwise fall back to "Click here"
-#   current <- input$readxMap_study_accession
-#   if (is.null(current) || !(current %in% c("Click here", names(named_choices), as.character(named_choices)))) {
-#     current <- "Click here"
-#   }
-#
-#   # update the UI — don't rebuild the widget, just change choices/selection
-#   updateSelectizeInput(
-#     session,
-#     "readxMap_study_accession",
-#     choices = named_choices,
-#     selected = current,
-#     options = list(create = TRUE)   # keep create enabled
-#   )
-# })
+  if (enabled) {
+    # enabled menu — id must be 'study_tabs' so clicks update input$study_tabs
+    sidebarMenu(
+      id = "study_tabs",
+      menuItem("Import Plate Data", tabName = "import_tab", icon = icon("file")),
+      menuItem("View, Process, and Export Data", tabName = "view_files_tab", icon = icon("dashboard")),
+      menuItem("Change Study Settings", tabName = "study_settings", icon = icon("cog"))
+    )
+  } else {
+    # disabled visual: mimic menu appearance but not interactive
+    # You can customize CSS further to grey them out; this is a simple, accessible version.
+    tags$div(style = "padding: 10px; color: #888;",
+             tags$strong("Study options are disabled"),
+             tags$p("Select or create a study to enable these actions."),
+             tags$ul(class = "sidebar-menu",
+                     tags$li(class = "treeview disabled",
+                             tags$a(href = "#", icon("file"), "Import Plate Data")
+                     ),
+                     tags$li(class = "treeview disabled",
+                             tags$a(href = "#", icon("dashboard"), "View, Process, and Export Data")
+                     ),
+                     tags$li(class = "treeview disabled",
+                             tags$a(href = "#", icon("cog"), "Change Study Settings")
+                     )
+             )
+    )
+  }
+})
 
+# When study is enabled, explicitly clear any selection among study_tabs so that none are selected.
+# We use a sentinel string "study_none" that does not correspond to any tabName.
+observeEvent(input$readxMap_study_accession, {
+  val <- input$readxMap_study_accession
+  enabled <- !is.null(val) && nzchar(trimws(val)) && val != "Click here"
 
-
-
-# observe({
-#   req(reactive_df_study_exp())
-#
-#   # Get data
-#   df <- reactive_df_study_exp()
-#   df <- df[df$study_accession != "Click here", ]
-#
-#   # Build updated choices
-#   study_choices <- c("Click here" = "Click here",
-#                      setNames(unique(df$study_accession),
-#                               unique(df$study_name)))
-#
-#   # # If user typed a new value, make sure it’s kept in the dropdown
-#   current <- input$readxMap_study_accession
-#   if (!is.null(current) && !(current %in% study_choices)) {
-#     study_choices <- c(study_choices, setNames(current, current))
-#   }
-#   #
-#   # Update the selectize input (keeps selection unless you override)
-#   updateSelectizeInput(
-#     session,
-#     "readxMap_study_accession",
-#     choices = study_choices,
-#     selected = current
-#   )
-# })
+  if (enabled) {
+    # set selected to a non-existing tabName so none of the items appear selected.
+    # This avoids forcing any of the study tabs to display immediately.
+    updateTabItems(session, "study_tabs", selected = "study_none")
+  } else {
+    # when disabled, also clear selection (optional)
+    updateTabItems(session, "study_tabs", selected = "study_none")
+  }
+}, ignoreNULL = FALSE)
 
 output$landing_page_ui <- renderUI({
   cat(input$main_tabs)
@@ -342,8 +227,6 @@ output$landing_page_ui <- renderUI({
   }
 })
 
-
-
 output$body_tabs <- renderUI({
   current_count <- tab_counter()
 
@@ -365,50 +248,6 @@ output$body_tabs <- renderUI({
   ))
 
 })
-
-
-#
-# observe({
-#   req(input$main_tabs)
-#   if (input$main_tabs == "home_tab") {
-#     output$body_tabs <- renderUI({
-#       h2("Welcome to I-SPI")
-#     })
-#   }
-# })
-# observe({
-#   req(input$main_tabs)  # make sure it exists
-#   if (input$main_tabs == "home_tab") {
-#     output$home_tab <- renderUI({
-#       h2("Welcome to I-SPI")
-#       # You can add more landing content here
-#     })
-#   } else {
-#     output$home_tab <- renderUI({
-#       NULL  # hide content when not on Home tab
-#     })
-#   }
-# })
-
-# output$body_tabs <- renderUI({
-#   current_count <- tab_counter()
-#   dynamic_tabs <- lapply(seq_len(current_count), function(i) {
-#     tabItem(tabName = paste0("dynamic_tab_", i),
-#             uiOutput(paste0("dynamic_content_", i)))
-#   })
-#
-#   do.call(tabItems, c(
-#     list(
-#       tabItem(tabName = "view_files_tab", uiOutput("view_stored_experiments_ui")),
-#       tabItem(tabName = "import_tab", uiOutput("readxMapData")),
-#       tabItem(tabName = "manage_project_tab", uiOutput("manage_project_ui"))
-#     ),
-#     dynamic_tabs
-#   ))
-# })
-
-
-
 
 output$load_ui <- renderUI({
   current_user <- currentuser()
@@ -464,8 +303,6 @@ observeEvent(input$execute_project_button, {
   }
 })
 
-
-
 observeEvent(input$execute_project_button1, {
   selected_project_id <- input$userProjectsTableNonOwner_rows_selected
   if (length(selected_project_id) == 1) {
@@ -488,9 +325,6 @@ observeEvent(input$execute_project_button1, {
     ))
   }
 })
-
-
-
 
 output$userProjectsTable <- DT::renderDataTable({
   tabRefreshCounter()$manage_project_tab
@@ -651,25 +485,6 @@ output$view_stored_experiments_ui <- renderUI({
   } # end outer if for nav
 })
 
-# observeEvent({
-#   list(input$qc_component,
-#   input$readxMap_study_accession,
-#   input$readxMap_experiment_accession,
-#   input$study_level_tabs,
-#   input$main_tabs)
-# }, {
-#   if (
-#     input$qc_component == "Data" &&
-#     input$readxMap_study_accession != "Click here" &&
-#     input$readxMap_experiment_accession != "Click here" &&
-#     input$study_level_tabs == "Experiments" &&
-#     input$main_tabs == "view_files_tab"
-#   ) {
-#     cat("Re-entered Data panel — rerendering dynamic_data_ui\n")
-#     rerender_trigger(rerender_trigger() + 1)
-#   }
-# })
-
 # Data Contents
 output$dynamic_data_ui <- renderUI({
   req(input$basic_advance_tabs)
@@ -750,16 +565,6 @@ output$dynamic_data_ui <- renderUI({
   }
 })
 
-
-# deselect whatever was selected for when you come back to the options.
-# observeEvent(input$basic_advance_tabs, {
-#   if (input$basic_advance_tabs != "basic_qc") {
-#     updateRadioGroupButtons(session, "qc_component", selected = character(0))
-#   }
-#   if (input$basic_advance_tabs != "advance_qc") {
-#     updateRadioGroupButtons(session, "advanced_qc_component", selected = character(0))
-#   }
-# })
 observeEvent(input$basic_advance_tabs, {
   if (input$basic_advance_tabs == "basic_qc") {
     updateRadioGroupButtons(session, "advanced_qc_component", selected = character(0))
@@ -772,7 +577,6 @@ observeEvent(input$basic_advance_tabs, {
   #   updateRadioGroupButtons(session, "advanced_qc_component", selected = character(0))
   # }
 })
-
 
 observeEvent(input$advanced_qc_component, {
   req(input$readxMap_study_accession)
@@ -987,167 +791,6 @@ observeEvent(input$qc_component, {
 
   gc(verbose = TRUE)
 })
-#
-# observeEvent(input$qc_component, {
-#  # req(input$qc_component)
-#  # req(input$qc_component != "Select Phase")
-#   cat("QC component\n")
-#   req(input$readxMap_study_accession)
-#   req(input$readxMap_experiment_accession)
-#   print(input$qc_component)
-#
-#  # cat("Standard Curve Collapse Status\n")
-#  # print(input$StandardCurveCollapse)
-#  # if (input$qc == "Bead Count") {
-#   # if (input$qc_component == "Bead Count" &&  !is.null(selected_studyexpplate$study_accession) &&
-#   #     selected_studyexpplate$study_accession != "" &&  !is.null(selected_studyexpplate$experiment_accession) &&  selected_studyexpplate$experiment_accession != ""
-#   #     && selected_studyexpplate$study_accession != "Click here" &&  selected_studyexpplate$experiment_accession != "Click here") {
-#   if (input$qc_component == "Bead Count" && input$readxMap_study_accession != "" && input$readxMap_study_accession != "Click here" &&
-#       input$readxMap_experiment_accession != "" && input$readxMap_experiment_accession != "Click here") {
-#        try(destroyModule("bead_count_mod"), silent = TRUE)
-#        #reload_bead_count(reload_bead_count() + 1)
-#         reload_bead_count <<- reload_bead_count + 1 # global to source counter outside of observeEvent
-#       output$bead_count_module_ui <- renderUI({
-#         #destroyableBeadCountModuleUI("bead_count_mod")
-#         destroyableBeadCountModuleUI(paste0("bead_count_mod_", reload_bead_count))
-#
-#       })
-#     destroyableBeadCountModuleServer(id = paste0("bead_count_mod_",  reload_bead_count), selected_study = reactive(input$readxMap_study_accession),
-#                                      selected_experiment = reactive(input$readxMap_experiment_accession), currentuser())
-#   } else {
-#     destroyModule("bead_count_mod")
-#     output$bead_count_module_ui <- renderUI({ NULL })  # Remove UI
-#     gc(verbose = TRUE)
-#   }
-#
-#   if (input$qc_component == "Standard Curve" && input$readxMap_study_accession != "" && input$readxMap_study_accession != "Click here" &&
-#       input$readxMap_experiment_accession != "" && input$readxMap_experiment_accession != "Click here") {
-#     try(destroyModule("standard_curve_fit_mod"), silent = TRUE)
-#     #reload_bead_count(reload_bead_count() + 1)
-#     reload_sc_fit_mod_count <<- reload_sc_fit_mod_count + 1 # global to source counter outside of observeEvent
-#     output$sc_fit_module_ui <- renderUI({
-#       #destroyableBeadCountModuleUI("bead_count_mod")
-#       destroyableStandardCurveFittingModuleUI(paste0("standard_curve_fit_mod_", reload_sc_fit_mod_count))
-#
-#     })
-#     destroyableStandardCurveFittingServer(id = paste0("standard_curve_fit_mod_",  reload_sc_fit_mod_count), selected_study = reactive(input$readxMap_study_accession),
-#                                      selected_experiment = reactive(input$readxMap_experiment_accession), currentuser())
-#   } else {
-#     destroyModule("standard_curve_fit_mod")
-#     output$sc_fit_module_ui <- renderUI({ NULL })  # Remove UI
-#     gc(verbose = TRUE)
-#   }
-# })
-  # all_outputs <- outputOptions(NULL)
-  # all_outputs_v <<- all_outputs
-  # output_ids <- ls(session$output)
-  # output_objects <- output
-  #
-  # output_ids <- ls(output)
-  #
-  # output_list <- lapply(output_ids, function(id) {
-  #   output[[id]]
-  # })
-  # output_list <<- output_list
-
-  # session_output <- session$output
-  #
-  # temp_outputs_v <<- output_ids
-  # session_output_v <<- session_output
-  # if (input$qc_component != "Data") {
-  #   cat("removing non related data output")
-  #   removeOutput("stored_header", session = session)
-  #   removeOutput("swide_standard", session = session)
-  #   removeOutput("swide_control", session = session)
-  #   removeOutput("swide_buffer", session = session)
-  #   removeOutput("swide_sample", session = session)
-  #   removeOutput("dynamic_data_ui", session = session)
-  #   # output$stored_header <- NULL
-  #   # output$swide_standard <- NULL
-  #   # output$swide_control <- NULL
-  #   # output$swide_buffer <- NULL
-  #   # output$swide_sample <- NULL
-  #   # output$dynamic_data_ui <- NULL
-  #
-  #   gc()
-  # }
-  # if (input$qc_component != "Bead Count") {
-  #   removeOutput("beadCountAnalysisUI", session = session)
-  #   removeOutput("plateSelection_bead_count_UI", session = session)
-  #   removeOutput("sample_data_antigenUI", session = session)
-  #   removeOutput("beadCountPlot", session = session)
-  #   removeOutput("sample_low_bead_count_table", session = session)
-  #   removeOutput("download_bead_gating", session = session)
-  #
-  #   gc(verbose = T)
-  # }
-
-#})
-
-
-# my_session_info <- reactive({
-#   session  # or any other relevant part
-# })
-
-# observeEvent(input$qc_component, {
-#   req(input$readxMap_experiment_accession)
-#   req(stored_plates_data)
-#   req(input$qc_component != "Select Phase")
-#   cat("QC component")
-#   print(input$qc_component)
-#
-#   # m <<- m + 1
-#   # print(paste("plate_selected", plate_selected))
-#   # update_modal_progress(
-#   #   value = m / 8,
-#   #   text = "Rendering wide tables",
-#   #   session = shiny::getDefaultReactiveDomain()
-#   # )
-#
-#
-# #
-# #   tabsetPanel(id = "inLoadedData",
-# #               tabPanel(
-# #                 title = "Data",
-# #                 br(),
-# #                 bsCollapse(
-# #                   id = "dataCollapse",
-# #                   multiple = FALSE,
-# #                   bsCollapsePanel(
-# #                     title = "Header",
-# #                     DT::dataTableOutput("stored_header"),
-# #                     downloadButton("download_stored_header"),
-# #                     uiOutput("header_actions"),
-# #                     style = "primary"
-# #                   ),
-# #                   bsCollapsePanel(
-# #                     title = "Standards",
-# #                     DT::dataTableOutput("swide_standard"),
-# #                     downloadButton("download_stored_standard"),
-# #                     style = "primary"
-# #                   ),
-# #                   bsCollapsePanel(
-# #                     title = "Controls",
-# #                     DT::dataTableOutput("swide_control"),
-# #                     downloadButton("download_stored_control"),
-# #                     style = "primary"
-# #                   ),
-# #                   bsCollapsePanel(
-# #                     title = "Buffer",
-# #                     DT::dataTableOutput("swide_buffer"),
-# #                     downloadButton("download_stored_buffer"),
-# #                     style = "primary"
-# #                   ),
-# #                   bsCollapsePanel(
-# #                     title = "Sample",
-# #                     DT::dataTableOutput("swide_sample"),
-# #                     downloadButton("download_stored_sample"),
-# #                     style = "primary" # set to open initially
-# #                   ),
-# #                   open = "Header"
-# #                 )
-# #               ))
-# }, ignoreInit = FALSE)
 
 observeEvent(input$study_level_tabs, {
   if (input$study_level_tabs == "Experiments") {
@@ -1207,7 +850,6 @@ observeEvent(userWorkSpaceID(), {
   reset_import_values()
 })
 
-
 refreshTabUI <- function(tabName) {
   # Get current counters
   current_counters <- tabRefreshCounter()
@@ -1217,30 +859,29 @@ refreshTabUI <- function(tabName) {
   tabRefreshCounter(current_counters)
 }
 
+# observeEvent(input$main_tabs, {
+#   currentTab <- input$main_tabs
+#
+#   # Reset values when moving away from Import or View Files tabs
+#   if (!is.null(previousTab())) {
+#     if (previousTab() == "import_tab" && currentTab != "import_tab") {
+#       reset_import_values()
+#     }
+#     if (previousTab() == "view_files_tab" && currentTab != "view_files_tab") {
+#       reset_view_values()
+#     }
+#   }
+#
+#   # Refresh current tab
+#   refreshTabUI(currentTab)
+#   previousTab(currentTab)
+# }, ignoreInit = TRUE)
 
-observeEvent(input$main_tabs, {
-  currentTab <- input$main_tabs
-
-  # Reset values when moving away from Import or View Files tabs
-  if (!is.null(previousTab())) {
-    if (previousTab() == "import_tab" && currentTab != "import_tab") {
-      reset_import_values()
-    }
-    if (previousTab() == "view_files_tab" && currentTab != "view_files_tab") {
-      reset_view_values()
-    }
-  }
-
-  # Refresh current tab
-  refreshTabUI(currentTab)
-  previousTab(currentTab)
-}, ignoreInit = TRUE)
-
-# Create a reset function for view values
-reset_view_values <- function() {
-  updateSelectInput(session, "readxMap_study_accession", selected = "Click here")
-  updateSelectInput(session, "readxMap_experiment_accession", selected = "Click here")
-}
+# # Create a reset function for view values
+# reset_view_values <- function() {
+#   updateSelectInput(session, "readxMap_study_accession", selected = "Click here")
+#   updateSelectInput(session, "readxMap_experiment_accession", selected = "Click here")
+# }
 
 output$manage_project_ui <- renderUI({
   if (input$main_tabs != "home_page") {

@@ -94,15 +94,12 @@ authenticated_body_content <- function() {
      )
 }
 
-
-
 # --- Define header, sidebar, body shell (From your HEAD version) ---
 header <- dashboardHeader(
   #tags$li(a(img(src = "apple-touch-icon.png", title = "MADI Logo", height = "30px"), style = "padding-top:10px; padding-bottom:10px;"), class = "dropdown"), # Ensure www/apple-touch-icon.png
   title = "Interactive Serology Plate Inspector",
   titleWidth = 350
 )
-
 
  sidebar <- dashboardSidebar(uiOutput("userpanel"))
 # sidebar <- dashboardSidebar(
@@ -223,15 +220,6 @@ ui <- tagList(
 sidebar <- dashboardSidebar(
   uiOutput("userpanel"),
   uiOutput("project_info"),
-  # selectizeInput(
-  #   "readxMap_study_accession",
-  #   "Choose Existing Study Name OR Create a New Study Name (by typing up to 15 characters)",
-  #   choices = "Click here",
-  #   selected = "Click here",
-  #   multiple = FALSE,
-  #   options = list(create = TRUE),
-  #   width = '500px'
-  # ),
   sidebarMenu(
     id = "main_tabs",
     menuItem("Home", tabName = "home_page", icon = icon("home")),
@@ -239,18 +227,18 @@ sidebar <- dashboardSidebar(
 
   uiOutput("main_study_selector"),
 
-    # menuItem("Import Plate Data", tabName = "import_tab", icon = icon("file")),
-    # menuItem("View, Process, and Export Data", tabName = "view_files_tab", icon = icon("dashboard")),
-    # menuItem("Change Study Settings", tabName = "study_settings", icon = icon("cog"))),
-  #sidebarMenuOutput("sidebar_tabs"),
-sidebarMenu(
-  id = "study_tabs",
-  menuItem("Import Plate Data", tabName = "import_tab", icon = icon("file")),
-  menuItem("View, Process, and Export Data", tabName = "view_files_tab", icon = icon("dashboard")),
-  menuItem("Change Study Settings", tabName = "study_settings", icon = icon("cog"))
-),
-width = 350# dynamic sidebar menu
+  # second menu rendered dynamically
+  uiOutput("study_sidebar"),
+
+  # sidebarMenu(
+  #   id = "study_tabs",
+  #   menuItem("Import Plate Data", tabName = "import_tab", icon = icon("file")),
+  #   menuItem("View, Process, and Export Data", tabName = "view_files_tab", icon = icon("dashboard")),
+  #   menuItem("Change Study Settings", tabName = "study_settings", icon = icon("cog"))
+  # ),
+  width = 350 # dynamic sidebar menu
 )
+
 # sidebar <- dashboardSidebar(uiOutput("userpanel"), width = 350)
 body <- dashboardBody(
   style = "min-height:100vh; background-color: smokewhite;",
@@ -678,8 +666,6 @@ server <- function(input, output, session) {
     }
   })
 
-
-
   # --- UI Rendering Logic (from HEAD) ---
 
   output$body_content_ui <- renderUI({
@@ -697,9 +683,6 @@ server <- function(input, output, session) {
       )
     }
   })
-
-
-
 
   output$userpanel <- renderUI({
     ud <- user_data()
