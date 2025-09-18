@@ -8,8 +8,6 @@ source("global.R", local = TRUE)
 # Sys.setenv(LOCAL_DEV = "1")
 
 
-
-
 # Source authentication configuration (Step 1)
 # Defines DEX_*, APP_REDIRECT_URI, OIDC_SCOPES, endpoints, get_jwks(), `%||%`, dex_client
 print("Sourcing auth_config.R...")
