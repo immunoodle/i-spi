@@ -66,7 +66,7 @@ observeEvent(input$readxMap_study_accession, {
   }
 })
 
-observeEvent(input$readxMap_experiment_accession, {
+observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), {
   req(input$readxMap_experiment_accession != "Click here")
 
   removeTab(inputId = "body_panel_id", target="previewxMap")
