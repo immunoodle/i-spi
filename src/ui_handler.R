@@ -243,7 +243,7 @@ output$landing_page_ui <- renderUI({
           )
         ),
         p("The organization of projects, studies and experiments and how data and QC/QA results can be shared is outlined in the figure below."),
-        img(src = "research_ISPI_organization.png", style = "max-width: 80%;"),
+        img(src = "research_ISPI_organization_revised.png", style = "max-width: 80%;"),
         br(),
         br(),
         HTML(
