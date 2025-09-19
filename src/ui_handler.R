@@ -537,6 +537,12 @@ output$dynamic_data_ui <- renderUI({
     input$study_level_tabs == "Experiments" &&
     input$main_tabs == "view_files_tab"
   ) {
+    tagList(
+      actionButton(
+        inputId = "refresh_data_button",
+        label = "Refresh Data",
+        icon = icon("refresh")
+      ),
     tabsetPanel(
       id = "dataCollapse",
       tabPanel(
@@ -565,6 +571,7 @@ output$dynamic_data_ui <- renderUI({
         DT::dataTableOutput("swide_sample"),
         downloadButton("download_stored_sample")
       )
+    )
     )
 
     # bsCollapse(
@@ -649,6 +656,11 @@ observeEvent({
     }
   }
 }, ignoreNULL = TRUE, ignoreInit = TRUE)
+
+
+observeEvent(input$refresh_data_button, {
+  refresh_data_trigger(refresh_data_trigger() + 1)
+})
 
 # observeEvent({
 #   list(

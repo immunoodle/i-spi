@@ -765,6 +765,7 @@ server <- function(input, output, session) {
       currentuser <- reactiveVal("unknown user")
       usersession <- reactiveVal("unknown session")
 
+      refresh_data_trigger <- reactiveVal(0) # trigger to refresh data
       stored_plates_data <- reactiveValues()
       storedlong_plates_data <- reactiveValues()
       selected_studyexpplate <- reactiveValues()
