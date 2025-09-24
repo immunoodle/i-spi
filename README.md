@@ -95,8 +95,8 @@ Defined in [`db_scripts/db_outliers.sql`](db_scripts/db_outliers.sql):
 
 ---
 
-## Key Functions
-
+## Security Issues
+If you uncover a security vulnerability in this app or in its containerization, please do not create a public notice and description, but instead contact Michael.S.Zens@dartmouth.edu and he will return your email as soon as possible. If necessary our I-SPI team will provide a full team response to address this type of problem swiftly and rigorously.
 
 ---
 
