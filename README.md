@@ -19,15 +19,16 @@ A Shiny-based web application for analyzing and managing serology assay data wit
 - **Access Control:** Share projects with secure keys (UUID), validated in `user_management.R`
 
 ### Data Import & Processing
-- **Multi-format Import:** Handles various Luminex file types (`import_lumifile.R`)
+- **Multi-format Import:** Handles various bead array file types (`import_lumifile.R`)
 - **Multi-Plate Support:** Organize and analyze multi-plate experiments (`combined_plates.R`)
 - **Data Validation:** Built-in QC checks (`reset_import_values`)
 
 ### Analysis & Visualization
-- **Dilution Analysis:** Comprehensive dilution series analysis (`dilution_analysis_ui.R`)
-- **Curve Fitting:** Advanced algorithms (`curve_calc.R`)
-- **Blank Controls:** Background subtraction
+- **Blank Controls:** Background subtraction or sample gating
 - **Bead Count Metrics:** Quality checks (`bead_count_functions.R`)
+- **Curve Fitting:** Advanced algorithms (`standard_curve_ui.R`)
+- **Dilution Analysis:** Comprehensive dilution series analysis (`dilution_analysis_ui.R`)
+- **Dilutional Linearity Correction:** Interactive method for computing corrected interpolated values comparable between samples run at different dilutions. ('dilutional_linearity_ui.R')
 - **Outlier Detection:** Statistical outlier analysis (`outliers.R`)
 - **Interactive UI:** Dynamic tables, collapsible panels, real-time updates, export support
 
