@@ -274,6 +274,7 @@ observe({
 
     type_vector <- unique_plate_types()
 
+
     create_ui_output <- function(type) {
       output_name <- paste0("ui_", type)
       output[[output_name]] <- renderUI({

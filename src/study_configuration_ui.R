@@ -1464,7 +1464,7 @@ output$user_parameter_download_handle <-  downloadHandler(
     paste(input$readxMap_study_accession, "study_config", currentuser(), ".csv", sep = "_")
   },
   content = function(file) {
-    req(input$main_tabs == "view_files_tab")
+    req(input$main_tabs == "study_settings")
     req(input$readxMap_study_accession)
     req(currentuser())
 

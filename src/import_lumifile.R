@@ -343,6 +343,10 @@ output$segment_selector <- renderUI({
     unique() -> unique_types
 
   unique_types <- c("P", unique_types)
+  # only handle the allowed types
+  allowed_types <- c("P", "X", "S", "C", "B")
+  unique_types <- unique_types[!is.na(unique_types) & unique_types %in% allowed_types]
+
   unique_plate_types(unique_types)
 
  if (!type_p_completed()) {
