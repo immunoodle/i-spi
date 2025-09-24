@@ -1,4 +1,4 @@
-# Contributing to The Interactive Serology Plate Inspector (I-SPI)
+# Contributing to the Interactive Serology Plate Inspector (I-SPI)
 
 Thank you for your interest in contributing to **I-SPI**! We welcome contributions from the community to help improve the project. This document outlines how you can help and the best practices to follow when contributing.
 
@@ -10,8 +10,7 @@ Thank you for your interest in contributing to **I-SPI**! We welcome contributio
 - [Code Style](#code-style)
 - [Testing](#testing)
 - [Submitting Pull Requests](#submitting-pull-requests)
-- [Code of Conduct](#code-of-conduct)
-- [Additional Resources](#additional-resources)
+- [Code of Conduct](#contributor-code-of-conduct)
 
 ---
 
@@ -55,6 +54,7 @@ Ensuring your changes work as expected and that you don’t break existing funct
 - For documentation improvements, preview the generated docs if possible.
 
 ### Submitting Pull Requests
+
 Thank you for contributing! To make the review process smooth and efficient, please follow these guidelines:
 Fork the repository and create your branch from main (or the default branch):
     - git checkout -b feature/your-feature-name
@@ -72,7 +72,7 @@ Open a Pull Request against the main repository’s main branch.
 -  Explain any special considerations or deployment notes.
 -  Respond to feedback and update your pull request as needed.
 -  
-### Contributor Code of Conduct
+# Contributor Code of Conduct
 
 ## Our Pledge
 We are committed to fostering an open and welcoming environment where everyone feels safe to contribute. All participants are expected to uphold this spirit through respectful, kind, and inclusive behavior.
