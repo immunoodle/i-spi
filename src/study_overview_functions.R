@@ -1062,7 +1062,7 @@ plot_preped_analyte_fit_summary <- function(preped_data, analyte_selector) {
     mutate(
       fit_category = factor(fit_category,
                             levels = c("nlinear", "nhighbeadagg", "nlowbead", "ntooconc", "ntoodilut", "nabovelod", "nbelowlod"),
-                            labels = c("In Linear Range", "High Bead Aggregation", "Low Bead Count",
+                            labels = c("In Quantifiable Range", "High Bead Aggregation", "Low Bead Count",
                                        "Too Concentrated", "Too Diluted", "Above ULOD", "Below LLOD")
       )
     ) %>%
@@ -1070,7 +1070,7 @@ plot_preped_analyte_fit_summary <- function(preped_data, analyte_selector) {
       fit_category = if_else(crit == "No Model", "No Model", as.character(fit_category)),
       count = if_else(fit_category == "No Model", failed_model_count, count),
       fit_category = factor(fit_category,
-                            levels = c("No Model", "In Linear Range", "High Bead Aggregation",
+                            levels = c("No Model", "In Quantifiable Range", "High Bead Aggregation",
                                        "Low Bead Count", "Too Concentrated", "Too Diluted",
                                        "Above ULOD", "Below LLOD"))
     )
@@ -1089,7 +1089,7 @@ plot_preped_analyte_fit_summary <- function(preped_data, analyte_selector) {
        "Below LLOD",
        "Low Bead Count",
        "Too Diluted",
-       "In Linear Range",
+       "In Quantifiable Range",
        "Too Concentrated",
        "High Bead Aggregation",
        "Above ULOD",
@@ -1159,7 +1159,7 @@ plot_preped_analyte_fit_summary <- function(preped_data, analyte_selector) {
      "Below LLOD"            = "#313695",
      "Low Bead Count"        = "#4575b4",
      "Too Diluted"           = "#91bfdb",
-     "In Linear Range"       = "#1a9850",
+     "In Quantifiable Range" = "#1a9850",
      "Too Concentrated"      = "#fee08b",
      "High Bead Aggregation" = "#fc8d59",
      "Above ULOD"            = "#d73027",
@@ -1241,7 +1241,7 @@ plot_preped_analyte_fit_summary <- function(preped_data, analyte_selector) {
       "Below LLOD"            = "#313695",
       "Low Bead Count"        = "#4575b4",
       "Too Diluted"           = "#91bfdb",
-      "In Linear Range"       = "#1a9850",  # green (center)
+      "In Quantifiable Range" = "#1a9850",  # green (center)
       "Too Concentrated"      = "#fee08b",
       "High Bead Aggregation" = "#fc8d59",
       "Above ULOD"            = "#d73027",
