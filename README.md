@@ -103,7 +103,7 @@ If you uncover a security vulnerability in this app or in its containerization, 
 
 ## Contributing
 
-Follows standard R/Shiny modular best practices with error handling and clean code organization.
+See the section: [CONTRIBUTING](CONTRIBUTING.md)
 
 ---
 
