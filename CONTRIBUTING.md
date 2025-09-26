@@ -71,7 +71,7 @@ Open a Pull Request against the main repository’s main branch.
 -  Link any related issues.
 -  Explain any special considerations or deployment notes.
 -  Respond to feedback and update your pull request as needed.
--  
+  
 # Contributor Code of Conduct
 
 ## Our Pledge
