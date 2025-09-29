@@ -94,10 +94,10 @@ observeEvent(input$study_level_tabs, {
           downloadButton("download_arm_balance_sample", "Download Sample Proportions Across Study Arms, Analyte, and Plate")
         ),
         tabPanel(
-          "Samples by Timeperiod",
+          "Samples by Timepoint",
           plotOutput("analyte_antigen_timeperiod", height = "800px"),
           downloadButton("download_analyte_antigen_plot", "Download Plot"),
-          downloadButton("download_analyte_antigen_plot_data", "Download Samples Summarized by Timeperiod"),
+          downloadButton("download_analyte_antigen_plot_data", "Download Samples Summarized by Timepoint"),
           br(),
           DTOutput("sample_spec_timeperiod_summary_table")
           #downloadablePlotUI("analyte_antigen_timeperiod"),
@@ -536,7 +536,7 @@ observeEvent(input$study_level_tabs, {
                            y_var = "plate",
                            time_var = "timeperiod",
                            count_var = "n",
-                           title_var = "Number of Samples by Analyte, Plate, and Timeperiod",
+                           title_var = "Number of Samples by Analyte, Plate, and Timepoint",
                            time_var_order = "timeperiod_order",
                            time_var_palette = microviz_kelly_pallete)
     }
@@ -556,12 +556,14 @@ observeEvent(input$study_level_tabs, {
         ~ index_named_vector[[.x]]
       )
       dt <- create_timeperiod_table(sample_spec_timeperiod)
-      datatable(dt, caption = "Number of Samples by Analyte, Plate, and Timeperiod", filter = "top")
+      # rename for readability
+      names(dt)[names(dt) == "timeperiod"] <- "timepoint"
+      datatable(dt, caption = "Number of Samples by Analyte, Plate, and Timepoint", filter = "top")
     })
 
     output$download_analyte_antigen_plot <- downloadHandler(
       filename = function() {
-        paste(input$readxMap_study_accession, "analyte_antigen_timeperiod_plot.pdf", sep = "_")
+        paste(input$readxMap_study_accession, "analyte_antigen_timepoint_plot.pdf", sep = "_")
       },
       content = function(file) {
         # Save the plot to the specified file
@@ -575,7 +577,7 @@ observeEvent(input$study_level_tabs, {
 
     output$download_analyte_antigen_plot_data <- downloadHandler(
       filename = function() {
-        paste(input$readxMap_study_accession, "summarise_by_timeperiod.csv", sep = "_")
+        paste(input$readxMap_study_accession, "summarise_by_timepoint.csv", sep = "_")
       }, content = function(file) {
         req(input$readxMap_study_accession)
         req(sample_specimen)
