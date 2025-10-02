@@ -253,8 +253,12 @@ observeEvent(input$upload_to_shiny,{
         actionButton("view_raw_file", "View Raw File"),
         actionButton("view_raw_header", "View Plate Metadata"),
         if (is.null(plate_validation_messages())) {
-          selectInput("blank_keyword", "Blank Keyword:",
-                    choices = c("empty_well","use_as_blank"))
+          tagList(
+          tags$p("If this plate contains blanks (including the word Blank in the description of a sample well) or empty wells, choose whether to skip them or use them as blanks."),
+          selectInput("blank_keyword", "Blank and Empty Well Handling",
+                    choices = c("Skip Empty Wells" = "empty_well",
+                                "Use as Blank" = "use_as_blank"))
+          )
           },
         uiOutput("plate_validated_status"),
         tableOutput("plate_validation_message_table")
@@ -286,7 +290,19 @@ observeEvent(input$uploaded_sheet,{
   transform_dat <- data.frame(lapply(transform_dat, function(x) {  gsub("[,]", ".", x) }))
   transform_dat <- data.frame(lapply(transform_dat, function(x) {  gsub("[*]+", "", x) }))
   transform_dat <- data.frame(lapply(transform_dat, function(x) {  gsub("[.]+", ".", x) }))
+
+
+  # remove trailing rows at the end of file that contain all NA or blank strings
+  transform_dat <- transform_dat[!apply(
+    transform_dat, 1,
+    function(x) all(is.na(x) | trimws(x) == "" | trimws(x) == "NA")
+  ), ]
+
+
   plate_data(transform_dat)
+
+  # options(max.print = 1000000)
+  # print(transform_dat)
 
   plate_data <- transform_dat
   meta_df <- parse_metadata_df(header_info())
@@ -325,8 +341,9 @@ output$plate_validated_status <- renderUI({
 output$plate_validation_message_table <- renderTable({
   req(plate_validation_messages())
   messages_table <- data.frame(
-    Message_Number = seq_along(plate_validation_messages()),
-    Message = plate_validation_messages()
+    "Message Number" = seq_along(plate_validation_messages()),
+    "Please correct the formatting errors in the file" = plate_validation_messages(),
+    check.names = FALSE
   )
 
 })

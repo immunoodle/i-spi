@@ -162,10 +162,10 @@ end_col <- which(names(df) == "X..Agg.Beads")
 # 2. Subset the columns of interest
 subset_df <- df[, (start_col + 1):(end_col-1)]
 
-# 3. Apply regex check to all cells in those columns
+# 3. Apply regex check to all cells in those columns space care about ^\\d+(\\.\\d+)? \\(\\d+\\)$
 #    This creates a logical matrix (same size as subset_df)
 match_matrix <- apply(subset_df, 2, function(col) {
-  grepl("^\\d+(\\.\\d+)? \\(\\d+\\)$", col)
+  grepl("^\\d+(\\.\\d+)?\\s*\\(\\d+\\)$", col)
 })
 
 if (all(match_matrix)) {
