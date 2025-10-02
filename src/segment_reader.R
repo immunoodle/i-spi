@@ -332,6 +332,7 @@ output$table_plates <- renderRHandsontable({
 
   # Parse metadata into key-value df
   meta_df <- parse_metadata_df(header_info())
+
                                # study_accession = input$readxMap_study_accession_import,
                                # experiment_accession = input$readxMap_experiment_accession_import,
                                # currentuser = currentuser(),

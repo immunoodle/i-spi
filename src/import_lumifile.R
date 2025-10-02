@@ -251,7 +251,13 @@ observeEvent(input$upload_to_shiny,{
                     choices = c("Select excel sheet" = "", sheets),  # Combine default with sheets
                     selected = ""),
         actionButton("view_raw_file", "View Raw File"),
-        actionButton("view_raw_header", "View Raw Header")
+        actionButton("view_raw_header", "View Plate Metadata"),
+        if (is.null(plate_validation_messages())) {
+          selectInput("blank_keyword", "Blank Keyword:",
+                    choices = c("empty_well","use_as_blank"))
+          },
+        uiOutput("plate_validated_status"),
+        tableOutput("plate_validation_message_table")
       )
     }
 
@@ -282,8 +288,46 @@ observeEvent(input$uploaded_sheet,{
   transform_dat <- data.frame(lapply(transform_dat, function(x) {  gsub("[.]+", ".", x) }))
   plate_data(transform_dat)
 
+  plate_data <- transform_dat
+  meta_df <- parse_metadata_df(header_info())
+
+  plate_validation_result <- plate_validation(plate_metadata = meta_df,
+                                               plate_data = plate_data,
+                                               blank_keyword = input$blank_keyword)
+
+  # cat(plate_validation_result$is_valid)
+  # cat(plate_validation_result$messages)
+  plate_validation_messages(plate_validation_result$messages)
+  is_valid_plate(plate_validation_result$is_valid)
+  if (plate_validation_result$is_valid) {
+     plate_data(plate_validation_result$updated_plate_data)
+  }
+
+
 
   }
+
+})
+
+output$plate_validated_status <- renderUI({
+  req(input$uploaded_sheet)# trigger refresh
+
+  if (!is_valid_plate()) {
+    div(
+      style = "display: flex; align-items: center; gap: 10px;",
+      createValidateBadge(is_validated = is_valid_plate())
+    )
+  } else {
+    createValidateBadge(is_validated = is_valid_plate())
+  }
+})
+
+output$plate_validation_message_table <- renderTable({
+  req(plate_validation_messages())
+  messages_table <- data.frame(
+    Message_Number = seq_along(plate_validation_messages()),
+    Message = plate_validation_messages()
+  )
 
 })
 
@@ -303,6 +347,7 @@ observeEvent(input$view_raw_file,{
     rhandsontable(plate_data(), readOnly = TRUE)
   })
 
+ # plate_data <<- plate_data()
   print(plate_data())
 })
 
@@ -311,7 +356,7 @@ observeEvent(input$view_raw_header,{
 
   showModal(
     modalDialog(
-      title = "Raw Header",
+      title = "Plate Metadata",
       rhandsontable::rHandsontableOutput("raw_header_file"),
       size = "l",
       easyClose = TRUE
@@ -322,10 +367,12 @@ observeEvent(input$view_raw_header,{
     rhandsontable(header_info(), readOnly = TRUE)
   })
 
+ # platemetadata <<- header_info()
   print(header_info())
 })
 
 output$segment_selector <- renderUI({
+  req(is_valid_plate()) # Only show if it has a valid plate too
 
   req(plate_data())  # Ensure that there is data to work with
   # require sheet
