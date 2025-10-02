@@ -378,6 +378,8 @@ output$table_plates <- renderRHandsontable({
               Handsontable.renderers.TextRenderer.apply(this, arguments);
               if (value === null || value === '' || value === 'NA') {
                 td.style.background = 'lightcoral';   // highlight empty cells
+                td.innerHTML = 'please fill in';
+                td.style.fontStyle = 'italic';
               }
             }"
        )
