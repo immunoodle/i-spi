@@ -113,28 +113,32 @@ The information icon below the figure provides definitions for terminology and a
                # Save Model Fits
                uiOutput(ns("saveButtonsUI")),
                br(),
-              div(class = "standard-curve_model-fit-collapse-container",
-               bsCollapse(
-                 id = ns("standard_curve_model_fit"),
-                 bsCollapsePanel(
-                   title = "Parameter Estimates and Summary Statistics",
-                   div(class = "table-container", tableOutput(ns("parameterFit"))),
-                   div(class = "table-container", tableOutput(ns("modelFit"))),
-                   style = "primary"
-                 )
-               )
-               ),
-              div(class = "gated-samples-collapse-container",
-               bsCollapse(
-                 id = ns("gated_samples"),
-                 bsCollapsePanel(
-                   title = "Gated Samples",
-                   div(class = "table-container",tableOutput(ns("above_ulod_table"))),
-                   div(class = "table-container",tableOutput(ns("below_limit_table"))),
-                   style = "primary"
-                 )
-               )
-              )
+              div(class = "table-container", tableOutput(ns("parameterFit"))),
+              div(class = "table-container", tableOutput(ns("modelFit"))),
+              # div(class = "standard-curve_model-fit-collapse-container",
+              #  bsCollapse(
+              #    id = ns("standard_curve_model_fit"),
+              #    bsCollapsePanel(
+              #      title = "Parameter Estimates and Summary Statistics",
+              #      div(class = "table-container", tableOutput(ns("parameterFit"))),
+              #      div(class = "table-container", tableOutput(ns("modelFit"))),
+              #      style = "primary"
+              #    )
+              #  )
+              #  ),
+              div(class = "table-container",tableOutput(ns("above_ulod_table"))),
+              div(class = "table-container",tableOutput(ns("below_limit_table")))
+              #div(class = "gated-samples-collapse-container",
+               # bsCollapse(
+               #   id = ns("gated_samples"),
+               #   bsCollapsePanel(
+               #     title = "Gated Samples",
+               #     div(class = "table-container",tableOutput(ns("above_ulod_table"))),
+               #     div(class = "table-container",tableOutput(ns("below_limit_table"))),
+               #     style = "primary"
+               #   )
+               # )
+              #)
              )
       )
     )
@@ -817,7 +821,8 @@ standardCurveFittingServer <- function(id, selected_study, selected_experiment, 
         fit_table <- as.data.frame(fit_table)
 
         fit_table
-      })
+      }, caption= "Parameter Estimates",
+      caption.placement = getOption("xtable.caption.placement", "top"))
 
       # Model Fit for saving UI
       output$modelFitUI <- renderUI({
@@ -838,7 +843,8 @@ standardCurveFittingServer <- function(id, selected_study, selected_experiment, 
         model_fit_tab <- mod[2]
         model_fit_tab <- as.data.frame(model_fit_tab)
         model_fit_tab
-      })
+      },caption= "Summary Statistics",
+      caption.placement = getOption("xtable.caption.placement", "top"))
 
 
       # Sample values above ULOD table
