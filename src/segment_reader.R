@@ -293,7 +293,8 @@ observe({
           req(header_info())
           tagList(
             p("Edit editable fields in the table to assign plate information. The sample dilution factor must be between 1 and 100,000.
-              plate should be in the form plate_n (n = 1–99, optionally followed by a lowercase letter a–z)."),
+              plate should be in the form plate_n (n = 1–99, optionally followed by a lowercase letter a–z).
+              Additional variables in the plate metadata that currently are not stored in the database are automatically ignored in the table for the uploading for Type P."),
             uiOutput("upload_head_status"),
             rHandsontableOutput("table_plates"),
             # conditionalPanel(
@@ -332,6 +333,18 @@ output$table_plates <- renderRHandsontable({
 
   # Parse metadata into key-value df
   meta_df <- parse_metadata_df(header_info())
+
+  # Variables stored in the database
+  stored_variables <- c(
+    "file_name", "acquisition_date", "reader_serial_number",
+    "rp1_pmt_volts", "rp1_target", "plateid", "plate_id", "plate"
+  )
+ # remove any extra for downstream saving.
+  extra_cols <- setdiff(names(meta_df), stored_variables)
+  if (length(extra_cols) > 0) {
+    meta_df <- meta_df[, setdiff(names(meta_df), extra_cols), drop = FALSE]
+  }
+
 
                                # study_accession = input$readxMap_study_accession_import,
                                # experiment_accession = input$readxMap_experiment_accession_import,

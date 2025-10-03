@@ -21,6 +21,23 @@ check_time_format <- function(x) {
   grepl("^\\d{2}-[A-Za-z]{3}-\\d{4}, \\d{2}:\\d{2} (AM|PM)$", x)
 }
 
+## Validate the required variables present in metadata
+# validate_metadata_variables <- function(df) {
+#   required_vars <- c(
+#     "file_name", "acquisition_date", "plateid", "plate_id", "plate"
+#   )
+#
+#   missing_vars <- setdiff(required_vars, names(df))
+#
+#   if (length(missing_vars) > 0) {
+#     message <- paste("The following required variables are missing from the plate metadata:",
+#                paste(missing_vars, collapse = ", "))
+#    return(list(FALSE, message))
+#   } else {
+#     return(list(TRUE))
+#   }
+# }
+
 ## Primary dataset
 # Type column must be in correct format
 check_type_column <- function(df) {
@@ -209,7 +226,29 @@ if (all(match_matrix)) {
 plate_validation <- function(plate_metadata, plate_data, blank_keyword) {
   message_list <- c()
 
-  # first check to see if it passes file Path
+  # validate the required columns
+  required_cols <- c("file_name", "rp1_pmt_volts", "rp1_target", "acquisition_date")
+  missing_cols <- setdiff(required_cols, names(plate_metadata))
+
+  if (length(missing_cols) > 0) {
+    message_list <- c(
+      message_list,
+      paste("The following required plate metadata columns are missing so further parsing cannot be conducted:",
+            paste(missing_cols, collapse = ", "))
+    )
+    # If critical metadata is missing, return early
+    return(list(
+      is_valid = FALSE,
+      messages = message_list
+    ))
+  }
+
+  # pass_required_metadata_variables <- validate_metadata_variables(plate_metadata)
+  # if (!pass_required_metadata_variables[[1]]) {
+  #   message_list <- c(message_list, pass_required_metadata_variables[[2]])
+  # }
+
+  # check to see if it passes file Path
   pass_file_path <- looks_like_file_path(plate_metadata$file_name)
   if (!pass_file_path) {
      message_list <- c(message_list, "Ensure the file path has foward or backward slashes based on Mac or Windows")

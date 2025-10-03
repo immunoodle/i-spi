@@ -254,7 +254,9 @@ observeEvent(input$upload_to_shiny,{
         actionButton("view_raw_header", "View Plate Metadata"),
         if (is.null(plate_validation_messages())) {
           tagList(
-          tags$p("If this plate contains blanks (including the word Blank in the description of a sample well) or empty wells, choose whether to skip them or use them as blanks."),
+          tags$p("If this plate contains wells without samples use the word the 'Blank' in the description column of the spreadsheet.
+          Then assign the two phrases below to indicate if the wells should be treated as blanks
+          (e.g. containing PBS) or if the wells should be treated as empty."),
           selectInput("blank_keyword", "Blank and Empty Well Handling",
                     choices = c("Skip Empty Wells" = "empty_well",
                                 "Use as Blank" = "use_as_blank"))
