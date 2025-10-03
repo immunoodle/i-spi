@@ -326,16 +326,17 @@ dilutionalLinearityServer <- function(id, selected_study, selected_experiment, c
       if (is.null(plate_lm_facets())) {
         return(NULL)
       } else {
-      div(class = "dilutional_linearity-collapse-container",
-          bsCollapse(
-            id = ns("linearity_stats"),
-            bsCollapsePanel(
-              title = "Summary Statistics",
-              div(class = "table-container", tableOutput(ns("facet_model_glance"))),
-              style = "primary"
-            )
-          )
-      )
+        div(class = "table-container", tableOutput(ns("facet_model_glance")))
+      # div(class = "dilutional_linearity-collapse-container",
+      #     bsCollapse(
+      #       id = ns("linearity_stats"),
+      #       bsCollapsePanel(
+      #         title = "Summary Statistics",
+      #         div(class = "table-container", tableOutput(ns("facet_model_glance"))),
+      #         style = "primary"
+      #       )
+      #     )
+      # )
       }
     })
 

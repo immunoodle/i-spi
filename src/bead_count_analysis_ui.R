@@ -97,17 +97,18 @@ beadCountModuleUI <- function(id) {
         ),
         plotlyOutput(ns("beadCountPlot"), width = "75vw"),
         br(),
-        div(
-          class = "bead-count-collapse-container",
-        bsCollapse(
-          id = ns("sample_bead_count_collapse"),
-          bsCollapsePanel(
-            title = "Samples with low Bead Counts",
-            div(style = "overflow-x: auto; width: 100%;",tableOutput(ns("sample_low_bead_count_table"))),
-            style = "primary"
-          )
-        )
-        ),
+        div(style = "overflow-x: auto; width: 100%;",tableOutput(ns("sample_low_bead_count_table"))),
+        # div(
+        #   class = "bead-count-collapse-container",
+        # bsCollapse(
+        #   id = ns("sample_bead_count_collapse"),
+        #   bsCollapsePanel(
+        #     title = "Samples with low Bead Counts",
+        #     div(style = "overflow-x: auto; width: 100%;",tableOutput(ns("sample_low_bead_count_table"))),
+        #     style = "primary"
+        #   )
+        # )
+        # ),
         #div(style = "overflow-x: auto; width: 100%;",tableOutput("sample_low_bead_count_table")),
         br(),
         #uiOutput(ns("download_bead_gating"))
