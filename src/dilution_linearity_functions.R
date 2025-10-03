@@ -1942,7 +1942,9 @@ prepare_lm_sample_data <- function(study_accession, experiment_accession, is_log
   t_sample_data <-  merge(t_sample_data, t_sample_data_gc_linear, all.x = T, by = c("antigen", "patientid", "timeperiod"))
 
 
-  return(distinct_samples)
+  distinct_samples$plate <- sub(".*?(plate[0-9]+).*", "\\1", distinct_samples$plate)
+
+    return(distinct_samples)
 
 }
 
@@ -2088,7 +2090,9 @@ dil_lin_regress <- function(distinct_samples, response_type, exclude_conc_sample
   # Keep all original data including too concentrated samples
   cat("Excluding concentrated samples")
   print(exclude_conc_samples)
-  #dilution_df_full <- dilution_df
+
+ # dilution_df_full <<- dilution_df
+
   dilution_df_modeling <- dilution_df
   if (exclude_conc_samples) {
     dilution_df_modeling$ecs_group <- case_when(
@@ -2155,6 +2159,7 @@ dil_lin_regress <- function(distinct_samples, response_type, exclude_conc_sample
     # x <- "x_au"
     # y <- "y_au"
     safe_fit_model <- safely(fit_model)
+    #dilution_df_modeling_v <<- dilution_df_modeling
     results <- dilution_df_modeling %>%
       group_by(plate, y_dilution, antigen) %>%
       nest() %>%
@@ -2253,6 +2258,15 @@ dil_lin_regress <- function(distinct_samples, response_type, exclude_conc_sample
 }
 # Plot one regression in the facet
 plot_single_regres <- function(distinct_samples, dil_lin_regress_list, plate, antigen, y_dil, is_dil_lin_corr, response_type, is_log_mfi_axis) {
+  distinct_samples <<- distinct_samples
+  dil_lin_regress_list <<- dil_lin_regress_list
+  plate <<- plate
+  antigen <<- antigen
+  is_dil_lin_corr <<- is_dil_lin_corr
+  response_type <<- response_type
+  y_dil <<- y_dil
+  is_log_mfi_axis <<- is_log_mfi_axis
+
   concentration_colors <- c(
     "Acceptable / Acceptable" = "#6699cc",
     "Acceptable / Too Concentrated" = "#fc8d62",
@@ -2545,6 +2559,9 @@ dilution_lm_facet <- function(distinct_samples, dil_lin_regress_list, plate, ant
 produce_all_plate_facets <- function(distinct_samples, dil_lin_regress_list, selected_antigen, is_dil_lin_corr, response_type, is_log_mfi_axis) {
   if (!is.null(dil_lin_regress_list)) {
   available_plates <- sort(unique(distinct_samples$plate))
+  # ensure it is just plate then a number
+  available_plates <- sub(".*?(plate[0-9]+).*", "\\1", available_plates)
+
   #available_plates <- available_plates[order(as.numeric(gsub("\\D+", "", available_plates)))]
 
   nested_results <- lapply(available_plates, function(pl) {

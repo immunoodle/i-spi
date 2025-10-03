@@ -230,6 +230,7 @@ dilutionalLinearityServer <- function(id, selected_study, selected_experiment, c
      # req(plate_lm_facets())
       if (!is.null(plate_lm_facets())) {
       plot_list <- plate_lm_facets()
+     # plot_list_v <<- plot_list
 
       tab_list <- lapply(seq_along(plot_list), function(i) {
         if (!is.null(plot_list[[i]])) {
