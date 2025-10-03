@@ -838,6 +838,8 @@ server <- function(input, output, session) {
 
 
       availableSheets <- reactiveVal()
+      is_valid_plate <- reactiveVal()
+      plate_validation_messages <- reactiveVal(NULL)
       inFile <- reactiveVal()
       xponent_plate_data <- reactiveVal()
       xponent_meta_data <- reactiveVal()
@@ -860,6 +862,7 @@ server <- function(input, output, session) {
       source("study_overview_ui.R", local = TRUE)
       source("antigen_family_ui.R", local = TRUE)
       source("load_previous_stored_data.R", local=TRUE)
+      source("plate_validator_functions.R", local = TRUE)
       source("import_lumifile.R", local = TRUE)
       source("xPonentReader.R", local = TRUE)
       source("segment_reader.R", local = TRUE)

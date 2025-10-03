@@ -230,8 +230,12 @@ output$landing_page_ui <- renderUI({
           ),
           tags$li(
             tags$p("Create or Load a Study"),
-            tags$p("To import your data into a study, click Import Plate Data in the sidebar. Select an existing study or create a new study by typing a new name into the study field in the sidebar.
-                   Plate data can be imported into I-SPI once a study is selected.")
+            tags$p("Select an existing study or create a new study by typing a new name into the study field in the sidebar.")
+          ),
+          tags$li(
+            tags$p("Import Plate Data"),
+            tags$p("To import your data into a study, click Import Plate Data in the sidebar. Plate data can be imported into I-SPI once a study is selected.
+                   For more detailed information, guidance, and tips on importing data please visit our ",tags$a(href = "I_SPI_data_upload_guide.pdf","guide on importing data.", target = "_blank"))
           ),
           tags$li(
             tags$p("Change Study Settings"),

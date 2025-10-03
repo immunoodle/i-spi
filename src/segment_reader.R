@@ -293,7 +293,8 @@ observe({
           req(header_info())
           tagList(
             p("Edit editable fields in the table to assign plate information. The sample dilution factor must be between 1 and 100,000.
-              plate should be in the form plate_n where n is a number."),
+              plate should be in the form plate_n (n = 1–99, optionally followed by a lowercase letter a–z).
+              Additional variables in the plate metadata that currently are not stored in the database are automatically ignored in the table for the uploading for Type P."),
             uiOutput("upload_head_status"),
             rHandsontableOutput("table_plates"),
             # conditionalPanel(
@@ -332,6 +333,19 @@ output$table_plates <- renderRHandsontable({
 
   # Parse metadata into key-value df
   meta_df <- parse_metadata_df(header_info())
+
+  # Variables stored in the database
+  stored_variables <- c(
+    "file_name", "acquisition_date", "reader_serial_number",
+    "rp1_pmt_volts", "rp1_target", "plateid", "plate_id", "plate"
+  )
+ # remove any extra for downstream saving.
+  extra_cols <- setdiff(names(meta_df), stored_variables)
+  if (length(extra_cols) > 0) {
+    meta_df <- meta_df[, setdiff(names(meta_df), extra_cols), drop = FALSE]
+  }
+
+
                                # study_accession = input$readxMap_study_accession_import,
                                # experiment_accession = input$readxMap_experiment_accession_import,
                                # currentuser = currentuser(),
@@ -370,7 +384,18 @@ output$table_plates <- renderRHandsontable({
   #   tidyr::pivot_longer(cols = everything(), names_to = "Field", values_to = "Value")
   #
  ht <-  rhandsontable(df_long, rowHeaders = NULL) %>%
-    hot_col("variable", readOnly = TRUE)  # Disable editing keys
+    hot_col("variable", readOnly = TRUE) %>%  # Disable editing keys
+       hot_cols(
+         renderer = "
+            function (instance, td, row, col, prop, value, cellProperties) {
+              Handsontable.renderers.TextRenderer.apply(this, arguments);
+              if (value === null || value === '' || value === 'NA') {
+                td.style.background = 'lightcoral';   // highlight empty cells
+                td.innerHTML = 'please fill in';
+                td.style.fontStyle = 'italic';
+              }
+            }"
+       )
 
  for (i in seq_len(nrow(df_long))) {
    if (df_long$variable[i] %in% c("file_name", "study_accession", "experiment_accession", "plate_id", "auth0_user", "workspace_id")) {
@@ -449,6 +474,8 @@ observeEvent(input$assign_header, {
       p_wide$sample_dilution_factor < 1 ||
       p_wide$sample_dilution_factor > 1000000 ) {
     showNotification("Sample Dilution Factor must be numeric and between 1 and 1,000,000")
+  } else if (!grepl("^plate_([1-9]|[1-9][0-9])[a-z]?$", p_wide$plate)) {
+  showNotification("The plate must be in the form plate_n (n = 1–99, optionally followed by a lowercase letter a–z) (e.g., plate_1, plate_23)")
   } else {
 
   # capture values
