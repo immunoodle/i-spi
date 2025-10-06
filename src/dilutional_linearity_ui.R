@@ -206,8 +206,11 @@ dilutionalLinearityServer <- function(id, selected_study, selected_experiment, c
 
       for (i in seq_along(plot_list)) {
         local({
-          my_i <- i
-          output_id <- ns(paste0("facet_lm_plot_", my_i))
+           my_i <- i
+          # output_id <- ns(paste0("facet_lm_plot_", my_i))
+          plate_name <- names(plot_list)[my_i]          # e.g. "plate3a"
+          output_id <- ns(paste0("facet_lm_plot_", plate_name))
+
 
           #cat("Registering renderPlotly for", output_id, "\n")
 
@@ -230,12 +233,16 @@ dilutionalLinearityServer <- function(id, selected_study, selected_experiment, c
      # req(plate_lm_facets())
       if (!is.null(plate_lm_facets())) {
       plot_list <- plate_lm_facets()
+     # plot_list_v <<- plot_list
 
       tab_list <- lapply(seq_along(plot_list), function(i) {
         if (!is.null(plot_list[[i]])) {
+          plate_name <- names(plot_list)[i]
+          pretty_title <- sub("(plate)([0-9]+[a-zA-Z]?)", "Plate \\2", plate_name, ignore.case = TRUE)
+
           tabPanel(
-            title = paste("Plate", i),
-            value = paste0("plate", i),
+            title = pretty_title, # paste("Plate", i),
+            value = plate_name, #paste0("plate", i),
             NULL # Initially nothing so plots have time to render
             #cat("Output plot for", ns(paste0("facet_lm_plot_", i)), "\n"),
 
