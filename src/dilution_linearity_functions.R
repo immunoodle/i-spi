@@ -2258,14 +2258,14 @@ dil_lin_regress <- function(distinct_samples, response_type, exclude_conc_sample
 }
 # Plot one regression in the facet
 plot_single_regres <- function(distinct_samples, dil_lin_regress_list, plate, antigen, y_dil, is_dil_lin_corr, response_type, is_log_mfi_axis) {
-  distinct_samples <<- distinct_samples
-  dil_lin_regress_list <<- dil_lin_regress_list
-  plate <<- plate
-  antigen <<- antigen
-  is_dil_lin_corr <<- is_dil_lin_corr
-  response_type <<- response_type
-  y_dil <<- y_dil
-  is_log_mfi_axis <<- is_log_mfi_axis
+  # distinct_samples <<- distinct_samples
+  # dil_lin_regress_list <<- dil_lin_regress_list
+  # plate <<- plate
+  # antigen <<- antigen
+  # is_dil_lin_corr <<- is_dil_lin_corr
+  # response_type <<- response_type
+  # y_dil <<- y_dil
+  # is_log_mfi_axis <<- is_log_mfi_axis
 
   concentration_colors <- c(
     "Acceptable / Acceptable" = "#6699cc",
