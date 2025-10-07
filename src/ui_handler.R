@@ -575,7 +575,8 @@ output$dynamic_data_ui <- renderUI({
         DT::dataTableOutput("swide_sample"),
         downloadButton("download_stored_sample")
       )
-    )
+    ),
+    uiOutput("split_button_ui")
     )
 
     # bsCollapse(
@@ -616,6 +617,22 @@ output$dynamic_data_ui <- renderUI({
   } else {
     NULL  # Removes the bsCollapse completely
   }
+})
+
+has_split_candidates <- reactive({
+  is_optimization_experiment_parsed(input$readxMap_study_accession, input$readxMap_experiment_accession)
+})
+
+output$split_button_ui <- renderUI({
+  if (has_split_candidates()) {
+    actionButton("optimize_plates", "Split Optimization Plates")
+  } else {
+    NULL
+  }
+})
+
+observeEvent(input$optimize_plates, {
+  split_optimization_plates(study_accession = input$readxMap_study_accession, experiment_accession = input$readxMap_experiment_accession )
 })
 
 # ReactiveVal to store experiments

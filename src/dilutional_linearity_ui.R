@@ -152,7 +152,6 @@ dilutionalLinearityServer <- function(id, selected_study, selected_experiment, c
       req(input$antigen_da_lin_selector)
       cat("plate_lm_facets() called\n")
 
-
       distinct_samples <- prepare_lm_sample_data(
         study_accession = selected_study(),
         experiment_accession = selected_experiment(),
