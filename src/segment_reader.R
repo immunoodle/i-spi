@@ -132,8 +132,10 @@ create_ui_for_type <- function(data_type, study_accession = NULL, experiment_acc
 
     if (nrow(xprofile) > 0 & data_type == 'X') {
       time_exp_val <- strsplit(selected_col[3],",",fixed = TRUE)[[1]]
+      patient_exp_val <- strsplit(selected_col[3],",",fixed = TRUE)[[1]]
     } else {
       time_exp_val <- selected_col[1]
+      patient_exp_val <- selected_col[1]
     }
 
   # imported_h_study(study_accession)
@@ -188,11 +190,13 @@ create_ui_for_type <- function(data_type, study_accession = NULL, experiment_acc
     multiple = TRUE
   )
 
-  select_ui_patientID <- selectInput(paste0("select_patientID_", data_type),
-                                     label = "Patient ID",
-                                     choices = col_names,
-                                     selected = ifelse(nrow(xprofile) > 0,selected_col[4],selected_col[1])
-                                     )
+  select_ui_patientID <- pickerInput(
+    inputId = paste0("select_patientID_", data_type),
+    label = "Patient ID",
+    choices = list(colnames = col_names),
+    selected = patient_exp_val,
+    multiple = TRUE
+    )
 
   select_ui3 <- verbatimTextOutput(paste0("print_name_", data_type))
 
@@ -935,7 +939,10 @@ observeEvent(input$assign_value_X, {
   current_df %>%
     mutate(timepoint = do.call(paste, c(select(., all_of(input$select_timepoint_X)), sep = "_"))) -> current_df
 
-  current_df$patient_id <- current_df[[input$select_patientID_X]]
+  current_df %>%
+    mutate(patient_id = do.call(paste, c(select(., all_of(input$select_patientID_X)), sep = "_"))) -> current_df
+
+  # current_df$patient_id <- current_df[[input$select_patientID_X]]
 
   output$table_X <- renderRHandsontable({
     rhandsontable(current_df,
@@ -1253,7 +1260,6 @@ observeEvent(input$upload_type_S, {
         n_record = nrow(type_s_ready)
       ))
 })
-
 
 ## Observe for type S
 observe({

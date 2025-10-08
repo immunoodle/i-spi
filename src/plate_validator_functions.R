@@ -79,10 +79,13 @@ if (length(bad_rows) > 0) {
 check_sample_description <- function(df) {
 
  # check description pattern for the samples
-  df <- df[grepl("^X", df$Type) & !grepl("^\\d+_[A-Za-z0-9_]+_\\d+$", df$Description), ]
+  df <- df[grepl("^X", df$Type) &
+             !grepl("Blank", df$Description) &
+             !grepl("[A-Za-z0-9]+[ _/\\\\:;|\\-][A-Za-z0-9]+[ _/\\\\:;|\\-][A-Za-z0-9]+", df$Description), ]
+  # df <- df[grepl("^X", df$Type) & !grepl("^\\[A-Za-z0-9_]+_[A-Za-z0-9_]+_\\[A-Za-z0-9_]+$", df$Description), ]
   if (nrow(df) > 0) {
      sample_message <- paste(
-      "Need to correct the description column for the following Samples: Well",
+      "Need to modify the Sample description column to include a minimum of [ID]_[timeperiod]_[dilution_factor]: Well",
       paste(df$Well, "| Value:", df$Description, collapse = ", ")
     )
      return(list(FALSE, sample_message))
@@ -93,10 +96,12 @@ check_sample_description <- function(df) {
 
 check_standard_description <- function(df) {
   # check description pattern for the standards
-  df <- df[grepl("^S", df$Type) & !grepl("^[A-Za-z]+_\\d+$", df$Description), ]
+  df <- df[grepl("^S", df$Type) &
+             !grepl("Blank", df$Description) &
+             !grepl("^[A-Za-z0-9_]+_\\d+$", df$Description), ]
   if (nrow(df) > 0) {
     standards_message <- paste(
-      "Need to correct the description column for the following Standards: Well",
+      "Need to modify the Standard description column to be [source]_[dilution_factor] e.g. NIBSC_40: Well",
       paste(df$Well, "| Value:", df$Description, collapse = ", ")
     )
     return(list(FALSE, standards_message))
@@ -112,9 +117,11 @@ check_standard_description <- function(df) {
 
 # check description of the blank
 check_blank_description <- function(df) {
-  df <- df[grepl("^B", df$Type) & !grepl("^[A-Za-z]+_\\d+$", df$Description),]
+  df <- df[grepl("^B", df$Type) &
+             !grepl("Blank", df$Description) &
+             !grepl("^[A-Za-z0-9]+_\\d+$", df$Description),]
   if(nrow(df) > 0) {
-    blank_message <- paste("Need to correct the description column for the following Blanks: Well",
+    blank_message <- paste("Need to modify the Blank description column to be like [source]_[dilution_factor] e.g. PBS_1: Well",
                            paste(df$Well, "| Value:", df$Description, collapse = ", ")
                            )
     return(list(FALSE, blank_message))
