@@ -6,7 +6,7 @@ A Shiny-based web application for analyzing and managing serology assay data wit
 
 ## Overview
 
-**I-SPI** is an interactive R Shiny application for processing, analyzing, and visualizing several serology assy types including bead-based immunoassay data, e.g. from ELISA, MSD and Luminex. It provides a unified platform for managing serology experiments with robust features for data import, quality control, curve fitting, and results visualization.
+**I-SPI** is an interactive R Shiny application for processing, analyzing, and visualizing several serology assay types including bead-based immunoassay data, e.g. from ELISA, MSD and Luminex. It provides a unified platform for managing serology experiments with robust features for data import, quality control, curve fitting, and results visualization.
 
 ---
 
