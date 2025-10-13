@@ -33,7 +33,7 @@ dilutionalLinearityModuleUI <- function(id) {
                column(3,uiOutput(ns("linear_correction_UI")))),
       uiOutput(ns("facet_tabs_ui")),
       div(class = "dilution-linearity-plot-container",
-        plotlyOutput(ns("selected_facet"))
+        plotlyOutput(ns("selected_facet"), height = "800px")
       ),
       uiOutput(ns("invalid_dilution_count_message")),
       br(),
@@ -232,7 +232,7 @@ dilutionalLinearityServer <- function(id, selected_study, selected_experiment, c
      # req(plate_lm_facets())
       if (!is.null(plate_lm_facets())) {
       plot_list <- plate_lm_facets()
-     # plot_list_v <<- plot_list
+     #plot_list_v <<- plot_list
 
       tab_list <- lapply(seq_along(plot_list), function(i) {
         if (!is.null(plot_list[[i]])) {

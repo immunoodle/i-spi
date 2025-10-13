@@ -1881,56 +1881,106 @@ save_average_au <- function(conn, average_au_table, dilution_table_cols) {
 #### Dilution Linearity Models
 is_optimization_experiment_parsed <- function(study_accession, experiment_accession) {
 
-  print(study_accession)
-  print(experiment_accession)
-  query_sample_plates <- glue::glue("
-    SELECT DISTINCT plate_id, dilution
-    FROM madi_results.xmap_sample
-    WHERE study_accession = '{study_accession}'
-      AND experiment_accession = '{experiment_accession}'
-  ")
 
+   if (nchar(experiment_accession) >= 14) {
+    diluted_experiment <- substr(experiment_accession, 1, 13)
+  } else {
+    diluted_experiment <- experiment_accession
+  }
 
-  sample_data <- dbGetQuery(conn, query_sample_plates)
+  diluted_experiment <- paste0(diluted_experiment, "_d")
 
-
-  # Count unique dilutions per plate
-  dilution_counts <- tapply(sample_data$dilution, sample_data$plate_id, function(x) length(unique(x)))
-
-
-  plate_ids_with_2_or_more_dilutions <- names(dilution_counts[dilution_counts >= 2])
-  all_exist <- TRUE
-  for (plate in plate_ids_with_2_or_more_dilutions) {
-    cat("Plate ID with multiple dilutions:", plate, "\n")
-
-    plate_dilutions <- unique(sample_data$dilution[sample_data$plate_id == plate])
-
-    for (dil in plate_dilutions) {
-      new_plate_id <- paste0(plate, "_", dil)
-
-      check_query <- glue::glue("
+  check_query <- glue::glue("
         SELECT COUNT(*) AS count
         FROM madi_results.xmap_header
         WHERE study_accession = '{study_accession}'
-          AND experiment_accession = '{experiment_accession}_dilut'
-          AND plate_id = '{new_plate_id}'
+          AND experiment_accession = '{diluted_experiment}'
       ")
 
-      result <- dbGetQuery(conn, check_query)
-      count <- result$count[1]
+  result <- dbGetQuery(conn, check_query)
+  count <- result$count[1]
 
-      if (count > 0) {
-        showNotification(" New diluted plate exists:", new_plate_id, "\n")
-      } else {
-        all_exist <- FALSE
-      }
-    }
+  if (count > 0) {
+    #showNotification(paste("Plates have been split for ", experiment_accession, sep = ""))
+    all_exist <- TRUE
+  } else if (grepl("_d$", experiment_accession)) {
+     all_exist <- TRUE
+  }  else {
+    all_exist <- FALSE
   }
-  # Check if any plate has >= 2 dilutions
-   return((length(names(dilution_counts[dilution_counts >= 2])) > 0) && !all_exist)
+
+  return(all_exist)
 }
+  # print(study_accession)
+  # print(experiment_accession)
+  # query_sample_plates <- glue::glue("
+  #   SELECT DISTINCT plate_id, dilution
+  #   FROM madi_results.xmap_sample
+  #   WHERE study_accession = '{study_accession}'
+  #     AND experiment_accession = '{experiment_accession}'
+  # ")
+  #
+  #
+  # sample_data <- dbGetQuery(conn, query_sample_plates)
+  #
+  #
+  # # Count unique dilutions per plate
+  # dilution_counts <- tapply(sample_data$dilution, sample_data$plate_id, function(x) length(unique(x)))
+  #
+  #
+  # plate_ids_with_2_or_more_dilutions <- names(dilution_counts[dilution_counts >= 2])
+  # all_exist <- TRUE
+  # for (plate in plate_ids_with_2_or_more_dilutions) {
+  #   cat("Plate ID with multiple dilutions:", plate, "\n")
+  #
+  #   plate_dilutions <- unique(sample_data$dilution[sample_data$plate_id == plate])
+  #
+  #   for (dil in plate_dilutions) {
+  #     new_plate_id <- paste0(plate, "_", dil)
+  #
+  #     check_query <- glue::glue("
+  #       SELECT COUNT(*) AS count
+  #       FROM madi_results.xmap_header
+  #       WHERE study_accession = '{study_accession}'
+  #         AND experiment_accession = '{experiment_accession}_d'
+  #         AND plate_id = '{new_plate_id}'
+  #     ")
+  #
+  #     result <- dbGetQuery(conn, check_query)
+  #     count <- result$count[1]
+  #
+  #     if (count > 0) {
+  #       showNotification(" New diluted plate exists:", new_plate_id, "\n")
+  #     } else {
+  #       all_exist <- FALSE
+  #     }
+  #   }
+  # }
+  # # Check if any plate has >= 2 dilutions
+  #  return((length(names(dilution_counts[dilution_counts >= 2])) > 0) && !all_exist)
+
 
 split_optimization_plates <- function(study_accession, experiment_accession) {
+
+  exclude_antigens <- c("Well", "Type", "Description", "Region", "Gate", "Total", "% Agg Beads", "Sampling Errors", "Rerun Status",
+                        "Device Error", "Plate ID", "Regions Selected", "RP1 Target", "Platform Heater Target", "Platform Temp (°C)",
+                        "Bead Map", "Bead Count", "Sample Size (µl)", "Sample Timeout (sec)", "Flow Rate (µl/min)", "Air Pressure (psi)",
+                        "Sheath Pressure (psi)", "Original DD Gates", "Adjusted DD Gates", "RP1 Gates", "User", "Access Level", "Acquisition Time",
+                        "acquisition_time", "Reader Serial Number", "Platform Serial Number", "Software Version", "LXR Library", "Reader Firmware",
+                        "Platform Firmware", "DSP Version", "Board Temp (°C)", "DD Temp (°C)", "CL1 Temp (°C)", "CL2 Temp (°C)", "DD APD (Volts)",
+                        "CL1 APD (Volts)", "CL2 APD (Volts)", "High Voltage (Volts)", "RP1 PMT (Volts)", "DD Gain", "CL1 Gain", "CL2 Gain", "RP1 Gain")
+  # Create a SQL-safe comma-separated string
+  exclude_antigens_sql <- paste0("'", paste(exclude_antigens, collapse = "', '"), "'")
+
+  # create a shortened experiment name if greater than 15 characters for optimization plates
+  if (nchar(experiment_accession) >= 14) {
+    diluted_experiment <- substr(experiment_accession, 1, 13)
+  } else {
+    diluted_experiment <- experiment_accession
+  }
+
+  # keep track of plates pre and post split
+  original_plates <- c()
   created_plates <- c()
 
   query_sample_plates <- glue::glue("
@@ -1942,29 +1992,31 @@ split_optimization_plates <- function(study_accession, experiment_accession) {
 
   sample_data <- dbGetQuery(conn, query_sample_plates)
 
-  # Step 1: Count unique dilutions per plate_id
+  #  Count unique dilutions per plate_id
   dilution_counts <- tapply(sample_data$dilution, sample_data$plate_id, function(x) length(unique(x)))
 
-  # Step 2: Get plate_ids with at least 2 dilutions
+  #  Get plate_ids with at least 2 dilutions
   plate_ids_with_2_or_more_dilutions <- names(dilution_counts[dilution_counts >= 2])
 
-  # Step 3: Iterate over qualifying plates
+  #  Iterate over qualifying plates
   for (plate in plate_ids_with_2_or_more_dilutions) {
     cat("Plate ID with multiple dilutions:", plate, "\n")
 
     plate_dilutions <- unique(sample_data$dilution[sample_data$plate_id == plate])
 
+    plate_counter <- 1
 
     for (dil in plate_dilutions) {
-      new_plate_id <- paste0(plate, "_", dil)
+      #new_plate_id <- paste0(plate, "_", dil)
+      new_plate_id <- glue("{study_accession}_{diluted_experiment}_pt{plate_counter}_{dil}x")
 
       # Check if this new diluted plate already exists in new experiment
       check_query <- glue::glue("
         SELECT COUNT(*) AS count
         FROM madi_results.xmap_header
         WHERE study_accession = '{study_accession}'
-          AND experiment_accession = CONCAT('{experiment_accession}', '_dilut')
-          AND plate_id = '{new_plate_id}'
+          AND experiment_accession = CONCAT('{diluted_experiment}', '_d')
+          AND plate_id = '{study_accession}_{diluted_experiment}_pt{plate_counter}_{dil}x'
       ")
 
       exists_result <- dbGetQuery(conn, check_query)
@@ -1984,8 +2036,8 @@ split_optimization_plates <- function(study_accession, experiment_accession) {
           plateid, plate, sample_dilution_factor, n_wells)
         SELECT
           study_accession,
-          CONCAT(experiment_accession, '_dilut'),
-          '{new_plate_id}',
+          CONCAT('{diluted_experiment}', '_d'),
+          CONCAT(study_accession, '_{diluted_experiment}_pt{plate_counter}_', '{dil}x'),
           CONCAT(file_name, '{dil}'),
           acquisition_date,
           reader_serial_number,
@@ -1993,8 +2045,8 @@ split_optimization_plates <- function(study_accession, experiment_accession) {
           rp1_target,
           auth0_user,
           workspace_id,
-          CONCAT(plateid, '{dil}'),
-          plate,
+          CONCAT(study_accession, '_{diluted_experiment}_pt{plate_counter}_', '{dil}x'),
+          CONCAT('plate_', '{plate_counter}'),
           {dil},
           n_wells
         FROM madi_results.xmap_header
@@ -2011,14 +2063,15 @@ split_optimization_plates <- function(study_accession, experiment_accession) {
           samplingerrors, antigen, antibody_mfi, antibody_n, antibody_name, dilution, feature)
         SELECT
           study_accession,
-          CONCAT(experiment_accession, '_dilut'),
-          '{new_plate_id}',
+          CONCAT('{diluted_experiment}', '_d'),
+          CONCAT(study_accession, '_{diluted_experiment}_pt{plate_counter}_', '{dil}x'),
           well, stype, pctaggbeads, samplingerrors, antigen, antibody_mfi,
           antibody_n, antibody_name, dilution, feature
         FROM madi_results.xmap_buffer
         WHERE study_accession = '{study_accession}'
-          AND experiment_accession = '{experiment_accession}';
-      ")
+          AND experiment_accession = '{experiment_accession}'
+           AND antigen NOT IN ({exclude_antigens_sql});
+      ") #{new_plate_id}',
 
      dbExecute(conn, new_dilution_blank)
 
@@ -2029,50 +2082,104 @@ split_optimization_plates <- function(study_accession, experiment_accession) {
           pctaggbeads, samplingerrors, antigen, antibody_mfi, antibody_n, antibody_name, feature, predicted_mfi)
         SELECT
           study_accession,
-          CONCAT(experiment_accession, '_dilut'),
-          '{new_plate_id}',
+          CONCAT('{diluted_experiment}', '_d'),
+          CONCAT(study_accession, '_{diluted_experiment}_pt{plate_counter}_', '{dil}x'),
           well, stype, sampleid, source, dilution, pctaggbeads, samplingerrors,
           antigen, antibody_mfi, antibody_n, antibody_name, feature, predicted_mfi
         FROM madi_results.xmap_standard
         WHERE study_accession = '{study_accession}'
-          AND experiment_accession = '{experiment_accession}';
+          AND experiment_accession = '{experiment_accession}'
+          AND antigen NOT IN ({exclude_antigens_sql});
       ")
 
-      dbExecute(conn, new_dilution_standard)
-    }
-    created_plates <- c(created_plates, new_plate_id)
-  }
+     dbExecute(conn, new_dilution_standard)
 
-  if (length(created_plates) > 0) {
-    plates_list_sql <- paste0("'", paste(created_plates, collapse = "','"), "'")
-  #   update_sample <- glue::glue("
-  #   UPDATE madi_results.xmap_sample
-  #   SET experiment_accession = CONCAT(experiment_accession, '_dilut'),
-  #       plate_id = CONCAT(plate_id, '_', dilution)
-  #   WHERE study_accession = '{study_accession}'
-  #     AND experiment_accession = '{experiment_accession}'
-  #     AND plate_id IN ({plates_list_sql});
-  # ")
-    update_sample <-  glue::glue("
-INSERT INTO madi_results.xmap_sample (
+     insert_sample <- glue::glue("
+     INSERT INTO madi_results.xmap_sample (
   study_accession, experiment_accession, plate_id, well, stype,
-  sampleid, source, dilution, pctaggbeads, samplingerrors,
-  antigen, antibody_mfi, antibody_n, antibody_name, feature
+  sampleid, dilution, pctaggbeads, samplingerrors,
+  antigen, antibody_mfi, antibody_n, antibody_name, feature,
+  timeperiod, patientid, id_imi, agroup, gate_class, antibody_au,
+  antibody_au_se, reference_dilution, gate_class_dil, norm_mfi,
+  in_linear_region, gate_class_loq, in_quantifiable_range,
+  gate_class_linear_region, quality_score
 )
 SELECT
   study_accession,
-  CONCAT(experiment_accession, '_dilut') AS experiment_accession,
-  CONCAT(plate_id, '_', dilution) AS plate_id,
-  well, stype, sampleid, source, dilution,
+  CONCAT('{diluted_experiment}_d') AS experiment_accession,
+  CONCAT(study_accession, '_{diluted_experiment}_pt{plate_counter}_', '{dil}x') AS plate_id,
+  well, stype, sampleid, dilution,
   pctaggbeads, samplingerrors, antigen,
-  antibody_mfi, antibody_n, antibody_name, feature
+  antibody_mfi, antibody_n, antibody_name, feature,
+  timeperiod, patientid, id_imi, agroup, gate_class, antibody_au,
+  antibody_au_se, reference_dilution, gate_class_dil, norm_mfi,
+  in_linear_region, gate_class_loq, in_quantifiable_range,
+  gate_class_linear_region, quality_score
 FROM madi_results.xmap_sample
 WHERE study_accession = '{study_accession}'
   AND experiment_accession = '{experiment_accession}'
-  AND plate_id IN ({plates_list_sql});
-  ")
+  AND plate_id = '{plate}'
+  AND dilution = {dil}
+  AND antigen NOT IN ({exclude_antigens_sql});")
 
-  dbExecute(conn, update_sample)
+    # INSERT INTO madi_results.xmap_sample (
+    #   study_accession, experiment_accession, plate_id, well, stype,
+    #   sampleid, dilution, pctaggbeads, samplingerrors,
+    #   antigen, antibody_mfi, antibody_n, antibody_name, feature
+    # )
+    # SELECT
+    #   study_accession,
+    #   CONCAT('{diluted_experiment}_d') AS experiment_accession,
+    #   '{new_plate_id}' AS plate_id,
+    #   well, stype, sampleid, dilution,
+    #   pctaggbeads, samplingerrors, antigen,
+    #   antibody_mfi, antibody_n, antibody_name, feature
+    # FROM madi_results.xmap_sample
+    # WHERE study_accession = '{study_accession}'
+    #   AND experiment_accession = '{experiment_accession}'
+    #   AND plate_id = '{plate}'
+    #   AND dilution = {dil};
+    # ")
+     dbExecute(conn, insert_sample)
+    }
+    created_plates <- c(created_plates, new_plate_id)
+    original_plates <- c(original_plates, plate)
+
+    plate_counter <- plate_counter + 1
+
+
+
+#   if (length(created_plates) > 0) {
+#     plates_list_sql <- paste0("'", paste(original_plates, collapse = "','"), "'")
+#   #   update_sample <- glue::glue("
+#   #   UPDATE madi_results.xmap_sample
+#   #   SET experiment_accession = CONCAT(experiment_accession, '_dilut'),
+#   #       plate_id = CONCAT(plate_id, '_', dilution)
+#   #   WHERE study_accession = '{study_accession}'
+#   #     AND experiment_accession = '{experiment_accession}'
+#   #     AND plate_id IN ({plates_list_sql});
+#   # ")
+#     update_sample <- glue::glue("
+# INSERT INTO madi_results.xmap_sample (
+#   study_accession, experiment_accession, plate_id, well, stype,
+#   sampleid, dilution, pctaggbeads, samplingerrors,
+#   antigen, antibody_mfi, antibody_n, antibody_name, feature
+# )
+# SELECT
+#   study_accession,
+#   CONCAT('{diluted_experiment}_d') AS experiment_accession,
+#   '{new_plate_id}' AS plate_id,
+#   well, stype, sampleid, dilution,
+#   pctaggbeads, samplingerrors, antigen,
+#   antibody_mfi, antibody_n, antibody_name, feature
+# FROM madi_results.xmap_sample
+# WHERE study_accession = '{study_accession}'
+#   AND experiment_accession = '{experiment_accession}'
+#   AND plate_id IN ({plates_list_sql});
+# ")
+#
+#  #print(update_sample)
+#   dbExecute(conn, update_sample)
 }
 
 
@@ -2252,6 +2359,8 @@ prepare_lm_sample_data <- function(study_accession, experiment_accession, is_log
 
   distinct_samples$plate <- sub(".*?(plate[0-9]+).*", "\\1", distinct_samples$plate)
 
+  distinct_samples <- distinct_samples[!is.na(distinct_samples$dilution), ]
+
     return(distinct_samples)
 
 }
@@ -2392,7 +2501,7 @@ dil_lin_regress <- function(distinct_samples, response_type, exclude_conc_sample
   colnames(x_dilution_df) <- c("study_accession", "experiment_accession", "antigen", "plate", "x_dilution", "x_mfi", "x_au", "patientid", "timeperiod", "x_gate_class_linear_region", "x_gate_class", "x_gate_class_loq", "x_quality_score")
 
   colnames(y_dilution_df) <- c("study_accession", "experiment_accession", "antigen", "plate", "y_dilution", "y_mfi", "y_au", "patientid", "timeperiod", "y_gate_class_linear_region", "y_gate_class", "y_gate_class_loq", "y_quality_score")
-
+  print(head(y_dilution_df))
   dilution_df <- merge(x_dilution_df, y_dilution_df, by = c("study_accession", "experiment_accession", "antigen", "plate", "patientid", "timeperiod"), all.x = T)
 
   # Keep all original data including too concentrated samples
@@ -2402,6 +2511,8 @@ dil_lin_regress <- function(distinct_samples, response_type, exclude_conc_sample
  # dilution_df_full <<- dilution_df
 
   dilution_df_modeling <- dilution_df
+  print("first df modeling ")
+  print(head(dilution_df_modeling))
   if (exclude_conc_samples) {
     dilution_df_modeling$ecs_group <- case_when(
       dilution_df_modeling$x_gate_class_linear_region == "Too Concentrated" ~ "Too Concentrated",
@@ -2464,6 +2575,7 @@ dil_lin_regress <- function(distinct_samples, response_type, exclude_conc_sample
 
  # fit_model_xy <- function(sub_df, x, y)
   if (response_type == "au") {
+    print(head(dilution_df_modeling))
     # x <- "x_au"
     # y <- "y_au"
     safe_fit_model <- safely(fit_model)
