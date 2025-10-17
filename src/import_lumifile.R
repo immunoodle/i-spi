@@ -116,6 +116,10 @@ output$readxMapData <- renderUI({
                                , accept=c(".xlsx",".xls")
                                , multiple=FALSE)
                      ,uiOutput("sheet_ui")
+                   ), conditionalPanel(
+                     condition = "input.uploaded_sheet != ''",
+                     uiOutput("raw_ui")
+
                    )
                  )
           ),
@@ -223,11 +227,46 @@ observeEvent(input$readxMap_study_accession, {
 # })
 
 ### read template and create the preview template tab
+## Clicks browse to load a plate/batch
 observeEvent(input$upload_to_shiny,{
 
   req(input$readxMap_study_accession)
   req(input$readxMap_experiment_accession_import)
   availableSheets(NULL)
+  # # reset reactive that hold the data
+  inFile(NULL)
+  plate_data(NULL)
+  header_info(NULL)
+  plate_validation_messages(NULL)
+  is_valid_plate(NULL)
+  #imported_h_study(NULL)
+  #imported_h_experiment(NULL)
+  #imported_h_plate_id(NULL)
+  #imported_h_plate_number(NULL)
+  type_p_completed(FALSE)
+  # type_x_status(list(plate_exists = FALSE, n_record = 0))
+  # type_s_status(list(plate_exists = FALSE, n_record = 0))
+  # type_c_status(list(plate_exists = FALSE, n_record = 0))
+  # type_b_status(list(plate_exists = FALSE, n_record = 0))
+  transform_dat <- data.frame()
+  # original_df_combined <- reactive({NULL})
+  # list_of_dataframes <- reactive({NULL})
+  updateSelectInput(session = session, "uploaded_sheet", NULL)
+
+
+  # type_vector_obs <- c("S", "C", "B", "X")
+  #
+  # # Reset all rhandsontables
+  # for (type in type_vector_obs) {
+  #  # if (!is.null(output[[paste0("table_", type)]])) {
+  #     cat(paste0("table_", type))
+  #       output[[paste0("table_", type)]] <- renderRHandsontable({
+  #         NULL
+  #         #rhandsontable(data.frame())  # blank placeholder
+  #       })
+  #   }
+  #}
+
   print("file_uploaded")
 
   # Store the uploaded file
@@ -249,21 +288,43 @@ observeEvent(input$upload_to_shiny,{
         selectInput("uploaded_sheet",
                     "Select Sheet",
                     choices = c("Select excel sheet" = "", sheets),  # Combine default with sheets
-                    selected = ""),
-        actionButton("view_raw_file", "View Raw File"),
-        actionButton("view_raw_header", "View Plate Metadata"),
+                    selected = "")
+      )
+    }
+
+  })
+
+  output$raw_ui <- renderUI({
+    sheets <- availableSheets()
+    if (!is.null(sheets)) {
+      fluidRow(
         if (is.null(plate_validation_messages())) {
           tagList(
-          tags$p("If this plate contains wells without samples use the word the 'Blank' in the description column of the spreadsheet.
+            tags$p("If this plate contains wells without samples use the word the 'Blank' in the description column of the spreadsheet.
           Then assign the two phrases below to indicate if the wells should be treated as blanks
           (e.g. containing PBS) or if the wells should be treated as empty."),
-          selectInput("blank_keyword", "Blank and Empty Well Handling",
-                    choices = c("Skip Empty Wells" = "empty_well",
-                                "Use as Blank" = "use_as_blank"))
+
+            selectInput("blank_keyword", "Blank and Empty Well Handling",
+                        choices = c("Skip Empty Wells" = "empty_well",
+                                    "Use as Blank" = "use_as_blank"))
           )
-          },
+        },
+        actionButton("view_raw_file", "View Raw File"),
+        actionButton("view_raw_header", "View Plate Metadata"),
+        tags$div(style = "display:none;",
+                 textInput("read_import_plate_id", label = NULL, value = ""),
+                 textInput("read_import_plate_number", label = NULL, value = "")
+        ),
+        uiOutput("plate_metadata_info"),
         uiOutput("plate_validated_status"),
         tableOutput("plate_validation_message_table")
+      )
+    } else {
+      fluidRow(
+        tagList(
+          tags$p("Select a sheet containing raw bead array data."
+          )
+        )
       )
     }
 
@@ -271,6 +332,80 @@ observeEvent(input$upload_to_shiny,{
   })
 
 
+})
+
+# # # rebuild RHandsontable tables
+# observeEvent(original_df_combined(), {
+#   req(original_df_combined())
+#
+#   for (type in names(original_df_combined())) {
+#     output[[paste0("table_", type)]] <- renderRHandsontable({
+#       rhandsontable(original_df_combined()[[type]],
+#                     useTypes = FALSE,
+#                     overflow = "visible",
+#                     horizontal_scroll = TRUE,
+#                     vertical_scroll = TRUE,
+#                     width = 1024, height = 300) %>%
+#         hot_col(
+#           col = "feature",
+#           type = "dropdown",
+#           source = c(
+#             "ADCD", "Total_IgG", "IgG1", "IgG2", "IgG3", "IgG4",
+#             "IgA", "IgA1", "IgM", "IgM1", "FcgR2a",
+#             "FcgR2b", "FcgR3a", "FcgR3b"
+#           )
+#         )
+#     })
+#   }
+# })
+
+
+
+
+
+
+
+
+output$plate_metadata_info <- renderUI({
+  req(inFile()) # ensure new upload triggers updates
+  req(type_p_completed())
+  req(input$readxMap_study_accession)
+  req(input$readxMap_experiment_accession_import)
+
+  req(input$table_plates)
+
+  # Convert rhandsontable to data frame
+  metadata_table <- hot_to_r(input$table_plates)
+
+  # Extract plate_id value removing extension
+  plate_id <- metadata_table[metadata_table$variable == "plate_id",]$value
+  #plate_id <- sub("\\.[^.]*$", "", metadata_table[metadata_table$variable == "plate_id", ]$value)
+
+  import_plate_id <- metadata_table[metadata_table$variable == "plate", ]$value
+  import_plate_number <- as.integer(gsub("\\D", "", import_plate_id))
+  updateTextInput(session = session, "read_import_plate_id",  value = plate_id)
+  updateTextInput(session = session, "read_import_plate_number",  value = import_plate_number)
+
+  fluidRow(
+    column(
+      12,
+      div(
+        style = "margin-bottom: 10px;",
+        tags$span(style = "font-weight: bold;", "Study: "), input$readxMap_study_accession,
+        " | ",
+        tags$span(style = "font-weight: bold;", "Experiment: "), input$readxMap_experiment_accession_import,
+        " | ",
+        tags$span(style = "font-weight: bold;", "plate_id: "), input$read_import_plate_id,
+        " | ",
+        tags$span(style = "font-weight: bold;", "Plate Number: "), input$read_import_plate_number
+      )
+    )
+)
+})
+
+observe({
+  cat("plate_id:", input$read_import_plate_id, "\n")
+  cat("Plate Number:",input$read_import_plate_number, "\n" )
 })
 
 observeEvent(input$uploaded_sheet,{
@@ -322,8 +457,17 @@ observeEvent(input$uploaded_sheet,{
   }
 
 
+  # lapply(names(type_observers), function(nm) {
+  #   if (!is.null(type_observers[[nm]])) type_observers[[nm]]$destroy()
+  # })
+  #
+  # # Create fresh ones for S, C, B
+  # lapply(type_vector_observes, function(type) {
+  #   type_observers[[type]] <- observeEvents(type)
+  # })
 
   }
+
 
 })
 
@@ -390,7 +534,10 @@ observeEvent(input$view_raw_header,{
   print(header_info())
 })
 
+
 output$segment_selector <- renderUI({
+  #req(inFile()$datapath != )
+
   req(is_valid_plate()) # Only show if it has a valid plate too
 
   req(plate_data())  # Ensure that there is data to work with
@@ -427,9 +574,151 @@ output$segment_selector <- renderUI({
     )
   })
 
+  #late_data_in <<- plate_data()
+
+  # add optimization tab if detect multiple sample serum dilutions.
+  tabs <- append(tabs, list(uiOutput("optimization_tab")))
+
+  #  is_opt_experiment <- is_optimization_plate(plate_data())
+  # if (is_opt_experiment && all_completed()) {
+  if (optimization_ready()) {
+    tabs <- append(
+      tabs,
+      list(
+        tabPanel(
+          title = "Optimization",
+          #uiOutput("optimize_plate_info"),
+          uiOutput("plate_optimized_status"),
+          uiOutput(outputId = "ui_optimization"),
+          uiOutput(outputId = "ui_split_button")
+        )
+      )
+    )
+  }
+
+
   # Make sure to return the tabsetPanel with all tabs included
   do.call(tabsetPanel, tabs)
 
+})
+
+
+# Observe when data is selected again.
+observeEvent(plate_data(), {
+  print("New plate data loaded!")
+  print(head(plate_data()))
+  # type_x_status(list(plate_exists = FALSE, n_record = 0))
+  # type_s_status(list(plate_exists = FALSE, n_record = 0))
+  # type_c_status(list(plate_exists = FALSE, n_record = 0))
+  # type_b_status(list(plate_exists = FALSE, n_record = 0))
+
+  all_df <- create_list_of_dataframes(plate_data = plate_data(), study_accession = input$readxMap_study_accession,
+                            experiment_accession = input$readxMap_experiment_accession_import)
+  list_of_dataframes(all_df)
+
+  combined_df <- create_original_df_combined(plate_data = plate_data(), list_of_dataframes = all_df)
+
+  original_df_combined(combined_df)
+
+})
+
+
+observe({
+  cat("type_x_status current value:\n")
+  print(type_x_status())
+})
+
+# output$optimization_tab <- renderUI({
+#   req(is_optimization_plate(plate_data()))
+#   req(all_completed())
+#
+#   tabPanel(
+#     title = "Optimization",
+#     uiOutput("plate_optimized_status"),
+#     uiOutput("ui_optimization"),
+#     uiOutput("ui_split_button")
+#   )
+# })
+observeEvent(all_completed(), {
+  if (is_optimization_plate(plate_data()) && all_completed()) {
+    optimization_ready(TRUE)
+  } else {
+    optimization_ready(FALSE)
+  }
+}, ignoreInit = TRUE)
+
+
+all_completed <- reactive({
+  # types present in data
+  present_types <- unique_plate_types()
+
+  # Start by requiring P to be completed
+  if (!type_p_completed()) return(FALSE)
+
+  # Map of type ->  reactive status
+  status_map <- list(
+    X = type_x_status,
+    S = type_s_status,
+    C = type_c_status,
+    B = type_b_status
+  )
+
+  # For all types that are present (excluding P, which we already handled)
+  # check that plate_exists == TRUE and (optionally) n_record > 0
+  checks <- sapply(present_types[present_types != "P"], function(t) {
+    if (!t %in% names(status_map)) return(TRUE)  # ignore unexpected types
+    status <- status_map[[t]]()
+    status$plate_exists && status$n_record > 0
+  }, USE.NAMES = FALSE)
+
+  # TRUE only if all present types are completed
+  all(checks)
+})
+
+
+output$ui_optimization <- renderUI({
+  if (!all_completed()) {
+    return(div(
+      " All required plate types must be completed before proceeding to optimization."
+    ))
+  }
+  fluidRow(
+    if (all_completed() && !optimization_parsed_boolean()) {
+      tagList(
+        tags$p("This plate has more than two serum dilutions. To assess dilutional linearity in the QC workflow
+               the plate must be treated as different at each dilution. Splitting this optimization plate will
+               also create a new experiment that parses the mixed plates into optimization experiments."),
+      radioButtons(
+        inputId = "decide_split",
+        label = "Do you want to Split this optimization plate by serum dilution into a plate per dilution?",
+        choices = c("Yes", "No")
+      )
+      )
+      }  #else if (optimization_parsed_boolean()) {
+    #   createOptimizedBadge(is_optimized = optimization_parsed_boolean())
+    #
+    # }
+  )
+})
+
+output$ui_split_button <- renderUI({
+  if (!is.null(input$decide_split) && input$decide_split == "Yes" &&
+      !isTRUE(optimization_parsed_boolean())) {
+    actionButton("split_opt_plates", "Split Optimization Plate")
+  }
+})
+
+
+output$plate_optimized_status <- renderUI({
+  req(input$uploaded_sheet)# trigger refresh
+  input$split_opt_plates
+
+  createOptimizedBadge(is_optimized = optimization_parsed_boolean())
+})
+
+observeEvent(input$split_opt_plates, {
+  split_optimization_single_upload(study_accession = input$readxMap_study_accession, experiment_accession = input$readxMap_experiment_accession,
+                                   plate_number = input$read_import_plate_number)
 })
 
 observeEvent(input$testButton, {

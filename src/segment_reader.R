@@ -1,97 +1,178 @@
-list_of_dataframes <- reactive({
 
-  req(input$uploaded_sheet)
 
-  plate_data() %>%
+# Create list_of_dataframes logic
+create_list_of_dataframes <- function(plate_data, study_accession, experiment_accession) {
+  req(plate_data)
+
+  type_df <- plate_data %>%
     janitor::clean_names() %>%
-    mutate(description = gsub("[^A-Za-z0-9.]+", "_", description) %>% trimws(whitespace = "_")) %>%
-    mutate(type = str_remove_all(type, "[0-9]")) -> type_df
+    mutate(description = gsub("[^A-Za-z0-9.]+", "_", description) %>%
+             trimws(whitespace = "_")) %>%
+    mutate(type = str_remove_all(type, "[0-9]"))
 
   all_dataframes <- list()
 
-  for(well_type in unique(type_df$type)){
-
-    xprofile <- update_db(operation = "select",
-                          schema = "madi_results",
-                          table_name = "xmap_profile", # was import for study
-                          select_where = list("concat(study_accession,experiment_accession,stype)" = paste0(input$readxMap_study_accession,input$readxMap_experiment_accession_import,well_type))
+  for (well_type in unique(type_df$type)) {
+    xprofile <- update_db(
+      operation = "select",
+      schema = "madi_results",
+      table_name = "xmap_profile",
+      select_where = list("concat(study_accession,experiment_accession,stype)" =
+                            paste0(study_accession, experiment_accession, well_type))
     )
-    if (nrow(xprofile) > 0){
+
+    if (nrow(xprofile) > 0) {
       xprofile <- xprofile[order("study_accession", "experiment_accession", "stype", "-xmap_profile_id"), ]
-      xprofile <- distinct(xprofile, study_accession, experiment_accession, stype , .keep_all = TRUE)
+      xprofile <- distinct(xprofile, study_accession, experiment_accession, stype, .keep_all = TRUE)
       feature <- xprofile$source_stor
     } else {
       feature <- ""
-      }
+    }
 
-    print(well_type)
+    type_filter <- type_df %>%
+      filter(type == well_type) %>%
+      mutate(split_length = str_count(description, "_"))
 
-    type_df %>%
-      filter(type == well_type) -> type_filter
-
-    type_filter %>%
-      mutate(split_length = str_count(description, "_")) -> type_length
-
-    if(all(is.na(unique(type_length$split_length)))){
-
-      type_length %>%
-        mutate(source = "",
-               dilution = 1,
-               feature = feature) %>%
-        select(source,
-               dilution,
-               feature) -> all_dataframes[[well_type]]
-
+    if (all(is.na(unique(type_filter$split_length)))) {
+      all_dataframes[[well_type]] <- type_filter %>%
+        mutate(source = "", dilution = 1, feature = feature) %>%
+        select(source, dilution, feature)
       next
     }
 
-    n_splits <- max(type_length$split_length, na.rm = T) + 1
+    n_splits <- max(type_filter$split_length, na.rm = TRUE) + 1
 
-    type_filter %>%
+    sub_dataframes <- type_filter %>%
       select(description) %>%
-      separate(description,
-               into = paste0("segment_", 1:n_splits),
-               sep = "_"
-      ) -> sub_dataframes
+      separate(description, into = paste0("segment_", 1:n_splits), sep = "_")
 
     sub_dataframes$feature <- feature
-
     all_dataframes[[well_type]] <- sub_dataframes
   }
 
   return(all_dataframes)
+}
 
-})
 
-original_df_combined <- reactive({
-
-  req(list_of_dataframes())
-  req(plate_data())
+# Create original_df_combined logic
+create_original_df_combined <- function(plate_data, list_of_dataframes) {
+  req(plate_data)
+  req(list_of_dataframes)
 
   full_df <- list()
 
-  for(type_filter in unique(names(list_of_dataframes()))){
-
-    plate_data() %>%
+  for (type_filter in unique(names(list_of_dataframes))) {
+    orig_data <- plate_data %>%
       janitor::clean_names() %>%
       select(type, description) %>%
       mutate(type_check = str_remove_all(type, "[0-9]")) %>%
       filter(type_check == type_filter) %>%
-      select(-type_check) -> orig_data
+      select(-type_check)
 
-    orig_data %>%
-      cbind(list_of_dataframes()[[type_filter]]) -> full_df[[type_filter]]
-
+    full_df[[type_filter]] <- cbind(orig_data, list_of_dataframes[[type_filter]])
   }
 
   return(full_df)
+}
 
-})
+
+# list_of_dataframes <- reactive({
+#   req(inFile())
+#   req(input$uploaded_sheet)
+#
+#   #req(plate_data())
+#
+#   plate_data() %>%
+#     janitor::clean_names() %>%
+#     mutate(description = gsub("[^A-Za-z0-9.]+", "_", description) %>% trimws(whitespace = "_")) %>%
+#     mutate(type = str_remove_all(type, "[0-9]")) -> type_df
+#
+#   all_dataframes <- list()
+#
+#   for(well_type in unique(type_df$type)){
+#
+#     xprofile <- update_db(operation = "select",
+#                           schema = "madi_results",
+#                           table_name = "xmap_profile", # was import for study
+#                           select_where = list("concat(study_accession,experiment_accession,stype)" = paste0(input$readxMap_study_accession,input$readxMap_experiment_accession_import,well_type))
+#     )
+#     if (nrow(xprofile) > 0){
+#       xprofile <- xprofile[order("study_accession", "experiment_accession", "stype", "-xmap_profile_id"), ]
+#       xprofile <- distinct(xprofile, study_accession, experiment_accession, stype , .keep_all = TRUE)
+#       feature <- xprofile$source_stor
+#     } else {
+#       feature <- ""
+#       }
+#
+#     print(well_type)
+#
+#     type_df %>%
+#       filter(type == well_type) -> type_filter
+#
+#     type_filter %>%
+#       mutate(split_length = str_count(description, "_")) -> type_length
+#
+#     if(all(is.na(unique(type_length$split_length)))){
+#
+#       type_length %>%
+#         mutate(source = "",
+#                dilution = 1,
+#                feature = feature) %>%
+#         select(source,
+#                dilution,
+#                feature) -> all_dataframes[[well_type]]
+#
+#       next
+#     }
+#
+#     n_splits <- max(type_length$split_length, na.rm = T) + 1
+#
+#     type_filter %>%
+#       select(description) %>%
+#       separate(description,
+#                into = paste0("segment_", 1:n_splits),
+#                sep = "_"
+#       ) -> sub_dataframes
+#
+#     sub_dataframes$feature <- feature
+#
+#     all_dataframes[[well_type]] <- sub_dataframes
+#   }
+#
+#   return(all_dataframes)
+#
+# })
+#
+# original_df_combined <- reactive({
+#   #req(input$uploaded_sheet)
+#   req(inFile())
+#
+#   req(list_of_dataframes())
+#   req(plate_data())
+#
+#
+#   full_df <- list()
+#
+#   for(type_filter in unique(names(list_of_dataframes()))){
+#
+#     plate_data() %>%
+#       janitor::clean_names() %>%
+#       select(type, description) %>%
+#       mutate(type_check = str_remove_all(type, "[0-9]")) %>%
+#       filter(type_check == type_filter) %>%
+#       select(-type_check) -> orig_data
+#
+#     orig_data %>%
+#       cbind(list_of_dataframes()[[type_filter]]) -> full_df[[type_filter]]
+#
+#   }
+#
+#   return(full_df)
+#
+# })
 
 create_ui_for_type <- function(data_type, study_accession = NULL, experiment_accession = NULL) {
-
   df <- original_df_combined()[[data_type]]
-
   col_names <- names(df)
   print(paste(" select where str:",paste0(study_accession,experiment_accession,data_type)))
 
@@ -132,31 +213,33 @@ create_ui_for_type <- function(data_type, study_accession = NULL, experiment_acc
 
     if (nrow(xprofile) > 0 & data_type == 'X') {
       time_exp_val <- strsplit(selected_col[3],",",fixed = TRUE)[[1]]
+      patient_exp_val <- strsplit(selected_col[3],",",fixed = TRUE)[[1]]
     } else {
       time_exp_val <- selected_col[1]
+      patient_exp_val <- selected_col[1]
     }
 
   # imported_h_study(study_accession)
   # imported_h_experiment(experiment_accession)
 
-  header_info <- fluidRow(
-    column(
-      12,
-      div(
-        style = "margin-bottom: 10px;",
-        tags$span(style = "font-weight: bold;", "Study: "), study_accession,#textOutput("imported_h_studyimported_h_study", inline = TRUE),
-        " | ",
-        tags$span(style = "font-weight: bold;", "Experiment: "), experiment_accession,#textOutput("imported_h_experiment", inline = TRUE),
-        " | ",
-        tags$span(style = "font-weight: bold;", "plate_id: "), textOutput("imported_h_plate_id", inline = TRUE)
-      )
-    )
-  )
+  # header_info <- fluidRow(
+  #   column(
+  #     12,
+  #     div(
+  #       style = "margin-bottom: 10px;",
+  #       tags$span(style = "font-weight: bold;", "Study: "), study_accession,#textOutput("imported_h_studyimported_h_study", inline = TRUE),
+  #       " | ",
+  #       tags$span(style = "font-weight: bold;", "Experiment: "), experiment_accession,#textOutput("imported_h_experiment", inline = TRUE),
+  #       " | ",
+  #       tags$span(style = "font-weight: bold;", "plate_id: "), textOutput("display_imported_h_plate_id", inline = TRUE)
+  #     )
+  #   )
+  # )
 
   if(data_type == "X"){
-    p1 <- tagList(header_info, p("Select segments corresponding to Dilution, Group name, Timepoint and Patient ID"))
+    p1 <- tagList(p("Select segments corresponding to Dilution, Group name, Timepoint and Patient ID")) # no header info here
   }else{
-    p1 <- tagList(header_info, p("Select segments corresponding to Dilution and Source"))
+    p1 <- tagList(p("Select segments corresponding to Dilution and Source"))
   }
 
   table_ui <- rHandsontableOutput(paste0("table_", data_type))
@@ -188,11 +271,18 @@ create_ui_for_type <- function(data_type, study_accession = NULL, experiment_acc
     multiple = TRUE
   )
 
-  select_ui_patientID <- selectInput(paste0("select_patientID_", data_type),
-                                     label = "Patient ID",
-                                     choices = col_names,
-                                     selected = ifelse(nrow(xprofile) > 0,selected_col[4],selected_col[1])
-                                     )
+  # select_ui_patientID <- selectInput(paste0("select_patientID_", data_type),
+  #                                    label = "Patient ID",
+  #                                    choices = col_names,
+  #                                    selected = ifelse(nrow(xprofile) > 0,selected_col[4],selected_col[1])
+  #                                    )
+  select_ui_patientID <- pickerInput(
+    inputId = paste0("select_patientID_", data_type),
+    label = "Patient ID",
+    choices = list(colnames = col_names),
+    selected = patient_exp_val,
+    multiple = TRUE
+  )
 
   select_ui3 <- verbatimTextOutput(paste0("print_name_", data_type))
 
@@ -265,12 +355,30 @@ create_ui_for_type <- function(data_type, study_accession = NULL, experiment_acc
   do.call(tagList, ui_outputs)
 }
 
+# output$optimize_plate_info <- renderUI({
+#   fluidRow(
+#   column(
+#     12,
+#     div(
+#       style = "margin-bottom: 10px;",
+#       tags$span(style = "font-weight: bold;", "Study: "), input$readxMap_study_accession,#textOutput("imported_h_studyimported_h_study", inline = TRUE),
+#       " | ",
+#       tags$span(style = "font-weight: bold;", "Experiment: "), input$readxMap_experiment_accession_import,#textOutput("imported_h_experiment", inline = TRUE),
+#       " | ",
+#       tags$span(style = "font-weight: bold;", "plate: "), textOutput("display_imported_h_plate_number", inline = TRUE)
+#     )
+#   )
+# )
+# })
+
 observe({
 
   req(input$readxMap_study_accession)
   req(input$readxMap_experiment_accession_import)
+  req(inFile())
 
   if(!is.null(unique_plate_types())){
+    cat("firing after unique plate types")
 
     type_vector <- unique_plate_types()
 
@@ -278,6 +386,9 @@ observe({
     create_ui_output <- function(type) {
       output_name <- paste0("ui_", type)
       output[[output_name]] <- renderUI({
+        # req(original_df_combined())
+        # req(list_of_dataframes())
+
         req(input$readxMap_experiment_accession_import)
 
         create_ui_for_type(type, study_accession = input$readxMap_study_accession, experiment_accession = input$readxMap_experiment_accession_import)
@@ -293,10 +404,11 @@ observe({
           req(header_info())
           tagList(
             p("Edit editable fields in the table to assign plate information. The sample dilution factor must be between 1 and 100,000.
+            A sample dilution of 9999 can be used to indicate a mixed plate with multiple serum dilutions on the plate.
               plate should be in the form plate_n (n = 1–99, optionally followed by a lowercase letter a–z).
               Additional variables in the plate metadata that currently are not stored in the database are automatically ignored in the table for the uploading for Type P."),
             uiOutput("upload_head_status"),
-            rHandsontableOutput("table_plates"),
+            rHandsontableOutput("table_plates")
             # conditionalPanel(
             #   condition = "output.type_p_completed_js == 'false'",
             #   #actionButton("assign_header", label = "Assign and Save")
@@ -379,7 +491,8 @@ output$table_plates <- renderRHandsontable({
   df_long <- rbind(df_long, new_rows)
   #df_long$variable as.POSIXct(strptime(gsub(",",":",gsub(" ","",df_long[["acquisition_date"]])),format='%d-%b-%Y:%H:%M%p'), tz = "EST")
 
-
+  # remove extension from the plate_id before displaying metadata
+  df_long[df_long$variable == "plate_id",]$value <- sub("\\.[^.]*$", "", df_long[df_long$variable == "plate_id", ]$value)
   # meta_long <- meta_df %>%
   #   tidyr::pivot_longer(cols = everything(), names_to = "Field", values_to = "Value")
   #
@@ -433,21 +546,70 @@ output$table_plates <- renderRHandsontable({
   #   hot_col("workspace_id", readOnly = T)
 })
 
+
+# imported_h_plate_id <- reactive({
+#   req(header_info())
+#   meta_df <- parse_metadata_df(header_info())
+#   # Variables stored in the database
+#   stored_variables <- c(
+#     "file_name", "acquisition_date", "reader_serial_number",
+#     "rp1_pmt_volts", "rp1_target", "plateid", "plate_id", "plate"
+#   )
+#   # remove any extra for downstream saving.
+#   extra_cols <- setdiff(names(meta_df), stored_variables)
+#   if (length(extra_cols) > 0) {
+#     meta_df <- meta_df[, setdiff(names(meta_df), extra_cols), drop = FALSE]
+#   }
+#
+#   df_long <- meta_df %>%
+#     pivot_longer(
+#       cols = everything(),       # pivot all columns
+#       names_to = "variable",     # column names go here
+#       values_to = "value"        # column values go here
+#     )
+#
+#   new_rows <- data.frame(
+#     variable = c( "sample_dilution_factor", "study_accession", "experiment_accession", "auth0_user", "workspace_id"),
+#     value = c(
+#       NA,
+#       input$readxMap_study_accession, # was import
+#       input$readxMap_experiment_accession_import,
+#       currentuser(),
+#       as.character(userWorkSpaceID())
+#     ),
+#     stringsAsFactors = FALSE
+#   )
+#
+#   df_long <- rbind(df_long, new_rows)
+#
+#   # Defensive check for either name
+#   plate_id_val <- df_long[df_long$variable == "plate_id", ]$value
+#   req(plate_id_val)
+#   plate_id_val
+# })
+
+
 observeEvent(input$table_plates, {
 
   updated_table <- hot_to_r(input$table_plates)
   current_type_p_tab(updated_table)
-
-  # Update the reactiveVals whenever the table is updated
-  import_study <- updated_table[updated_table$variable == "study_accession", ]$value
-  #imported_h_study(import_study)
-
-  import_experiment <- updated_table[updated_table$variable == "experiment_accession", ]$value
-  #imported_h_experiment(import_experiment)
-
-  import_plate_id <- updated_table[updated_table$variable == "plate_id", ]$value
-  imported_h_plate_id(import_plate_id)
 })
+
+#   # Update the reactiveVals whenever the table is updated
+#   import_study <- updated_table[updated_table$variable == "study_accession", ]$value
+#   #imported_h_study(import_study)
+#
+#   import_experiment <- updated_table[updated_table$variable == "experiment_accession", ]$value
+#   #imported_h_experiment(import_experiment)
+#
+#   import_plate_id <- updated_table[updated_table$variable == "plate_id", ]$value
+#   imported_h_plate_id(import_plate_id)
+#
+#   import_plate_id <- updated_table[updated_table$variable == "plate", ]$value
+#   import_plate_number <- as.integer(gsub("\\D", "", import_plate_id))
+#
+#   imported_h_plate_number(import_plate_number)
+# })
 
 observeEvent(input$assign_header, {
   req(current_type_p_tab())
@@ -806,6 +968,7 @@ parse_metadata_df <- function(df) {
   meta_df[meta_df$field == "Plate ID", "value"] <-
     str_trim(str_replace_all(meta_df[meta_df$field == "Plate ID", "value"], "\\s", ""), side = "both")
 
+
   if (meta_df[meta_df$field == "Plate ID",]$value != "") {
     meta_df$field[meta_df$field == "Plate ID"] <- "plateid"
 
@@ -823,8 +986,6 @@ parse_metadata_df <- function(df) {
   # meta_df$experiment_accession <- experiment_accession
   # meta_df$auth0_user <- currentuser
   # meta_df$workspace_id <- workspace_id
-
-
 
   meta_df <- meta_df %>%
                pivot_wider(names_from = field, values_from = value)
@@ -859,11 +1020,15 @@ parse_metadata_df <- function(df) {
 #   #imported_h_experiment()
 # })
 
-output$imported_h_plate_id <- renderText({
-  req(imported_h_plate_id())
-  imported_h_plate_id()
-})
-
+# output$display_imported_h_plate_id <- renderText({
+#   req(imported_h_plate_id())
+#   imported_h_plate_id()
+# })
+#
+# output$display_imported_h_plate_number <- renderText({
+#   req(imported_h_plate_number())
+#   imported_h_plate_number()
+# })
 
 # observeEvent(input$assign_header, {
 #
@@ -898,8 +1063,14 @@ output[["table_X1"]] <- renderTable({
   original_df_combined()[["B"]] %>% head()
 })
 
-observe({
+#observe({
+observeEvent(original_df_combined(), {
+  req(original_df_combined())
+  print("Rebuilding rhandsontables for new data")
+
   types <- unique_plate_types()
+  types <- types[types != "P"] # the type P table is built separately
+  #type_v <<- types
   for (type in types) {
     local({
       current_type <- type
@@ -935,7 +1106,9 @@ observeEvent(input$assign_value_X, {
   current_df %>%
     mutate(timepoint = do.call(paste, c(select(., all_of(input$select_timepoint_X)), sep = "_"))) -> current_df
 
-  current_df$patient_id <- current_df[[input$select_patientID_X]]
+  current_df %>%
+    mutate(patient_id = do.call(paste, c(select(., all_of(input$select_patientID_X)), sep = "_"))) -> current_df
+  #current_df$patient_id <- current_df[[input$select_patientID_X]]
 
   output$table_X <- renderRHandsontable({
     rhandsontable(current_df,
@@ -983,8 +1156,8 @@ observeEvents <- function(type) {
 lapply(type_vector_observes, observeEvents)
 
 observeEvent(input$upload_type_X, {
-
-  req(imported_h_plate_id())
+  req(input$read_import_plate_id)
+  #req(imported_h_plate_id())
 
   auth0_username <- session$userData$auth0_info$nickname
 
@@ -1024,8 +1197,9 @@ observeEvent(input$upload_type_X, {
                                       new_col_df = x_type_final_table,
                                       study_accession = study_name_import,
                                       exp_accession = experiment_name_import)
-  # from what was stored before when updating the header
-  type_x_ready$plate_id <- imported_h_plate_id()
+  # from what was stored before when updating the header Trim white space
+  type_x_ready$plate_id <- gsub("\\s+", "", type_x_ready$plate_id)
+  #type_x_ready$plate_id <- input$read_import_plate_id #imported_h_plate_id()
   feature_to_stor <- type_x_ready$feature[1]
 
   if(is.null(type_x_ready)){
@@ -1084,11 +1258,14 @@ observeEvent(input$upload_type_X, {
 observe({
   req(input$readxMap_study_accession) #was _import
   req(input$readxMap_experiment_accession_import)
-  req(imported_h_plate_id())
+  req(input$read_import_plate_id )
+  req(plate_data())
+  cat("triggering badge samples ")
+  #req(imported_h_plate_id())
 
   study_name <- input$readxMap_study_accession
   experiment_name <- input$readxMap_experiment_accession_import
-  plate_id <- imported_h_plate_id()
+  plate_id <- input$read_import_plate_id #imported_h_plate_id()
 
   query <- glue::glue_sql(
     "
@@ -1101,8 +1278,10 @@ observe({
     .con = conn
   )
 
-  sample_data <- DBI::dbGetQuery(conn, query)
+  print(query)
 
+  sample_data <- DBI::dbGetQuery(conn, query)
+  print(str(sample_data))
   # Update reactive status
   type_x_status(list(
     plate_exists = nrow(sample_data) > 0,
@@ -1148,7 +1327,8 @@ output$upload_sample_status <- renderUI({
 
 
 observeEvent(input$upload_type_S, {
-  req(imported_h_plate_id())
+  req(input$read_import_plate_id)
+  #req(imported_h_plate_id())
 
   auth0_username <- session$userData$auth0_info$nickname
   print("upload for S")
@@ -1188,8 +1368,9 @@ observeEvent(input$upload_type_S, {
                                      new_col_df = s_type_final_table,
                                      study_accession = study_name_import,
                                      exp_accession = experiment_name_import)
-  #from what was stored before when updating the header
-  type_s_ready$plate_id <- imported_h_plate_id()
+  #from what was stored before when updating the header trim white space
+  type_s_ready$plate_id <- gsub("\\s+", "", type_s_ready$plate_id)
+  #type_s_ready$plate_id <- input$read_import_plate_id#imported_h_plate_id()
 
   feature_to_stor <- type_s_ready$feature[1]
 
@@ -1259,11 +1440,12 @@ observeEvent(input$upload_type_S, {
 observe({
   req(input$readxMap_study_accession) # was import
   req(input$readxMap_experiment_accession_import)
-  req(imported_h_plate_id())
+  req(input$read_import_plate_id)
+  #req(imported_h_plate_id())
 
   study_name <- input$readxMap_study_accession
   experiment_name <- input$readxMap_experiment_accession_import
-  plate_id <- imported_h_plate_id()
+  plate_id <- input$read_import_plate_id #imported_h_plate_id()
 
   query <- glue::glue_sql(
     "
@@ -1297,8 +1479,8 @@ output$upload_standards_status <- renderUI({
 
 
 observeEvent(input$upload_type_C, {
-  req(imported_h_plate_id())
-
+  #req(imported_h_plate_id())
+  req(input$read_import_plate_id)
   auth0_username <- session$userData$auth0_info$nickname
   print("upload for C")
 
@@ -1337,8 +1519,10 @@ observeEvent(input$upload_type_C, {
                                      new_col_df = c_type_final_table,
                                      study_accession = study_name_import,
                                      exp_accession = experiment_name_import)
-  # from what was stored before when updating the header
-  type_c_ready$plate_id <- imported_h_plate_id()
+  # from what was stored before when updating the header Trim white space
+  type_c_ready$plate_id <- gsub("\\s+", "", type_c_ready$plate_id)
+  #type_c_ready$plate_id <- trimws(type_c_ready$plate_id)
+  #type_c_ready$plate_id <- input$read_import_plate_id #imported_h_plate_id()
   feature_to_stor <- type_c_ready$feature[1]
 
   if(is.null(type_c_ready)){
@@ -1400,14 +1584,15 @@ observeEvent(input$upload_type_C, {
 })
 
 ## Observe for type C
-observe({
+ observe({
   req(input$readxMap_study_accession) #was _import
   req(input$readxMap_experiment_accession_import)
-  req(imported_h_plate_id())
+  req(input$read_import_plate_id)
+  #req(imported_h_plate_id())
 
   study_name <- input$readxMap_study_accession
   experiment_name <- input$readxMap_experiment_accession_import
-  plate_id <- imported_h_plate_id()
+  plate_id <- input$read_import_plate_id #imported_h_plate_id()
 
   query <- glue::glue_sql(
     "
@@ -1441,8 +1626,8 @@ output$upload_control_status <- renderUI({
 
 
 observeEvent(input$upload_type_B, {
-  req(imported_h_plate_id())
-
+  #req(imported_h_plate_id())
+  req(input$read_import_plate_id)
   auth0_username <- session$userData$auth0_info$nickname
   print("upload for B")
   print(input$readxMap_study_accession) # was import
@@ -1480,8 +1665,9 @@ observeEvent(input$upload_type_B, {
                                      new_col_df = b_type_final_table,
                                      study_accession = input$readxMap_study_accession, # was import
                                      exp_accession = input$readxMap_experiment_accession_import)
-  # from what was stored before when updating the header
-  type_b_ready$plate_id <- imported_h_plate_id()
+  # from what was stored before when updating the header Trim white space
+  type_b_ready$plate_id <- gsub("\\s+", "", type_b_ready$plate_id)
+  #type_b_ready$plate_id <- input$read_import_plate_id #imported_h_plate_id()
   feature_to_stor <- type_b_ready$feature[1]
 
   if(is.null(type_b_ready)){
@@ -1549,11 +1735,12 @@ observeEvent(input$upload_type_B, {
 observe({
   req(input$readxMap_study_accession) # was import
   req(input$readxMap_experiment_accession_import)
-  req(imported_h_plate_id())
+  req(input$read_import_plate_id)
+  #req(imported_h_plate_id())
 
   study_name <- input$readxMap_study_accession
   experiment_name <- input$readxMap_experiment_accession_import
-  plate_id <- imported_h_plate_id()
+  plate_id <- input$read_import_plate_id #imported_h_plate_id()
 
   query <- glue::glue_sql(
     "
