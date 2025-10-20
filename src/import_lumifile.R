@@ -640,7 +640,14 @@ observe({
 #   )
 # })
 observeEvent(all_completed(), {
-  if (is_optimization_plate(plate_data()) && all_completed()) {
+
+  # cat("statuses:")
+  # print(optimization_parsed_boolean())
+  cat("all completed:")
+  print(all_completed())
+  #if (is_optimization_plate(plate_data()) && all_completed()) {
+   #if (optimization_parsed_boolean() && all_completed()) {
+  if (all_completed()) {
     optimization_ready(TRUE)
   } else {
     optimization_ready(FALSE)
@@ -677,13 +684,16 @@ all_completed <- reactive({
 
 
 output$ui_optimization <- renderUI({
+  all_completed()
+  optimization_parsed_boolean()
+
   if (!all_completed()) {
     return(div(
       " All required plate types must be completed before proceeding to optimization."
     ))
   }
-  fluidRow(
     if (all_completed() && !optimization_parsed_boolean()) {
+      fluidRow(
       tagList(
         tags$p("This plate has more than two serum dilutions. To assess dilutional linearity in the QC workflow
                the plate must be treated as different at each dilution. Splitting this optimization plate will
@@ -694,11 +704,12 @@ output$ui_optimization <- renderUI({
         choices = c("Yes", "No")
       )
       )
+      )
       }  #else if (optimization_parsed_boolean()) {
     #   createOptimizedBadge(is_optimized = optimization_parsed_boolean())
     #
     # }
-  )
+ # )
 })
 
 output$ui_split_button <- renderUI({
@@ -712,14 +723,19 @@ output$ui_split_button <- renderUI({
 output$plate_optimized_status <- renderUI({
   req(input$uploaded_sheet)# trigger refresh
   input$split_opt_plates
+  optimization_parsed_boolean()  # dependency
 
   createOptimizedBadge(is_optimized = optimization_parsed_boolean())
+
 })
 
 observeEvent(input$split_opt_plates, {
   split_optimization_single_upload(study_accession = input$readxMap_study_accession, experiment_accession = input$readxMap_experiment_accession_import,
                                    plate_id = input$read_import_plate_id,
                                    plate_number = input$read_import_plate_number)
+
+  # trigger refresh
+  optimization_refresh(optimization_refresh() + 1)
 })
 
 observeEvent(input$testButton, {

@@ -5,7 +5,7 @@ source("global.R", local = TRUE)
 
 
 #Set to 1 for local and do not push in prod
-# Sys.setenv(LOCAL_DEV = "1")
+ #Sys.setenv(LOCAL_DEV = "1")
 
 
 # Source authentication configuration (Step 1)
@@ -827,6 +827,7 @@ server <- function(input, output, session) {
       list_of_dataframes <- reactiveVal(NULL)
       original_df_combined <- reactiveVal(NULL)
 
+      optimization_refresh <- reactiveVal(0)
       optimization_ready <- reactiveVal(FALSE)
       plate_data <- reactiveVal()
       header_info <- reactiveVal()
