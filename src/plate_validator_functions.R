@@ -21,6 +21,12 @@ check_time_format <- function(x) {
   grepl("^\\d{2}-[A-Za-z]{3}-\\d{4}, \\d{2}:\\d{2} (AM|PM)$", x)
 }
 
+# Capitalize AM /PM
+capitalize_am_pm <- function(text) {
+  matches <- gregexpr("\\b(am|pm)\\b", text, ignore.case = TRUE, perl = TRUE)
+  regmatches(text, matches) <- lapply(regmatches(text, matches), toupper)
+  return(text)
+}
 ## Validate the required variables present in metadata
 # validate_metadata_variables <- function(df) {
 #   required_vars <- c(
@@ -177,6 +183,16 @@ check_blank_in_sample <- function(df, blank_keyword) {
 #skip_empty_well <- check_blank_in_sample(plte_data_v, blank_keyword = "empty_well")
 #replace_blank <- check_blank_in_sample(plte_data_v, blank_keyword = "use_as_blank")
 
+check_agg_bead_column <- function(df) {
+  required_cols <- c("X..Agg.Beads")
+  result <- required_cols %in% names(df)
+  if (!result) {
+    message <- "Ensure there is a % Agg Beads column after the last antigen."
+    return(list(result, message))
+  } else {
+    return(result)
+  }
+}
 
 check_bead_count <- function(df) {
 
@@ -271,7 +287,7 @@ plate_validation <- function(plate_metadata, plate_data, blank_keyword) {
     message_list <- c(message_list, paste("Ensure that the RP1 Target is numeric and if it is a decimal only one period is present. Value:", plate_metadata$rp1_target, sep = " "))
   }
 
-  pass_time_format <- check_time_format(plate_metadata$acquisition_date)
+  pass_time_format <- check_time_format(capitalize_am_pm(plate_metadata$acquisition_date))
   if (!pass_time_format) {
     message_list <- c(message_list, paste("Ensure the acquisition date is in the following date time format: DD-MMM-YYYY, HH:MM AM/PM Example: 01-Oct-2025, 12:12 PM  |Current Value:",
                                           plate_metadata$acquisition_date, sep = " "))
@@ -294,9 +310,15 @@ plate_validation <- function(plate_metadata, plate_data, blank_keyword) {
     message_list <- c(message_list, pass_standard_description[[2]])
   }
 
-  pass_bead_count_check <- check_bead_count(plate_data)
-  if (!pass_bead_count_check[[1]]) {
-    message_list <- c(message_list, paste("Ensure the bead count is present after all MFI values in parentheses for: \n", pass_bead_count_check[[2]], sep = ""))
+  pass_agg_bead_check <- check_agg_bead_column(plate_data)
+  if (!pass_agg_bead_check[[1]]) {
+    message_list <- c(message_list, pass_agg_bead_check[[2]])
+  } else {
+    # check blanks if aggregate column is present
+    pass_bead_count_check <- check_bead_count(plate_data)
+    if (!pass_bead_count_check[[1]]) {
+      message_list <- c(message_list, paste("Ensure the bead count is present after all MFI values in parentheses for: \n", pass_bead_count_check[[2]], sep = ""))
+    }
   }
  # examine blanks in type column
  procceed_to_blank_check <- check_blank_in_sample_boolean(plate_data)
@@ -373,4 +395,42 @@ createValidateBadge <- function(is_validated) {
       tagList(tags$i(class = "fa fa-exclamation-circle"), "Plate Not Validated")
     )
   }
+}
+
+createOptimizedBadge <- function(is_optimized) {
+
+  if (is.null(is_optimized) || length(is_optimized) == 0 || !isTRUE(is_optimized)) {
+    # Not Uploaded badge (grey)
+    span(
+      class = "badge",
+      style = "padding: 3px 8px; border-radius: 10px; margin-left: 10px;
+               background-color: #6c757d; color: white;",
+      tagList(tags$i(class = "fa fa-exclamation-circle"), "Plate Not Optimized")
+    )
+  } else {
+    # Completed Upload badge (green)
+    span(
+      class = "badge",
+      style = "padding: 3px 8px; border-radius: 10px; margin-left: 10px;
+               background-color: #28a745; color: white;",
+      tagList(tags$i(class = "fa fa-check"), paste("Plate Optimized", sep = ""))
+    )
+  }
+  # if (isTRUE(is_optimized)) {
+  #   # Completed Upload badge (green)
+  #   span(
+  #     class = "badge",
+  #     style = "padding: 3px 8px; border-radius: 10px; margin-left: 10px;
+  #              background-color: #28a745; color: white;",
+  #     tagList(tags$i(class = "fa fa-check"), paste("Plate Optimized", sep = ""))
+  #   )
+  # } else {
+  #   # Not Uploaded badge (grey)
+  #   span(
+  #     class = "badge",
+  #     style = "padding: 3px 8px; border-radius: 10px; margin-left: 10px;
+  #              background-color: #6c757d; color: white;",
+  #     tagList(tags$i(class = "fa fa-exclamation-circle"), "Plate Not Optimized")
+  #   )
+  # }
 }

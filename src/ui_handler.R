@@ -389,6 +389,7 @@ output$view_stored_experiments_ui <- renderUI({
     if (input$readxMap_study_accession != "Click here") {
 
  # tabRefreshCounter()$view_files_tab
+
   req(reactive_df_study_exp())
   # Get data
   df <- reactive_df_study_exp()
@@ -437,6 +438,11 @@ output$view_stored_experiments_ui <- renderUI({
                                         #                      df()$experiment_name)),
                                         selected = "Click here",
                                         multiple = FALSE
+                            ),
+                            actionButton(
+                              inputId = "refresh_experiments_button",
+                              label = "Refresh Experiments",
+                              icon = icon("refresh")
                             ),
                     # ),
                      #column(6,
@@ -553,7 +559,8 @@ output$dynamic_data_ui <- renderUI({
         title = "Plates",
         DT::dataTableOutput("stored_header"),
         downloadButton("download_stored_header"),
-        uiOutput("header_actions")
+        uiOutput("header_actions"),
+        uiOutput("split_button_ui")
       ),
       tabPanel(
         title = "Standards",
@@ -618,6 +625,22 @@ output$dynamic_data_ui <- renderUI({
   }
 })
 
+optimization_parsed_boolean <- reactive({
+  is_optimization_experiment_parsed(input$readxMap_study_accession, input$readxMap_experiment_accession_import, input$read_import_plate_id, input$read_import_plate_number)
+})
+
+output$split_button_ui <- renderUI({
+  if (!optimization_parsed_boolean()) {
+    actionButton("optimize_plates", "Split Optimization Plates")
+  } else {
+    NULL
+  }
+})
+
+observeEvent(input$optimize_plates, {
+  split_optimization_plates(study_accession = input$readxMap_study_accession, experiment_accession = input$readxMap_experiment_accession )
+})
+
 # ReactiveVal to store experiments
 reactive_df_study_exp <- reactiveVal()
 
@@ -627,7 +650,8 @@ observeEvent({
   list(
     input$main_tabs,
     input$study_tabs,
-    input$readxMap_study_accession
+    input$readxMap_study_accession,
+    refresh_experiment_trigger()
   )
 }, {
   # Only run when tab is active
@@ -664,6 +688,10 @@ observeEvent({
 
 observeEvent(input$refresh_data_button, {
   refresh_data_trigger(refresh_data_trigger() + 1)
+})
+
+observeEvent(input$refresh_experiments_button, {
+  refresh_experiment_trigger(refresh_experiment_trigger() + 1)
 })
 
 # observeEvent({

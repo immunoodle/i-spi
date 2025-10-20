@@ -766,6 +766,7 @@ server <- function(input, output, session) {
       usersession <- reactiveVal("unknown session")
 
       refresh_data_trigger <- reactiveVal(0) # trigger to refresh data
+      refresh_experiment_trigger <- reactiveVal(0) # trigger to refresh the experiment list
       stored_plates_data <- reactiveValues()
       storedlong_plates_data <- reactiveValues()
       selected_studyexpplate <- reactiveValues()
@@ -822,13 +823,19 @@ server <- function(input, output, session) {
       reload_sg_count <- 0
       reload_dil_lin_count <- 0
       #importing
+      type_observers <- reactiveValues()
+      list_of_dataframes <- reactiveVal(NULL)
+      original_df_combined <- reactiveVal(NULL)
+
+      optimization_ready <- reactiveVal(FALSE)
       plate_data <- reactiveVal()
       header_info <- reactiveVal()
       current_type_p_tab <- reactiveVal()
       unique_plate_types <- reactiveVal()
-      imported_h_study <- reactiveVal()
-      imported_h_experiment <- reactiveVal()
-      imported_h_plate_id <- reactiveVal()
+      #imported_h_study <- reactiveVal()
+      #imported_h_experiment <- reactiveVal()
+      #imported_h_plate_id <- reactiveVal()
+      #imported_h_plate_number <- reactiveVal()
       type_p_completed <- reactiveVal(FALSE)
      #type_x_completed <- reactiveVal()
       type_x_status <- reactiveVal(list(plate_exists = FALSE, n_record = 0))
