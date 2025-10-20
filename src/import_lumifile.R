@@ -717,7 +717,8 @@ output$plate_optimized_status <- renderUI({
 })
 
 observeEvent(input$split_opt_plates, {
-  split_optimization_single_upload(study_accession = input$readxMap_study_accession, experiment_accession = input$readxMap_experiment_accession,
+  split_optimization_single_upload(study_accession = input$readxMap_study_accession, experiment_accession = input$readxMap_experiment_accession_import,
+                                   plate_id = input$read_import_plate_id,
                                    plate_number = input$read_import_plate_number)
 })
 

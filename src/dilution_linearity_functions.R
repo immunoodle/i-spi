@@ -1886,7 +1886,7 @@ is_optimization_plate <- function(plate_data_in) {
 }
 
 
-is_optimization_experiment_parsed <- function(study_accession, experiment_accession, plate_number) {
+is_optimization_experiment_parsed <- function(study_accession, experiment_accession, plate_id, plate_number) {
 
   cat("In parsing optimization ")
   cat(study_accession)
@@ -1898,17 +1898,39 @@ is_optimization_experiment_parsed <- function(study_accession, experiment_access
     diluted_experiment <- experiment_accession
   }
 
-  diluted_experiment <- paste0(diluted_experiment, "_d")
+  diluted_experiment2 <- paste0(diluted_experiment, "_d")
   # Plates have this pattern
  # plate_pattern <- glue::glue("study_accession, '_{diluted_experiment}_pt{plate_number}_', '{dil}x)")
 
-  check_query <- glue::glue("
-        SELECT COUNT(*) AS count
+#dilutions on original plate
+  distinct_dilution_query <- glue::glue("SELECT  DISTINCT dilution
+	FROM madi_results.xmap_sample
+	WHERE study_accession = '{study_accession}'
+    AND experiment_accession = '{experiment_accession}'
+	AND plate_id = '{plate_id}';
+	")
+
+sample_data <- dbGetQuery(conn, distinct_dilution_query)
+
+unique_dilutions <- unique(sample_data$dilution)
+
+
+  # check_query <- glue::glue("
+  #       SELECT COUNT(*) AS count
+  #       FROM madi_results.xmap_header
+  #       WHERE study_accession = '{study_accession}'
+  #         AND experiment_accession = '{diluted_experiment}'
+  #
+  #     ")
+all_count <- c()
+for (dil in unique_dilutions) {
+  check_query <- glue::glue("SELECT DISTINCT plate_id, sample_dilution_factor ,COUNT(*) AS count
         FROM madi_results.xmap_header
         WHERE study_accession = '{study_accession}'
-          AND experiment_accession = '{diluted_experiment}'
-
-      ")
+          AND experiment_accession = '{diluted_experiment2}'
+          AND plate_id = '{study_accession}_{diluted_experiment}_pt{plate_number}_{dil}x'
+		GROUP BY  plate_id, sample_dilution_factor
+		 HAVING COUNT(*) > 0")
 #   check_query <- glue::glue("SELECT plate_id, COUNT(*) AS count
 #         FROM madi_results.xmap_header
 #         WHERE study_accession = '{study_accession}'
@@ -1917,12 +1939,14 @@ is_optimization_experiment_parsed <- function(study_accession, experiment_access
 #     )
 
   result <- dbGetQuery(conn, check_query)
-  count <- result$count[1]
+  count <- nrow(result)
+  all_count <- c(all_count, count)
+}
 
   cat("count")
-  print(count)
+  print(all_count)
 
-  if (count > 0) {
+  if (all(all_count) > 0) {
     #showNotification(paste("Plates have been split for ", experiment_accession, sep = ""))
     all_exist <- TRUE
   } else if (grepl("_d$", experiment_accession)) {
@@ -1980,7 +2004,14 @@ is_optimization_experiment_parsed <- function(study_accession, experiment_access
   # }
   # # Check if any plate has >= 2 dilutions
   #  return((length(names(dilution_counts[dilution_counts >= 2])) > 0) && !all_exist)
-split_optimization_single_upload <- function(study_accession, experiment_accession, plate_number) {
+split_optimization_single_upload <- function(study_accession, experiment_accession, plate_id, plate_number) {
+
+  cat("In optimize single upload ")
+  cat(study_accession)
+  cat(experiment_accession)
+  cat(plate_number)
+
+
 
   exclude_antigens <- c("Well", "Type", "Description", "Region", "Gate", "Total", "% Agg Beads", "Sampling Errors", "Rerun Status",
                         "Device Error", "Plate ID", "Regions Selected", "RP1 Target", "Platform Heater Target", "Platform Temp (°C)",
@@ -2003,45 +2034,51 @@ split_optimization_single_upload <- function(study_accession, experiment_accessi
   original_plates <- c()
   created_plates <- c()
 
-  query_sample_plates <- glue::glue("
+  # query unique serum dilutions
+  query_sample_plate <- glue::glue("
     SELECT DISTINCT plate_id, dilution
     FROM madi_results.xmap_sample
     WHERE study_accession = '{study_accession}'
       AND experiment_accession = '{experiment_accession}'
+      AND plate_id = '{plate_id}';
   ")
 
-  sample_data <- dbGetQuery(conn, query_sample_plates)
+  sample_data <- dbGetQuery(conn, query_sample_plate)
 
-  #  Count unique dilutions per plate_id
-  dilution_counts <- tapply(sample_data$dilution, sample_data$plate_id, function(x) length(unique(x)))
-
-  #  Get plate_ids with at least 2 dilutions
-  plate_ids_with_2_or_more_dilutions <- names(dilution_counts[dilution_counts >= 2])
-
-  #  Iterate over qualifying plates
-  for (plate in plate_ids_with_2_or_more_dilutions) {
-    cat("Plate ID with multiple dilutions:", plate, "\n")
-
-    plate_dilutions <- unique(sample_data$dilution[sample_data$plate_id == plate])
+  unique_dilutions <- unique(sample_data$dilution)
 
 
-
-    for (dil in plate_dilutions) {
+  # #  Count unique dilutions per plate_id
+  # dilution_counts <- tapply(sample_data$dilution, sample_data$plate_id, function(x) length(unique(x)))
+  #
+  # #  Get plate_ids with at least 2 dilutions
+  # plate_ids_with_2_or_more_dilutions <- names(dilution_counts[dilution_counts >= 2])
+  #
+  # #  Iterate over qualifying plates
+  # for (plate in plate_ids_with_2_or_more_dilutions) {
+  #   cat("Plate ID with multiple dilutions:", plate, "\n")
+  #
+  #   plate_dilutions <- unique(sample_data$dilution[sample_data$plate_id == plate])
+ if (length(unique_dilutions) >= 2) {
+    for (dil in unique_dilutions) {
       #new_plate_id <- paste0(plate, "_", dil)
       new_plate_id <- glue("{study_accession}_{diluted_experiment}_pt{plate_number}_{dil}x")
 
       # Check if this new diluted plate already exists in new experiment
       check_query <- glue::glue("
-        SELECT COUNT(*) AS count
+        SELECT DISTINCT plate_id, sample_dilution_factor, COUNT(*) AS count
         FROM madi_results.xmap_header
         WHERE study_accession = '{study_accession}'
           AND experiment_accession = CONCAT('{diluted_experiment}', '_d')
           AND plate_id = '{study_accession}_{diluted_experiment}_pt{plate_number}_{dil}x'
+          GROUP BY plate_id, sample_dilution_factor
+          HAVING COUNT(*) > 0;
       ")
 
       exists_result <- dbGetQuery(conn, check_query)
+      #count <-  as.numeric(exists_result$count[1])
 
-      if (exists_result$count > 0) {
+        if (nrow(exists_result) > 0) {
         cat("  - Skipping existing plate:", new_plate_id, "\n")
         next
       }
@@ -2058,7 +2095,7 @@ split_optimization_single_upload <- function(study_accession, experiment_accessi
           study_accession,
           CONCAT('{diluted_experiment}', '_d'),
           CONCAT(study_accession, '_{diluted_experiment}_pt{plate_number}_', '{dil}x'),
-          CONCAT(file_name, '{dil}'),
+          CONCAT(file_name),
           acquisition_date,
           reader_serial_number,
           rp1_pmt_volts,
@@ -2138,15 +2175,15 @@ SELECT
 FROM madi_results.xmap_sample
 WHERE study_accession = '{study_accession}'
   AND experiment_accession = '{experiment_accession}'
-  AND plate_id = '{plate}'
+  AND plate_id = '{plate_id}'
   AND dilution = {dil}
   AND antigen NOT IN ({exclude_antigens_sql});")
 
 
 dbExecute(conn, insert_sample)
     }
-    created_plates <- c(created_plates, new_plate_id)
-    original_plates <- c(original_plates, plate)
+    # created_plates <- c(created_plates, new_plate_id)
+    # original_plates <- c(original_plates, plate)
 
 
 
@@ -2183,12 +2220,16 @@ dbExecute(conn, insert_sample)
     #
     #  #print(update_sample)
     #   dbExecute(conn, update_sample)
-  }
+  #}
 
 
 
   cat("Split optimization completed.\n")
   showNotification("Split optimization completed")
+ }
+  else {
+    showNotification("This plate has 1 serum dilution and cannot be split.")
+  }
 }
 
 split_optimization_plates <- function(study_accession, experiment_accession) {

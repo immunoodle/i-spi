@@ -626,7 +626,7 @@ output$dynamic_data_ui <- renderUI({
 })
 
 optimization_parsed_boolean <- reactive({
-  is_optimization_experiment_parsed(input$readxMap_study_accession, input$readxMap_experiment_accession_import, input$read_import_plate_number)
+  is_optimization_experiment_parsed(input$readxMap_study_accession, input$readxMap_experiment_accession_import, input$read_import_plate_id, input$read_import_plate_number)
 })
 
 output$split_button_ui <- renderUI({
