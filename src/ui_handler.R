@@ -626,6 +626,7 @@ output$dynamic_data_ui <- renderUI({
 })
 
 optimization_parsed_boolean <- reactive({
+  optimization_refresh() # refresh dependency
   is_optimization_experiment_parsed(input$readxMap_study_accession, input$readxMap_experiment_accession_import, input$read_import_plate_id, input$read_import_plate_number)
 })
 
@@ -640,6 +641,7 @@ output$split_button_ui <- renderUI({
 observeEvent(input$optimize_plates, {
   split_optimization_plates(study_accession = input$readxMap_study_accession, experiment_accession = input$readxMap_experiment_accession )
 })
+
 
 # ReactiveVal to store experiments
 reactive_df_study_exp <- reactiveVal()

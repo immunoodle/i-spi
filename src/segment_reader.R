@@ -213,7 +213,7 @@ create_ui_for_type <- function(data_type, study_accession = NULL, experiment_acc
 
     if (nrow(xprofile) > 0 & data_type == 'X') {
       time_exp_val <- strsplit(selected_col[3],",",fixed = TRUE)[[1]]
-      patient_exp_val <- strsplit(selected_col[3],",",fixed = TRUE)[[1]]
+      patient_exp_val <- strsplit(selected_col[4],",",fixed = TRUE)[[1]]
     } else {
       time_exp_val <- selected_col[1]
       patient_exp_val <- selected_col[1]
