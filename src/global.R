@@ -91,6 +91,9 @@ library(urltools)
 
 library(shiny.destroy)
 
+# for plate layout viz
+library(ggplate)
+
 # Enable progressr with shiny
 handlers(global = TRUE)
 handlers("shiny")

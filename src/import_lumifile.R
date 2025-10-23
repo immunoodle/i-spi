@@ -98,7 +98,7 @@ output$readxMapData <- renderUI({
                    shinyWidgets::radioGroupButtons(
                      inputId = "xPonentFile",
                      label = "File Format",
-                     choices = c("xPONENT", "RAW"),
+                     choices = c("xPONENT", "RAW", "Layout Template"),
                      selected = "RAW",
                      justified = TRUE,
                      checkIcon = list(
@@ -119,8 +119,35 @@ output$readxMapData <- renderUI({
                    ), conditionalPanel(
                      condition = "input.uploaded_sheet != ''",
                      uiOutput("raw_ui")
+                   ),
+                   conditionalPanel(
+                     condition = "input.xPonentFile == 'Layout Template'",
+                     downloadButton("blank_layout_file", "Download a blank layout template"),
+                     fileInput("upload_layout_file"
+                               , label="Upload a layout file (only accepts xlsx, xls)"
+                               , accept=c(".xlsx",".xls")
+                               , multiple=FALSE),
+                     conditionalPanel(
+                       condition = "input.upload_layout_file != ''",
+                       uiOutput("view_layout_file_ui")
+                       # actionButton("view_layout_plate_id_sheet", "View Layout Plate ID"),
+                       # actionButton("view_layout_plates_map_sheet", "View Layout Plate Map"),
+                       # actionButton("view_layout_antigen_list_sheet", "View Layout Antigen List")
+                     ),
+                     fileInput("upload_batch_bead_array"
+                                , label="Upload one or more plate/batch files (only accepts xlsx, xls)"
+                                , accept=c(".xlsx",".xls")
+                                , multiple=TRUE),
+                     uiOutput("file_summary"),
+                     uiOutput("plate_tabs")
 
-                   )
+                     #rHandsontableOutput("batch_plate_table")
+
+
+
+                   #  verbatimTextOutput("layout_sheets")
+
+                     )
                  )
           ),
           column(9,
@@ -792,3 +819,725 @@ observeEvent(input$savexMapButton, {
 
   }
 })
+
+
+
+### Layout template import
+
+output$blank_layout_file <- downloadHandler(
+  filename = function() {
+    paste0("layout_template.xlsx")
+  },
+  content = function(file) {
+    file.copy("www/layout_template.xlsx", file)
+  }
+)
+
+# When a file is uploaded, read all sheets and store them
+# observeEvent(input$upload_layout_file, {
+#   req(input$upload_layout_file)
+#
+#   file_path <- input$upload_layout_file$datapath
+#   sheet_names <- readxl::excel_sheets(file_path)
+#
+#   # Skip the first 2 rows and use 3rd as header
+#   layout_template_sheets$sheets <- purrr::map(sheet_names, ~ read_excel(
+#     file_path,
+#     sheet = .x,
+#     skip = 2,
+#     col_names = TRUE
+#   ))
+#
+#   names(layout_template_sheets$sheets) <- sheet_names
+#
+#
+#   print(names(layout_template_sheets$sheets))
+# })
+
+observeEvent(input$upload_layout_file, {
+ # req(input$upload_layout_file)
+
+  # # reset reactive that hold the data
+  inLayoutFile(NULL)
+  avaliableLayoutSheets(NULL)
+
+  layout_template_sheets(list())
+
+  # layout_template_sheets$plate_id <- NULL
+  # layout_template_sheets$plates_map <- NULL
+  # layout_template_sheets$antigen_list <- NULL
+
+  # Store the uploaded file
+  inLayoutFile(
+    input$upload_layout_file
+  )
+
+  if (is.null(inLayoutFile())) {
+    return(NULL)
+  }
+
+  # # Get file path
+  # inFile <- input$upload_layout_file$datapath
+
+  # Get all sheet names
+  sheets <- readxl::excel_sheets(inLayoutFile()$datapath)
+  cat("\nSheets found:", paste(sheets, collapse = ", "), "\n")
+
+  # Read each sheet, skipping the first 2 rows
+  all_sheets <- lapply(sheets, function(sheet_name) {
+    skip_rows <- if (sheet_name == "timepoint")  3 else 2
+    readxl::read_excel(inLayoutFile()$datapath, sheet = sheet_name, skip = skip_rows)
+  })
+  names(all_sheets) <- sheets  # Assign sheet names
+
+  # Now assign to reactive Values object
+  layout_template_sheets(all_sheets)
+
+  # Dynamically generate UI
+  output$view_layout_file_ui <- renderUI({
+    req(layout_template_sheets())
+    req(length(layout_template_sheets()) > 0)
+    fluidRow(
+      column(2, actionButton("view_layout_plate_id_sheet", "View Layout Plate ID")),
+      column(2, actionButton("view_layout_subject_group_sheet", "View Layout Subject Map")),
+      column(2, actionButton("view_layout_timepoint_sheet", "View Layout Timepoint")),
+      column(2, actionButton("view_layout_plates_map_sheet", "View Layout Plate Map")),
+      column(2, actionButton("view_layout_antigen_list_sheet", "View Layout Antigen List"))
+    )
+  })
+  # if ("plate_id" %in% names(all_sheets)) {
+  #   layout_template_sheets$plate_id <- all_sheets[["plate_id"]]
+  # }
+  # if ("plates_map" %in% names(all_sheets)) {
+  #   layout_template_sheets$plates_map <- all_sheets[["plates_map"]]
+  # }
+  # if ("antigen_list" %in% names(all_sheets)) {
+  #   layout_template_sheets$antigen_list <- all_sheets[["antigen_list"]]
+  # }
+  #
+  # cat("\nSheet dimensions:\n")
+  # print(lapply(all_sheets, dim))
+})
+
+
+observeEvent(layout_template_sheets(), {
+  cat("changed layout sheets")
+})
+
+#
+# observe({
+#   file <- input$upload_layout_file
+#   cat("current file: ")
+#   print(file)
+#   # If no file is selected
+#   if (is.null(file)) {
+#     cat("No layout file selected — resetting reactive values.\n")
+#     inLayoutFile(NULL)
+#     avaliableLayoutSheets(NULL)
+#     layout_template_sheets(list())
+#   }
+# })
+
+# observe({
+#   if (is.null(input$upload_layout_file)) {
+#     print("No file selected yet.")
+#   } else {
+#     print("File has been selected.")
+#     print(input$upload_layout_file) # Shows the file information
+#   }
+# })
+
+# observe({
+#   if (is.null(input$upload_layout_file)) {
+#     layout_template_sheets(list())
+#     removeModal()
+#     output$layout_plate_id_sheet <- rhandsontable::renderRHandsontable(NULL)
+#     output$layout_plates_map_sheet <- rhandsontable::renderRHandsontable(NULL)
+#     output$layout_antigen_list_sheet <- rhandsontable::renderRHandsontable(NULL)
+#   }
+# })
+# all_sheets <- reactive({
+#   req(input$upload_layout_file)
+#
+#   file_path <- input$upload_layout_file$datapath
+#   sheet_names <- excel_sheets(file_path)
+#
+#   # Read each sheet into a list
+#   sheets_list <- map(sheet_names, ~ read_excel(file_path, sheet = .x, skip = 2,))
+#   names(sheets_list) <- sheet_names
+#   sheets_list
+# })
+
+# output$layout_sheets <- renderPrint({
+#   req(layout_template_sheets)
+#   cat("Sheets loaded:\n")
+#   print(names(layout_template_sheets))
+#   cat("\n Sheet dimensions:\n")
+#   lapply(layout_template_sheets$all_sheets, dim)
+#   for(name in names(layout_template_sheets$all_sheets)) {
+#     print(head(layout_template_sheets$all_sheets[[name]], 5))
+#   }
+#
+# })
+observeEvent(input$view_layout_plate_id_sheet,{
+  print("view layout plate id sheet")
+
+  showModal(
+    modalDialog(
+      title = "Plate ID sheet ",
+      rhandsontable::rHandsontableOutput("layout_plate_id_sheet"),
+      size = "l",
+      easyClose = TRUE
+    )
+  )
+
+  output$layout_plate_id_sheet <- rhandsontable::renderRHandsontable({
+    req(layout_template_sheets()[["plate_id"]])
+    rhandsontable(layout_template_sheets()[["plate_id"]], readOnly = TRUE)
+  })
+
+  # platemetadata <<- header_info()
+  #print(header_info())
+})
+
+observeEvent(input$view_layout_subject_group_sheet, {
+  showModal(
+    modalDialog(
+      title = "Subject Map",
+      rhandsontable::rHandsontableOutput("layout_subject_groups_sheet"),
+      size = "l",
+      easyClose = TRUE
+    )
+  )
+
+  output$layout_subject_groups_sheet <- rhandsontable::renderRHandsontable({
+    req(layout_template_sheets()[["subject_groups"]])
+    rhandsontable(layout_template_sheets()[["subject_groups"]], readOnly = TRUE)
+  })
+})
+
+observeEvent(input$view_layout_timepoint_sheet, {
+  showModal(
+    modalDialog(
+      title = "Timepoint Map",
+      rhandsontable::rHandsontableOutput("layout_timepoint_sheet"),
+      size = "l",
+      easyClose = TRUE
+    )
+  )
+
+  output$layout_timepoint_sheet <- rhandsontable::renderRHandsontable({
+    req(layout_template_sheets()[["timepoint"]])
+    rhandsontable(layout_template_sheets()[["timepoint"]], readOnly = TRUE)
+  })
+})
+
+observeEvent(input$view_layout_plates_map_sheet,{
+  print("view layout plate map sheet")
+
+  showModal(
+    modalDialog(
+      title = "Plate map sheet ",
+      rhandsontable::rHandsontableOutput("layout_plates_map_sheet"),
+      size = "l",
+      easyClose = TRUE
+    )
+  )
+
+  output$layout_plates_map_sheet <- rhandsontable::renderRHandsontable({
+   req(layout_template_sheets()[["plates_map"]])
+    rhandsontable(layout_template_sheets()[["plates_map"]], readOnly = TRUE)
+  })
+
+})
+
+observeEvent(input$view_layout_antigen_list_sheet,{
+  print("view layout antigen list sheet")
+
+  showModal(
+    modalDialog(
+      title = "Antigen list sheet ",
+      rhandsontable::rHandsontableOutput("layout_antigen_list_sheet"),
+      size = "l",
+      easyClose = TRUE
+    )
+  )
+
+  output$layout_antigen_list_sheet <- rhandsontable::renderRHandsontable({
+    req(layout_template_sheets()[["antigen_list"]])
+    rhandsontable(layout_template_sheets()[["antigen_list"]], readOnly = TRUE)
+  })
+
+})
+
+
+## Clear old data from layout when navigate back to layout template
+observeEvent(input$xPonentFile, {
+  if (input$xPonentFile == "Layout Template") {
+    cat("Switched to Layout Template tab — clearing layout data\n")
+
+    # Clear all layout-related reactive values
+    inLayoutFile(NULL)
+    avaliableLayoutSheets(NULL)
+    layout_template_sheets(list())
+
+    # Remove the dynamically generated buttons
+    output$view_layout_file_ui <- renderUI({NULL})
+
+  }
+})
+
+
+# observeEvent(input$upload_batch_bead_array, {
+#   req(input$upload_batch_bead_array)
+#
+#   uploaded_files <- input$upload_batch_bead_array
+#
+#   # Read each Excel file into a list element
+#   files_list <- lapply(uploaded_files$datapath, function(file_path) {
+#     read_excel(file_path)
+#   })
+#
+#   # Assign filenames as names
+#   names(files_list) <- uploaded_files$name
+#
+#   # Store the list in the reactiveVal
+#   batch_data_list(files_list)
+# })
+# observeEvent(input$upload_batch_bead_array, {
+#   req(input$upload_batch_bead_array)
+#
+#   uploaded_files <- input$upload_batch_bead_array
+#
+#   # Read only the first sheet from each uploaded file
+#   files_list <- lapply(uploaded_files$datapath, function(path) {
+#     readxl::read_excel(path, sheet = 1)
+#   })
+#
+#   # Assign filenames as list names
+#   names(files_list) <- uploaded_files$name
+#
+#   # Store in reactiveVal
+#   batch_data_list(files_list)
+# })
+# observeEvent(input$upload_batch_bead_array, {
+#   req(input$upload_batch_bead_array)
+#   uploaded_files <- input$upload_batch_bead_array
+#
+#   # Read each file’s first sheet (header + data)
+#   files_list <- lapply(uploaded_files$datapath, function(path) {
+#     # Read header info (first 7 rows, no column names)
+#     header_info <- openxlsx::read.xlsx(path, rows = 1:7, colNames = FALSE, sheet = 1)
+#     # Read plate data (starting from row 8)
+#     plate_data <- openxlsx::read.xlsx(path, startRow = 8, sheet = 1, colNames = TRUE)
+#
+#     # Clean up: remove empty rows
+#     plate_data <- plate_data[!apply(
+#       plate_data, 1,
+#       function(x) all(is.na(x) | trimws(x) == "" | trimws(x) == "NA")
+#     ), ]
+#
+#     # Return both header and plate data
+#     list(header = header_info, plate = plate_data)
+#   })
+#
+#   # Assign filenames as list names
+#   names(files_list) <- uploaded_files$name
+#
+#   # Store in reactiveVal
+#   batch_data_list(files_list)
+# })
+
+observeEvent(input$upload_batch_bead_array, {
+  req(input$upload_batch_bead_array)
+  uploaded_files <- input$upload_batch_bead_array
+
+  # Use lapply to process all uploaded files
+  all_data <- lapply(uploaded_files$datapath, function(path) {
+    # Read header (first 7 rows)
+    header_info <- openxlsx::read.xlsx(path, rows = 1:7, colNames = FALSE, sheet = 1)
+    header_info <- parse_metadata_df(header_info)
+    # Read plate data (from row 8 onward)
+    plate_data <- openxlsx::read.xlsx(path, startRow = 8, sheet = 1, colNames = TRUE)
+
+    # Remove completely empty rows
+    plate_data <- plate_data[!apply(
+      plate_data, 1,
+      function(x) all(is.na(x) | trimws(x) == "" | trimws(x) == "NA")
+    ), ]
+
+    list(header = header_info, plate = plate_data)
+  })
+
+  # Assign names using uploaded filenames
+  names(all_data) <- uploaded_files$name
+
+  # Separate into two named lists
+  header_list <- lapply(all_data, `[[`, "header")
+  plate_list  <- lapply(all_data, `[[`, "plate")
+
+  # Store in reactiveVals
+  bead_array_header_list(header_list)
+  bead_array_plate_list(plate_list)
+
+  plate_names <- sapply(header_list, function(x) x$plate)
+  sample_dilution_plate_df(
+    data.frame(
+      plate = plate_names,
+      sample_dilution_factor = NA_real_,
+      stringsAsFactors = FALSE
+    )
+  )
+
+  batch_header <<- construct_batch_upload_metadata(plates_map = layout_template_sheets()[["plates_map"]],
+                                                  plate_metadata_list = bead_array_header_list(),
+                                                  workspace_id = userWorkSpaceID(),
+                                                  currentuser = currentuser())
+
+
+  # sample_dilution_plate_df(
+  #   data.frame(
+  #     plate_name = names(bead_array_plate_list()),
+  #     sample_dilution_factor = NA_real_,
+  #     stringsAsFactors = FALSE
+  #   ))
+})
+# Display basic info about uploaded files
+output$file_summary <- renderPrint({
+ # data_list <- batch_data_list()
+  head_list <<- bead_array_header_list()
+  plate_list <<- bead_array_plate_list()
+  plates_map <<- layout_template_sheets()[["plates_map"]]
+  antigen_list <<- layout_template_sheets()[["antigen_list"]]
+  plate_id_data <<- layout_template_sheets()[["plate_id"]]
+  timepoint_map <<- layout_template_sheets()[["timepoint"]]
+  subject_map <<- layout_template_sheets()[["subject_groups"]]
+
+  # batch_header <- construct_batch_upload_metadata(plates_map = layout_template_sheets()[["plates_map"]],
+  #                                                plate_metadata_list = bead_array_header_list(),
+  #                                                workspace_id = userWorkSpaceID(),
+  #                                                currentuser = currentuser())
+
+
+  # if (length(data_list) == 0) {
+  #   cat("No batch files uploaded yet.")
+  # } else {
+  #   cat("Uploaded batch files:\n\n")
+  #   for (file in names(data_list)) {
+  #     df <- data_list[[file]]$plate
+  #     cat("•", file, "→", nrow(df), "rows x", ncol(df), "columns\n")
+  #   }
+  # }
+})
+
+plate_layout_plots <- reactive({
+  req(layout_template_sheets()[["plates_map"]])
+  req(layout_template_sheets()[["plate_id"]])
+
+  plates_map <- layout_template_sheets()[["plates_map"]]
+  plate_id_data <- layout_template_sheets()[["plate_id"]]
+
+  # Call your function
+  plot_plate_layout(plates_map, plate_id_data)
+})
+
+
+# Dynamically generate tabs for each plot
+output$plate_tabs <- renderUI({
+  req(plate_layout_plots())
+  plots <- plate_layout_plots()
+
+  tabs <- lapply(names(plots), function(name) {
+    tabPanel(
+      title = name,
+      plotOutput(paste0("plot_", name))
+    )
+  })
+
+  do.call(tabsetPanel, tabs)
+})
+
+
+#  Render each plot
+observe({
+  req(plate_layout_plots())
+  plots <- plate_layout_plots()
+
+  for (name in names(plots)) {
+    local({
+      plot_name <- name
+      output[[paste0("plot_", plot_name)]] <- renderPlot({
+        plots[[plot_name]]
+      })
+    })
+  }
+})
+
+# Join sample dilutions for the plate to the header
+construct_batch_upload_metadata <- function(plates_map, plate_metadata_list, currentuser, workspace_id) {
+  sample_dilutions_by_plate <- unique(
+    plates_map[plates_map$specimen_type == "X",
+               c("plate_number", "specimen_type", "specimen_dilution_factor")])
+    names(sample_dilutions_by_plate)[names(sample_dilutions_by_plate) == "specimen_dilution_factor"] <- "sample_dilution_factor"
+
+    experiment_by_plate <- unique(
+      plates_map[, c("plate_number", "experiment_name")]
+    )
+
+    # Add dilution factor to each head df in the list
+    plate_metadata_list_updated <- lapply(plate_metadata_list, function(df) {
+
+      plate_num <- df$plate[1]
+
+      # Match with dilution table
+      match_row <- sample_dilutions_by_plate[sample_dilutions_by_plate$plate_number == plate_num, , drop = FALSE]
+
+      # Add dilution column if match found
+      if (nrow(match_row) > 0) {
+        df$sample_dilution_factor <- match_row$sample_dilution_factor
+      } else {
+        df$sample_dilution_factor <- NA_real_
+      }
+
+      # add experiment_name
+      exp_row <- experiment_by_plate[
+        experiment_by_plate$plate_number == plate_num, , drop = FALSE
+      ]
+      if (nrow(exp_row) > 0) {
+        df$experiment_name <- exp_row$experiment_name
+      } else {
+        df$experiment_name <- NA_character_
+      }
+
+      # ## add metadata
+       df$study_accession <- unique(plates_map$study_name)
+       df$experiment_accession <- unique(plates_map$feature)
+       df$workspace_id <- workspace_id
+       df$auth0_user <- currentuser
+
+      return(df)
+      # ## add the study_name
+      # df$study_accession <- unique(plates_map$study_name)
+    })
+
+
+
+    return(plate_metadata_list_updated)
+}
+
+plot_plate_layout <- function(plates_map, plate_id_data) {
+  # Join in number_of_wells info
+  plates_map_joined <- merge(
+    plates_map,
+    plate_id_data[, c("study_name", "experiment_name", "plate_number", "number_of_wells")],
+    by = c("study_name", "experiment_name", "plate_number"),
+    all.x = TRUE
+  )
+
+  # Initialize list for storing plots
+  plate_plots <- list()
+
+  # Get unique combinations of study, experiment, and plate
+  unique_combos <- unique(
+    plates_map_joined[, c("study_name", "experiment_name", "plate_number")]
+  )
+
+  # Loop through each combination
+  for (i in seq_len(nrow(unique_combos))) {
+    study <- unique_combos$study_name[i]
+    exp <- unique_combos$experiment_name[i]
+    plate <- unique_combos$plate_number[i]
+
+    # Filter data for this combination
+    plates_map_joined_filtered <- plates_map_joined[plates_map_joined$study_name == study & plates_map_joined$experiment_name == exp
+                                                    & plates_map_joined$plate_number == plate,]
+
+    n_wells <- unique(plates_map_joined_filtered$number_of_wells)
+
+    # Build title
+    plot_title <- paste0(
+      "Study: ", study,
+      " | Experiment: ", exp,
+      " | Plate: ", plate,
+      " (", n_wells, " wells)"
+    )
+
+
+    plate_layout <- plate_plot(
+      data = plates_map_joined_filtered,
+      position = well,
+      value = specimen_type,
+      plate_size = n_wells,
+      plate_type = "round",
+      title = plot_title,
+      silent = FALSE
+    )
+
+
+
+    # Add plot to list
+    list_name <- paste(study, exp, plate, sep = "_")
+    plate_plots[[list_name]] <- plate_layout
+  }
+
+  return(plate_plots)
+}
+
+
+#
+# plot_plate_layout <- function(plates_map, plate_id_data) {
+#   plates_map_joined <- merge(
+#     plates_map,
+#          plate_id_data[, c("study_name", "experiment_name", "plate_number", "number_of_wells")],
+#         by = c("study_name", "experiment_name", "plate_number"),
+#          all.x = TRUE
+#      )
+#
+#   plate_layout_plots <- list()
+#
+#   for (plate in unique(plates_map_joined$plate_number)) {
+#      plates_map_joined_filtered <- plates_map_joined[plates_map_joined$plate_number == plate, ]
+#      n_wells <- unique(plates_map_joined_filtered$number_of_wells)
+#
+#      plate_layout <- plate_plot(
+#                         data = plates_map_joined_filtered,
+#                         position = well,
+#                         value = specimen_type,
+#                         plate_size = n_wells,
+#                         plate_type = "round")
+#
+#      plate_layout_plots[[plate]] <- plate_layout
+#
+#   }
+#   return(plate_layout_plots)
+# }
+#
+#
+
+
+# output$batch_plate_table <- renderRHandsontable({
+#   req(sample_dilution_plate_df())
+#   rhandsontable(sample_dilution_plate_df(), readOnly = FALSE) %>%
+#     hot_col("plate", readOnly = TRUE) %>%
+#     hot_col("sample_dilution_factor", type = "numeric", format = "0") %>%
+#     hot_cols(
+#       renderer = "
+#         function (instance, td, row, col, prop, value, cellProperties) {
+#           Handsontable.renderers.TextRenderer.apply(this, arguments);
+#
+#           if (prop === 'sample_dilution_factor') {
+#             var num = parseFloat(value);
+#
+#             if (isNaN(num) || value === null || value === '') {
+#               td.style.background = '#f8d7da';   // light red for missing
+#               td.style.color = 'black';
+#               td.title = 'Please enter a value';
+#             } else if (num < 1 || num > 100000) {
+#               td.style.background = '#f5c6cb';   // pink for out of range
+#               td.style.color = 'black';
+#               td.title = 'Value must be between 1 and 100000';
+#             } else {
+#               td.style.background = '#d4edda';   // light green for valid
+#               td.style.color = 'black';
+#               td.title = '';
+#             }
+#           }
+#         }
+#       "
+#     )
+# })
+
+# output$batch_plate_table <- renderRHandsontable({
+#   req(sample_dilution_plate_df())
+#   rhandsontable(sample_dilution_plate_df(), readOnly = FALSE) %>%
+#     hot_col("plate_name", readOnly = TRUE) %>%
+#     hot_col("sample_dilution_factor", type = "numeric") %>% # placeholder = "Enter a number 1–100000") %>%
+#     hot_cols(
+#       renderer = "
+#             function (instance, td, row, col, prop, value, cellProperties) {
+#               Handsontable.renderers.TextRenderer.apply(this, arguments);
+#               if (sample_dilution_factor === null || sample_dilution_factor === '' || sample_dilution_factor === 'NA') {
+#                 td.style.background = 'lightcoral';   // highlight empty cells
+#                 td.innerHTML = 'please fill in';
+#                 td.style.fontStyle = 'italic';
+#               }
+#             }"
+#     )
+# })
+#
+# observeEvent(input$batch_plate_table, {
+#   df <- hot_to_r(input$batch_plate_table)
+#   sample_dilution_plate_df(df)
+# })
+
+
+# ht <-  rhandsontable(df_long, rowHeaders = NULL) %>%
+#   hot_col("variable", readOnly = TRUE) %>%  # Disable editing keys
+#   hot_cols(
+#     renderer = "
+#             function (instance, td, row, col, prop, value, cellProperties) {
+#               Handsontable.renderers.TextRenderer.apply(this, arguments);
+#               if (value === null || value === '' || value === 'NA') {
+#                 td.style.background = 'lightcoral';   // highlight empty cells
+#                 td.innerHTML = 'please fill in';
+#                 td.style.fontStyle = 'italic';
+#               }
+#             }"
+#   )
+#
+# for (i in seq_len(nrow(df_long))) {
+#   if (df_long$variable[i] %in% c("file_name", "study_accession", "experiment_accession", "plate_id", "auth0_user", "workspace_id")) {
+#     ht <- hot_cell(ht, row = i, col = "value", readOnly = TRUE)
+#   }
+# }
+# output$file_summary <- renderPrint({
+#   files <<- batch_data_list()
+#   if (length(files) == 0) {
+#     cat("No files uploaded yet.")
+#   } else {
+#     cat("Uploaded files:\n")
+#     print(names(files))
+#     cat("\nEach is a data frame with these dimensions:\n")
+#     print(sapply(files, dim))
+#   }
+# })
+
+# observe({
+#   print(input$upload_layout_file)
+# })
+
+# output$layout_sheets <- renderPrint({
+#   cat("Loaded sheets:\n")
+#
+#   if (!is.null(layout_template_sheets$plate_id)) {
+#     cat("\n--- plate_id ---\n")
+#     print(dim(layout_template_sheets$plate_id))
+#     print(head(layout_template_sheets$plate_id, 3))
+#   }
+#
+#   if (!is.null(layout_template_sheets$plates_map)) {
+#     cat("\n--- plates_map ---\n")
+#     print(dim(layout_template_sheets$plates_map))
+#     print(head(layout_template_sheets$plates_map, 3))
+#   }
+#
+#   if (!is.null(layout_template_sheets$antigen_list)) {
+#     cat("\n--- antigen_list ---\n")
+#     print(dim(layout_template_sheets$antigen_list))
+#     print(head(layout_template_sheets$antigen_list, 3))
+#   }
+# })
+
+
+
+# observeEvent(all_sheets(), {
+#   plate_id_sheet <- all_sheets()[["plate_id"]]
+#   plates_map_sheet <- all_sheets()[["plates_map"]]
+#   antigen_list_sheet <- all_sheets()[["antigen_list"]]
+#
+#   # # Example: print row counts
+#   # cat("plate_id_sheet:", head(plate_id_sheet), "\n")
+#   # cat("plates_map_sheet:", head(plates_map_sheet), "\n")
+#
+# })
+

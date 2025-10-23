@@ -854,6 +854,21 @@ server <- function(input, output, session) {
       generated_tabs <- reactiveVal()
       lumcsv_reactive <- reactiveVal()
 
+      ## Layout sheets
+      inLayoutFile <- reactiveVal()
+      avaliableLayoutSheets <- reactiveVal()
+      layout_template_sheets <- reactiveVal(list())
+      batch_data_list <- reactiveVal(list())
+      bead_array_header_list <- reactiveVal(list())
+      bead_array_plate_list <- reactiveVal(list())
+      sample_dilution_plate_df <- reactiveVal(NULL)
+      # layout_template_sheets <- reactiveValues(
+      #   plate_id = NULL,
+      #   plates_map = NULL,
+      #   antigen_list = NULL
+      # )
+
+
       #outliers
       outlierJobStatus <- reactiveVal(list())
       outlierUIRefresher <- reactiveVal(0)
