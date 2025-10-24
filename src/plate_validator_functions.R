@@ -397,6 +397,27 @@ createValidateBadge <- function(is_validated) {
   }
 }
 
+createValidateBatchBadge <- function(is_validated) {
+
+  if (is_validated) {
+    # Completed Upload badge (green)
+    span(
+      class = "badge",
+      style = "padding: 3px 8px; border-radius: 10px; margin-left: 10px;
+               background-color: #28a745; color: white;",
+      tagList(tags$i(class = "fa fa-check"), paste("Batch Validated", sep = ""))
+    )
+  } else {
+    # Not Uploaded badge (grey)
+    span(
+      class = "badge",
+      style = "padding: 3px 8px; border-radius: 10px; margin-left: 10px;
+               background-color: #6c757d; color: white;",
+      tagList(tags$i(class = "fa fa-exclamation-circle"), "Batch Not Validated")
+    )
+  }
+}
+
 createOptimizedBadge <- function(is_optimized) {
 
   if (is.null(is_optimized) || length(is_optimized) == 0 || !isTRUE(is_optimized)) {

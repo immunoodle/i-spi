@@ -134,12 +134,24 @@ output$readxMapData <- renderUI({
                        # actionButton("view_layout_plates_map_sheet", "View Layout Plate Map"),
                        # actionButton("view_layout_antigen_list_sheet", "View Layout Antigen List")
                      ),
+                    # uiOutput("file_summary"),
+                     uiOutput("plate_layout_selector"),
+                     plotOutput("selected_plate_layout_plot"),
+                    tagList(
+                      tags$p("If this batch of plates contains wells without samples use the word the 'Blank' in the description column of the spreadsheet.
+          Then assign the two phrases below to indicate if the wells should be treated as blanks
+          (e.g. containing PBS) or if the wells should be treated as empty."),
+
+                      selectInput("batch_blank", "Blank and Empty Well Handling",
+                                  choices = c("Skip Empty Wells" = "empty_well",
+                                              "Use as Blank" = "use_as_blank"))
+                    ),
                      fileInput("upload_batch_bead_array"
-                                , label="Upload one or more plate/batch files (only accepts xlsx, xls)"
-                                , accept=c(".xlsx",".xls")
-                                , multiple=TRUE),
-                     uiOutput("file_summary"),
-                     uiOutput("plate_tabs")
+                               , label="Upload one or more plate/batch files (only accepts xlsx, xls)"
+                               , accept=c(".xlsx",".xls")
+                               , multiple=TRUE),
+                     uiOutput("batch_validation_status")
+                    # uiOutput("plate_tabs")
 
                      #rHandsontableOutput("batch_plate_table")
 
@@ -829,7 +841,7 @@ output$blank_layout_file <- downloadHandler(
     paste0("layout_template.xlsx")
   },
   content = function(file) {
-    file.copy("www/layout_template.xlsx", file)
+    file.copy("www/blank_layout_template.xlsx", file)
   }
 )
 
@@ -1189,12 +1201,24 @@ observeEvent(input$upload_batch_bead_array, {
     )
   )
 
-  batch_header <<- construct_batch_upload_metadata(plates_map = layout_template_sheets()[["plates_map"]],
+  batch_header <- construct_batch_upload_metadata(plates_map = layout_template_sheets()[["plates_map"]],
                                                   plate_metadata_list = bead_array_header_list(),
                                                   workspace_id = userWorkSpaceID(),
                                                   currentuser = currentuser())
 
+  batch_metadata <- combine_plate_metadata(head_list = batch_header)
+  validation_result <<- validate_batch_plate(plate_metadata = batch_metadata, plate_data_list = bead_array_plate_list(),
+                                             plate_id_data = layout_template_sheets()[["plate_id"]])
+  bead_array_validation <<- validate_batch_bead_array(plate_data_list = bead_array_plate_list(), antigen_list =  layout_template_sheets()[["antigen_list"]])
+  if (bead_array_validation$is_valid && validation_result$is_valid) {
+    batch_validated <- TRUE
+  } else {
+    batch_validated <- FALSE
+  }
 
+  output$batch_validation_status <- renderUI({
+    createValidateBatchBadge(batch_validated)
+  })
   # sample_dilution_plate_df(
   #   data.frame(
   #     plate_name = names(bead_array_plate_list()),
@@ -1205,13 +1229,13 @@ observeEvent(input$upload_batch_bead_array, {
 # Display basic info about uploaded files
 output$file_summary <- renderPrint({
  # data_list <- batch_data_list()
-  head_list <<- bead_array_header_list()
-  plate_list <<- bead_array_plate_list()
-  plates_map <<- layout_template_sheets()[["plates_map"]]
-  antigen_list <<- layout_template_sheets()[["antigen_list"]]
-  plate_id_data <<- layout_template_sheets()[["plate_id"]]
-  timepoint_map <<- layout_template_sheets()[["timepoint"]]
-  subject_map <<- layout_template_sheets()[["subject_groups"]]
+ # head_list <<- bead_array_header_list()
+ # plate_list <<- bead_array_plate_list()
+ # plates_map <<- layout_template_sheets()[["plates_map"]]
+ # antigen_list <<- layout_template_sheets()[["antigen_list"]]
+ # plate_id_data <<- layout_template_sheets()[["plate_id"]]
+ # timepoint_map <<- layout_template_sheets()[["timepoint"]]
+ # subject_map <<- layout_template_sheets()[["subject_groups"]]
 
   # batch_header <- construct_batch_upload_metadata(plates_map = layout_template_sheets()[["plates_map"]],
   #                                                plate_metadata_list = bead_array_header_list(),
@@ -1242,36 +1266,57 @@ plate_layout_plots <- reactive({
 })
 
 
-# Dynamically generate tabs for each plot
-output$plate_tabs <- renderUI({
+output$plate_layout_selector <- renderUI({
   req(plate_layout_plots())
   plots <- plate_layout_plots()
 
-  tabs <- lapply(names(plots), function(name) {
-    tabPanel(
-      title = name,
-      plotOutput(paste0("plot_", name))
-    )
-  })
-
-  do.call(tabsetPanel, tabs)
+  shinyWidgets::radioGroupButtons(
+    inputId = "select_plate_layout_plot",
+    label = "Select Plate Layout:",
+    choices = names(plots),
+    selected = names(plots)[1],
+    status = "success"
+  )
 })
 
-
-#  Render each plot
-observe({
+output$selected_plate_layout_plot <- renderPlot({
+  req(input$select_plate_layout_plot)
   req(plate_layout_plots())
   plots <- plate_layout_plots()
-
-  for (name in names(plots)) {
-    local({
-      plot_name <- name
-      output[[paste0("plot_", plot_name)]] <- renderPlot({
-        plots[[plot_name]]
-      })
-    })
-  }
+  plots[[input$select_plate_layout_plot]]
 })
+
+
+# # Dynamically generate tabs for each plot
+# output$plate_tabs <- renderUI({
+#   req(plate_layout_plots())
+#   plots <- plate_layout_plots()
+#
+#   tabs <- lapply(names(plots), function(name) {
+#     tabPanel(
+#       title = name,
+#       plotOutput(paste0("plot_", name))
+#     )
+#   })
+#
+#   do.call(tabsetPanel, tabs)
+# })
+#
+#
+# #  Render each plot
+# observe({
+#   req(plate_layout_plots())
+#   plots <- plate_layout_plots()
+#
+#   for (name in names(plots)) {
+#     local({
+#       plot_name <- name
+#       output[[paste0("plot_", plot_name)]] <- renderPlot({
+#         plots[[plot_name]]
+#       })
+#     })
+#   }
+# })
 
 # Join sample dilutions for the plate to the header
 construct_batch_upload_metadata <- function(plates_map, plate_metadata_list, currentuser, workspace_id) {
@@ -1333,9 +1378,20 @@ plot_plate_layout <- function(plates_map, plate_id_data) {
     by = c("study_name", "experiment_name", "plate_number"),
     all.x = TRUE
   )
+  specimen_labels <- c(
+    "S" = "Standard Curve",
+    "C" = "Controls",
+    "X" = "Samples",
+    "B" = "Blanks"
+  )
+  plates_map_joined$`Specimen Type` <- specimen_labels[plates_map_joined$specimen_type]
 
   # Initialize list for storing plots
   plate_plots <- list()
+  specimen_palette <-  c("Blanks" = "#F3C300",
+                               "Controls" = "#2B3D26",
+                               "Standard Curve" = "#A1CAF1",
+                               "Samples" = "#8DB600")
 
   # Get unique combinations of study, experiment, and plate
   unique_combos <- unique(
@@ -1366,10 +1422,11 @@ plot_plate_layout <- function(plates_map, plate_id_data) {
     plate_layout <- plate_plot(
       data = plates_map_joined_filtered,
       position = well,
-      value = specimen_type,
+      value = `Specimen Type`,
       plate_size = n_wells,
       plate_type = "round",
       title = plot_title,
+      colour = specimen_palette,
       silent = FALSE
     )
 
@@ -1384,6 +1441,247 @@ plot_plate_layout <- function(plates_map, plate_id_data) {
 }
 
 
+# Helper function to combine plate metadata from batch load
+combine_plate_metadata <- function(head_list) {
+  plate_metadata <- do.call(rbind, lapply(names(head_list), function(nm) {
+         df <- head_list[[nm]]
+         df
+    }))
+
+  return(plate_metadata)
+}
+
+
+validate_batch_plate <- function(plate_metadata, plate_data_list, plate_id_data) {
+  # plate_data_list <<- plate_data_list
+  message_list <- c()
+
+  check_uploaded_file_in_layout <- plate_metadata$file_name %in% plate_id_data$plate_filename
+  if (!all(check_uploaded_file_in_layout)) {
+     message_list <- c("Some uploaded plates are misssing in the layout file.")
+  }
+  # validate the required columns
+  required_cols <- c("file_name", "rp1_pmt_volts", "rp1_target", "acquisition_date")
+  missing_cols <- setdiff(required_cols, names(plate_metadata))
+
+  if (length(missing_cols) > 0) {
+    message_list <- c(
+      message_list,
+      paste("The following required plate metadata columns are missing so further parsing cannot be conducted:",
+            paste(missing_cols, collapse = ", "))
+    )
+    # If critical metadata is missing, return early
+    return(list(
+      is_valid = FALSE,
+      messages = message_list
+    ))
+  }
+
+  plate_metadata <<- plate_metadata
+
+  # check to see if all files passes file Path
+  pass_file_path <- all(looks_like_file_path(plate_metadata$file_name))
+  if (!pass_file_path) {
+    message_list <- c(message_list, "Ensure that alll file paths have foward or backward slashes based on Mac or Windows")
+  }
+
+  pass_rp1_pmt_volts <- all(check_rp1_numeric(plate_metadata$rp1_pmt_volts))
+  is_numeric <- check_rp1_numeric(plate_metadata$rp1_pmt_volts)
+  if (!pass_rp1_pmt_volts) {
+    bad_rp1_pmt_volts <- plate_metadata[!is_numeric, c("plateid", "rp1_pmt_volts")]
+    labeled_vals <- paste(bad_rp1_pmt_volts$plateid, bad_rp1_pmt_volts$rp1_pmt_volts, sep = ":")
+
+    message_list <- c(message_list, paste(
+      "Ensure that all files have an RP1 PMT (Volts) field that is numeric and if it is a decimal only one period is present. Values by plateid:",
+      paste(labeled_vals, collapse = ", "))
+    )
+  }
+  pass_rp1_target <- all(check_rp1_numeric(plate_metadata$rp1_target))
+  is_target_numeric <- check_rp1_numeric(plate_metadata$rp1_target)
+  if (!pass_rp1_target) {
+    invalid_rp1_target <- plate_metadata[!is_target_numeric, c("plateid", "rp1_target")]
+    labeled_bad_rp1_target <- paste(invalid_rp1_target$plateid, invalid_rp1_target$rp1_target, sep = ":")
+    message_list <- c(message_list, paste("Ensure that the RP1 Target is numeric and if it is a decimal only one period is present. Values by plateid:",
+                                          paste(labeled_bad_rp1_target,collapse = ", ")))
+  }
+
+  pass_time_format <- all(check_time_format(capitalize_am_pm(plate_metadata$acquisition_date)))
+  is_time_format <- check_time_format(capitalize_am_pm(plate_metadata$acquisition_date))
+  if (!pass_time_format) {
+    invalid_time_format <- plate_metadata[!is_time_format, c("plateid", "aquisition_date")]
+    labeled_invalid_time_format <- paste(invalid_time_format$plateid, invalid_time_format$aquisition_date)
+    message_list <- c(message_list, paste("Ensure the acquisition date is in the following date time format: DD-MMM-YYYY, HH:MM AM/PM Example: 01-Oct-2025, 12:12 PM  |Current Value by plateid:",
+                                          paste(labeled_invalid_time_format, collapse = ", ")))
+  }
+
+  # validate main data sets
+
+
+  # if no invalid messages then it is good to pass
+  is_valid <- length(message_list) == 0
+
+  if (is_valid)  {
+    return(list(
+      is_valid = is_valid,
+      messages = message_list,
+      updated_plate_data = plate_data
+    ))
+  } else {
+    return(list(
+      is_valid = is_valid,
+      messages = message_list
+    ))
+  }
+}
+
+validate_batch_bead_array <- function(plate_data_list, antigen_list) {
+  plate_data_list <<- plate_data_list
+  message_list <- list()
+  plate_names <- names(plate_data_list)
+
+  for (name in plate_names) {
+    # Get current dataset
+    df <- plate_data_list[[name]]
+
+    # Replace dots with spaces except for "%.Agg.Beads" and "Sampling.Errors"
+    col_names <- ifelse(names(df) %in% c("Sampling.Errors", "%.Agg.Beads"),
+                        names(df),                 # keep as-is
+                        gsub("\\.", " ", names(df)))  # replace . with space
+
+    # Assign new names
+    names(df) <- col_names
+
+    # Store updated data set
+    plate_data_list[[name]] <- df
+  }
+
+  antigens_check <- unique(antigen_list$antigen_label_on_plate)
+  check_antigens <- lapply(plate_data_list, function(df) {
+    sapply(antigens_check, function(name) name %in% names(df))
+  })
+
+  # check on each plate and then all plates results together
+  all_antigens_present <- all(sapply(check_antigens, function(x) all(x)))
+  if (!all_antigens_present) {
+    check_antigens_with_falses <- check_antigens[sapply(check_antigens, function(x) any(!x))]
+    if (length(check_antigens_with_falses) > 0) {
+      # For each plate with FALSE antigens
+      for (plate_name in names(check_antigens_with_falses)) {
+        missing_antigens <- names(check_antigens_with_falses[[plate_name]])[!check_antigens_with_falses[[plate_name]]]
+        # Create a formatted message
+        msg <- paste0(
+          "Plate ", plate_name,
+          " is missing the following antigens in the layout file: ",
+          paste(missing_antigens, collapse = ", ")
+        )
+        message_list <- c(message_list, msg)
+      }
+    }
+  }
+
+  #pass_agg_bead_check_list <- lapply(plate_list, check_agg_bead_column)
+
+#
+#   pass_agg_bead_check <- check_agg_bead_column(plate_data)
+#     if (!pass_agg_bead_check[[1]]) {
+#       message_list <- c(message_list, pass_agg_bead_check[[2]])
+#     } else {
+#       # check blanks if aggregate column is present
+#       pass_bead_count_check <- check_bead_count(plate_data)
+#       if (!pass_bead_count_check[[1]]) {
+#         message_list <- c(message_list, paste("Ensure the bead count is present after all MFI values in parentheses for: \n", pass_bead_count_check[[2]], sep = ""))
+#       }
+#     }
+#     # examine blanks in type column
+#     procceed_to_blank_check <- check_blank_in_sample_boolean(plate_data)
+#     if (!procceed_to_blank_check) {
+#       # Update Plate Data based on keyword choice
+#       plate_data <- check_blank_in_sample(plate_data, blank_keyword = blank_keyword)
+#     }
+#
+#     # if blanks are processed still check it
+#     pass_blank_description <- check_blank_description(plate_data)
+#     if (!pass_blank_description[[1]]) {
+#       message_list <- c(message_list, pass_blank_description[[2]])
+#     }
+
+  is_valid <- length(message_list) == 0
+
+  if (is_valid)  {
+    return(list(
+      is_valid = is_valid,
+      messages = message_list
+    ))
+  } else {
+    return(list(
+      is_valid = is_valid,
+      messages = message_list
+    ))
+  }
+
+}
+
+  # pass_type_col <- check_type_column(plate_data)
+  #   if (!pass_type_col[[1]]) {
+  #     message_list <- c(message_list, pass_type_col[[2]])
+  #   }
+
+#   # validate main data set
+#
+#   pass_type_col <- check_type_column(plate_data)
+#   if (!pass_type_col[[1]]) {
+#     message_list <- c(message_list, pass_type_col[[2]])
+#   }
+#   pass_description <- check_sample_description(plate_data)
+#   if (!pass_description[[1]]) {
+#     message_list <- c(message_list, pass_description[[2]])
+#   }
+#
+#   pass_standard_description <- check_standard_description(plate_data)
+#   if (!pass_standard_description[[1]]) {
+#     message_list <- c(message_list, pass_standard_description[[2]])
+#   }
+#
+#   pass_agg_bead_check <- check_agg_bead_column(plate_data)
+#   if (!pass_agg_bead_check[[1]]) {
+#     message_list <- c(message_list, pass_agg_bead_check[[2]])
+#   } else {
+#     # check blanks if aggregate column is present
+#     pass_bead_count_check <- check_bead_count(plate_data)
+#     if (!pass_bead_count_check[[1]]) {
+#       message_list <- c(message_list, paste("Ensure the bead count is present after all MFI values in parentheses for: \n", pass_bead_count_check[[2]], sep = ""))
+#     }
+#   }
+#   # examine blanks in type column
+#   procceed_to_blank_check <- check_blank_in_sample_boolean(plate_data)
+#   if (!procceed_to_blank_check) {
+#     # Update Plate Data based on keyword choice
+#     plate_data <- check_blank_in_sample(plate_data, blank_keyword = blank_keyword)
+#   }
+#
+#   # if blanks are processed still check it
+#   pass_blank_description <- check_blank_description(plate_data)
+#   if (!pass_blank_description[[1]]) {
+#     message_list <- c(message_list, pass_blank_description[[2]])
+#   }
+#
+#   # if no invalid messages then it is good to pass
+#   is_valid <- length(message_list) == 0
+#
+#   if (is_valid)  {
+#     return(list(
+#       is_valid = is_valid,
+#       messages = message_list,
+#       updated_plate_data = plate_data
+#     ))
+#   } else {
+#     return(list(
+#       is_valid = is_valid,
+#       messages = message_list
+#     ))
+#   }
+#
+# }
 #
 # plot_plate_layout <- function(plates_map, plate_id_data) {
 #   plates_map_joined <- merge(
@@ -1414,6 +1712,16 @@ plot_plate_layout <- function(plates_map, plate_id_data) {
 #
 #
 
+create_batch_invalid_message_table <- function(validation_result, bead_array_validation) {
+  combined_messages <- c(validation_result$messages, unlist(bead_array_validation$messages))
+  message_table <- data.frame(
+    "Message Number" = seq_along(combined_messages),
+    "Please correct the formatting errors in the file" = combined_messages,
+    check.names = F,
+    stringsAsFactors = FALSE
+  )
+  return(message_table)
+}
 
 # output$batch_plate_table <- renderRHandsontable({
 #   req(sample_dilution_plate_df())
