@@ -194,10 +194,24 @@ check_agg_bead_column <- function(df) {
   }
 }
 
+check_batch_agg_bead_column <- function(df) {
+  required_cols <- c("X..Agg.Beads", "%.Agg.Beads")
+  result <- any(required_cols %in% names(df))
+
+  if (!result) {
+    message <- "Ensure there is a % Agg Beads column after the last antigen."
+    return(list(result = result, message = message))
+  } else {
+    return(list(result = result, message = NULL))
+  }
+}
+
 check_bead_count <- function(df) {
 
 start_col <- which(names(df) == "Description")
-end_col <- which(names(df) == "X..Agg.Beads")
+possible_end_names <- c("X..Agg.Beads", "%.Agg.Beads")
+end_col <- which(names(df) %in% possible_end_names)
+# end_col <- which(names(df) == "X..Agg.Beads")
 
 # 2. Subset the columns of interest
 subset_df <- df[, (start_col + 1):(end_col-1)]
@@ -236,6 +250,8 @@ if (all(match_matrix)) {
 }
 
 }
+
+
 
 # check_bead_count(plte_data_v)
 #
