@@ -5,7 +5,7 @@ source("global.R", local = TRUE)
 
 
 #Set to 1 for local and do not push in prod
- #Sys.setenv(LOCAL_DEV = "1")
+# Sys.setenv(LOCAL_DEV = "1")
 
 
 # Source authentication configuration (Step 1)
@@ -855,6 +855,7 @@ server <- function(input, output, session) {
       lumcsv_reactive <- reactiveVal()
 
       ## Layout sheets
+      experimentPath <- reactiveVal()
       inLayoutFile <- reactiveVal()
       avaliableLayoutSheets <- reactiveVal()
       layout_template_sheets <- reactiveVal(list())
@@ -862,6 +863,7 @@ server <- function(input, output, session) {
       bead_array_header_list <- reactiveVal(list())
       bead_array_plate_list <- reactiveVal(list())
       sample_dilution_plate_df <- reactiveVal(NULL)
+
       # layout_template_sheets <- reactiveValues(
       #   plate_id = NULL,
       #   plates_map = NULL,
@@ -886,6 +888,7 @@ server <- function(input, output, session) {
       source("antigen_family_ui.R", local = TRUE)
       source("load_previous_stored_data.R", local=TRUE)
       source("plate_validator_functions.R", local = TRUE)
+      source("batch_layout_functions.R", local = TRUE)
       source("import_lumifile.R", local = TRUE)
       source("xPonentReader.R", local = TRUE)
       source("segment_reader.R", local = TRUE)

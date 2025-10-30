@@ -122,11 +122,20 @@ output$readxMapData <- renderUI({
                    ),
                    conditionalPanel(
                      condition = "input.xPonentFile == 'Layout Template'",
-                     downloadButton("blank_layout_file", "Download a blank layout template"),
-                     fileInput("upload_layout_file"
-                               , label="Upload a layout file (only accepts xlsx, xls)"
-                               , accept=c(".xlsx",".xls")
-                               , multiple=FALSE),
+                     shinyDirButton("experiment_folder", "Choose Folder", "Please select a folder containing your experiment files."),
+                     verbatimTextOutput("folderpath"),
+                     conditionalPanel(
+                       condition = "output.hasExperimentPath",
+                        radioButtons(inputId = "n_wells_on_plate", "Select Number of Wells to Generate on Plates",
+                                  choices = c(96, 6, 12, 24, 48, 384, 1536),
+                                  selected = 96,
+                                  inline = T),
+                       downloadButton("blank_layout_file", "Generate a Layout file"),
+                       fileInput("upload_layout_file"
+                                 , label="Upload a completed layout file (only accepts xlsx, xls)"
+                                 , accept=c(".xlsx",".xls")
+                                 , multiple=FALSE)
+                     ),
                      conditionalPanel(
                        condition = "input.upload_layout_file != ''",
                        uiOutput("view_layout_file_ui")
@@ -136,7 +145,7 @@ output$readxMapData <- renderUI({
                      ),
                     # uiOutput("file_summary"),
                      uiOutput("plate_layout_selector"),
-                     plotOutput("selected_plate_layout_plot"),
+                     plotlyOutput("selected_plate_layout_plot"),
                     tagList(
                       tags$p("If this batch of plates contains wells without samples use the word the 'Blank' in the description column of the spreadsheet.
           Then assign the two phrases below to indicate if the wells should be treated as blanks
@@ -839,14 +848,98 @@ observeEvent(input$savexMapButton, {
 
 ### Layout template import
 
+roots <- c(home = normalizePath("~"))  # you can add others, e.g. 'C:' = 'C:/'
+
+# Initialize folder selection
+shinyDirChoose(input, "experiment_folder", roots = roots, session = session)
+
+# folderPath <- reactive({
+#   req(input$folder)
+#   parseDirPath(roots, input$folder)
+# })
+
+# Observe and display the selected folder
+output$folderpath <- renderPrint({
+  req(input$experiment_folder)
+  # Parse the folder path selected
+  experimentPath(parseDirPath(roots, input$experiment_folder))
+  parseDirPath(roots, input$experiment_folder)
+})
+
+output$hasExperimentPath <- reactive({
+  path <- experimentPath()
+  !is.null(path) && nzchar(path)   # nzchar() checks for non-empty string
+})
+outputOptions(output, "hasExperimentPath", suspendWhenHidden = FALSE)
+
+observeEvent(experimentPath(), {
+  cat("changed experiment_folder")
+  path <- experimentPath()
+  excel_files <- list.files(path, pattern = "\\.xlsx?$", full.names = TRUE)
+  # exclude any layout files
+  excel_files <- excel_files[!grepl("layout_template", excel_files, ignore.case = TRUE)]
+  req(length(excel_files) > 0)
+
+  all_data <- lapply(excel_files, function(file_path) {
+    # Read header (first 7 rows)
+    header_info <- openxlsx::read.xlsx(file_path, rows = 1:7, colNames = FALSE, sheet = 1)
+    header_info <- parse_metadata_df(header_info)   # Your custom function
+
+    # Read plate data (from row 8 onward)
+    plate_data <- openxlsx::read.xlsx(file_path, startRow = 8, sheet = 1, colNames = TRUE)
+    # clean up column names to replace . with a space
+    names(plate_data) <- gsub("\\.", " ", names(plate_data))
+    # Remove completely empty rows
+    plate_data <- plate_data[!apply(
+      plate_data, 1,
+      function(x) all(is.na(x) | trimws(x) == "" | trimws(x) == "NA")
+    ), ]
+
+    list(header = header_info, plate = plate_data)
+  })
+
+  names(all_data) <- basename(excel_files)
+
+  # Separate lists (like your upload handler)
+  header_list <<- lapply(all_data, `[[`, "header")
+  plate_list  <<- lapply(all_data, `[[`, "plate")
+
+  # Save to reactives (assuming you defined these as reactiveVals)
+  bead_array_header_list(header_list)
+  bead_array_plate_list(plate_list)
+
+  showNotification("Data Files Uploaded")
+})
+
+
+
+
 output$blank_layout_file <- downloadHandler(
   filename = function() {
-    paste0("layout_template.xlsx")
+    paste0(input$readxMap_study_accession, "_", input$readxMap_experiment_accession_import, "_layout_template.xlsx")
   },
   content = function(file) {
-    file.copy("www/blank_layout_template.xlsx", file)
+    req(experimentPath())
+    req(bead_array_header_list())
+    generate_layout_template(
+      folder = experimentPath(),
+      study_accession = input$readxMap_study_accession,
+      experiment_accession = input$readxMap_experiment_accession_import,
+      n_wells = input$n_wells_on_plate,
+      header_list = bead_array_header_list(),
+      output_file = file   # pass Shiny temp file
+    )
   }
 )
+
+# output$blank_layout_file <- downloadHandler(
+#   filename = function() {
+#     paste0("layout_template.xlsx")
+#   },
+#   content = function(file) {
+#     file.copy("www/blank_layout_template.xlsx", file)
+#   }
+# )
 
 # When a file is uploaded, read all sheets and store them
 # observeEvent(input$upload_layout_file, {
@@ -1281,7 +1374,7 @@ plate_layout_plots <- reactive({
   req(layout_template_sheets()[["plates_map"]])
   req(layout_template_sheets()[["plate_id"]])
 
-  plates_map <- layout_template_sheets()[["plates_map"]]
+  plates_map <<- layout_template_sheets()[["plates_map"]]
   plate_id_data <- layout_template_sheets()[["plate_id"]]
 
   # Call your function
@@ -1302,7 +1395,7 @@ output$plate_layout_selector <- renderUI({
   )
 })
 
-output$selected_plate_layout_plot <- renderPlot({
+output$selected_plate_layout_plot <- renderPlotly({
   req(input$select_plate_layout_plot)
   req(plate_layout_plots())
   plots <- plate_layout_plots()
@@ -1343,10 +1436,20 @@ output$selected_plate_layout_plot <- renderPlot({
 
 # Join sample dilutions for the plate to the header
 construct_batch_upload_metadata <- function(plates_map, plate_metadata_list, currentuser, workspace_id) {
+
+  cat("plates map")
+  print(names(plates_map))
+  cat("plate metadata list")
+  print(plate_metadata_list)
+
+  # get unique sample dilution factors in a dataframe by plate_number
   sample_dilutions_by_plate <- unique(
     plates_map[plates_map$specimen_type == "X",
                c("plate_number", "specimen_type", "specimen_dilution_factor")])
+
     names(sample_dilutions_by_plate)[names(sample_dilutions_by_plate) == "specimen_dilution_factor"] <- "sample_dilution_factor"
+
+    print(sample_dilutions_by_plate)
 
     experiment_by_plate <- unique(
       plates_map[, c("plate_number", "experiment_name")]
@@ -1394,6 +1497,7 @@ construct_batch_upload_metadata <- function(plates_map, plate_metadata_list, cur
 }
 
 plot_plate_layout <- function(plates_map, plate_id_data) {
+  plates_map_v <<- plates_map
   # Join in number_of_wells info
   plates_map_joined <- merge(
     plates_map,
@@ -1417,9 +1521,12 @@ plot_plate_layout <- function(plates_map, plate_id_data) {
                                "Samples" = "#8DB600")
 
   # Get unique combinations of study, experiment, and plate
-  unique_combos <- unique(
+  unique_combos <<- unique(
     plates_map_joined[, c("study_name", "experiment_name", "plate_number")]
   )
+  # remove trailing NA rows
+  unique_combos <- unique_combos[rowSums(is.na(unique_combos)) != ncol(unique_combos), ]
+
 
   # Loop through each combination
   for (i in seq_len(nrow(unique_combos))) {
@@ -1430,8 +1537,18 @@ plot_plate_layout <- function(plates_map, plate_id_data) {
     # Filter data for this combination
     plates_map_joined_filtered <- plates_map_joined[plates_map_joined$study_name == study & plates_map_joined$experiment_name == exp
                                                     & plates_map_joined$plate_number == plate,]
+    plates_map_joined_filtered <- plates_map_joined_filtered[rowSums(is.na(plates_map_joined_filtered)) != ncol(plates_map_joined_filtered), ]
 
     n_wells <- unique(plates_map_joined_filtered$number_of_wells)
+
+    # if (i == 1) {
+    #   message("First plate data preview:")
+    #   print(head(plates_map_joined_filtered))
+    #   assign("first_plate_data", plates_map_joined_filtered, envir = .GlobalEnv)
+    # }
+    # if (i == 2) {
+    #   assign("second_plate", plates_map_joined_filtered, envir = .GlobalEnv)
+    # }
 
     # Build title
     plot_title <- paste0(
@@ -1441,17 +1558,31 @@ plot_plate_layout <- function(plates_map, plate_id_data) {
       " (", n_wells, " wells)"
     )
 
-
-    plate_layout <- plate_plot(
+    plate_layout <- plate_plot_plotly2(
       data = plates_map_joined_filtered,
-      position = well,
-      value = `Specimen Type`,
       plate_size = n_wells,
-      plate_type = "round",
       title = plot_title,
-      colour = specimen_palette,
-      silent = FALSE
+      colour = specimen_palette
     )
+    # plate_layout <- plate_plot_plotly(
+    #   data = plates_map_joined_filtered,
+    #   position = plates_map_joined_filtered$well,
+    #   value =  plates_map_joined_filtered$`Specimen Type`,
+    #   plate_size = n_wells,
+    #   title = plot_title,
+    #   colour = specimen_palette
+    # )
+    # plate_layout <- plate_plot(
+    #   data = plates_map_joined_filtered,
+    #   position = well,
+    #   value = `Specimen Type`,
+    #   plate_size = n_wells,
+    #    plate_type = "round",
+    #   title = plot_title,
+    #   colour = specimen_palette,
+    #    silent = FALSE,
+    #    scale = 1
+    # )
 
 
 
@@ -1460,8 +1591,327 @@ plot_plate_layout <- function(plates_map, plate_id_data) {
     plate_plots[[list_name]] <- plate_layout
   }
 
+  #plate_plots <<- plate_plots
+
   return(plate_plots)
 }
+# A plotly version of the plot_plate_function from the ggplate R library
+plate_plot_plotly2 <- function(data, plate_size = 96, title = NULL, colour = NULL) {
+  #data_v <<- data
+  cat("Plate")
+  print(unique(data$plate_number))
+ cat("Plate Size")
+ print(plate_size)
+  data <- data |>
+    dplyr::mutate(
+      row = stringr::str_extract(well, pattern = "[:upper:]+"),
+      col = as.numeric(stringr::str_extract(well, pattern = "\\d+")),
+      row_num = as.numeric(match(row, LETTERS))
+    )
+
+  # determine number of rows and columns
+  dims <- switch(
+    as.character(plate_size),
+    "6" = c(2, 3),
+    "12" = c(3, 4),
+    "24" = c(4, 6),
+    "48" = c(6, 8),
+    "96" = c(8, 12),
+    "384" = c(16, 24),
+    "1536" = c(32, 48)
+  )
+  n_rows <- dims[1]
+  n_cols <- dims[2]
+
+  # make grid of all wells
+  plate_layout_grid <- expand.grid(
+    Row = LETTERS[1:n_rows],
+    Column = 1:n_cols
+  )
+  plate_layout_grid$well <- paste(plate_layout_grid$Row, plate_layout_grid$Column, sep = "")
+
+  # find empty wells
+  empty_wells <- setdiff(plate_layout_grid$well, data$well)
+  empty_df <- plate_layout_grid |>
+    dplyr::filter(well %in% empty_wells) |>
+    dplyr::mutate(
+      row_num = as.numeric(match(Row, LETTERS)),
+      col = Column,
+      `Specimen Type` = "Empty Well"
+    )
+
+  # flip y-axis to match lab plate layout
+  data$row_num <- abs(data$row_num - (n_rows + 1))
+  empty_df$row_num <- abs(empty_df$row_num - (n_rows + 1))
+
+  # Build plot
+  p <- plot_ly() %>%
+    add_trace(
+      data = data,
+      x = ~col,
+      y = ~row_num,
+      type = "scatter",
+      mode = "markers",
+      color = ~`Specimen Type`,
+      colors = colour,
+      text = ~paste(
+        "Well:", well,
+        "<br>Specimen Type:", `Specimen Type`,
+        ifelse(`Specimen Type` == "Samples",
+               paste0("<br>Patient ID: ", subject_id,
+                      "<br>Timepoint: ", timepoint),
+               ""),
+        "<br>Biosample Barcode:", biosample_id_barcode,
+        "<br>Specimen Dilution Factor:", specimen_dilution_factor,
+        "<br>Feature:", feature
+      ),
+      hoverinfo = "text",
+      marker = list(size = 20, line = list(width = 1, color = "black"), symbol = "circle")
+    ) %>%
+    add_trace(
+      data = empty_df,
+      x = ~col,
+      y = ~row_num,
+      name = "Empty Well",
+      type = "scatter",
+      mode = "markers",
+      marker = list(size = 20, color = "white", line = list(width = 1, color = "grey")),
+      hoverinfo = "text",
+      text = ~paste("Well:", well, "<br>Empty")
+    ) %>%
+    layout(
+      title = title,
+      legend = list(title = list(text = "Specimen Type")),
+      yaxis = list(
+        title = "",
+        tickvals = seq(1, n_rows),
+        ticktext = rev(LETTERS[1:n_rows]),
+        showgrid = FALSE
+      ),
+      xaxis = list(
+        title = "",
+        tickvals = seq(1, n_cols),
+        showgrid = FALSE
+      ),
+      showlegend = TRUE,
+      shapes = list(
+        list(
+          type = "rect",
+          x0 = 0.5, x1 = n_cols + 0.5,
+          y0 = 0.5, y1 = n_rows + 0.5,
+          line = list(color = "black", width = 1),
+          fillcolor = "rgba(0,0,0,0)"
+        )
+      )
+    )
+
+  return(p)
+}
+
+# plate_plot_plotly <- function(data, position, value, plate_size = 96, title = NULL, colour = NULL) {
+#   data_v <<- data
+#   data <- data |>
+#     dplyr::mutate(
+#       row = stringr::str_extract({{ position }}, pattern = "[:upper:]+"),
+#       col = as.numeric(stringr::str_extract({{ position }}, pattern = "\\d+")),
+#       row_num = as.numeric(match(row, LETTERS))
+#     )
+#
+#
+#   # determine number of rows and columns
+#   dims <- switch(
+#     as.character(plate_size),
+#     "6" = c(2, 3),
+#     "12" = c(3, 4),
+#     "24" = c(4, 6),
+#     "48" = c(6, 8),
+#     "96" = c(8, 12),
+#     "384" = c(16, 24),
+#     "1536" = c(32, 48)
+#   )
+#   n_rows <- dims[1]; n_cols <- dims[2]
+#
+#   plate_layout_grid <- expand.grid(
+#     Row = LETTERS[1:n_rows],
+#     Column = 1:n_cols
+#   )
+#   plate_layout_grid$well <- paste(plate_layout_grid$Row, plate_layout_grid$Column, sep = "")
+#   empty_wells <- setdiff(plate_layout_grid$well, data$well)
+#   empty_df <- plate_layout_grid |>
+#     filter(well %in% empty_wells) |>
+#     mutate(
+#       row_num = as.numeric(match(Row, LETTERS)),
+#       col = Column,
+#       value = "Empty Well"
+#     )
+#   # flip y-axis (to match lab plate orientation)
+#   data$row_num <- abs(data$row_num - (n_rows + 1))
+#   empty_df$row_num <- abs(empty_df$row_num - (n_rows + 1))
+#
+#   # for (col in setdiff(names(data), names(empty_df))) {
+#   #   empty_df[[col]] <- NA
+#   # }
+#   p <- plot_ly()
+#
+#   p <- p %>% add_trace(
+#     data = data,
+#     x = ~col,
+#     y = ~row_num,
+#     type = "scatter",
+#     mode = "markers",
+#     color = ~{{ value }},
+#     colors = colour,
+#     text = ~paste("Well:", {{ position }},
+#                   "<br>Specimen Type:", {{ value }},
+#                   ifelse({{ value }} == "Samples",
+#                          paste0("<br>Patient ID: ", data$subject_id,
+#                                 "<br>Timepoint: ", data$timepoint),
+#                          ""),
+#                   "<br> Biosample Barcode: ", data$biosample_id_barcode,
+#                   "<br> Specimen Dilution Factor: ", data$specimen_dilution_factor,
+#                   "<br> Feature: ", data$feature
+#     ),
+#     hoverinfo = "text",
+#     marker = list(size = 20, line = list(width = 1, color = "black"), symbol = "circle")
+#   ) %>%
+#     add_trace(
+#       data = empty_df,
+#       x = ~col,
+#       y = ~row_num,
+#       type = "scatter",
+#       mode = "markers",
+#       marker = list(size = 20, color = "white", line = list(width = 1, color = "grey")),
+#       hoverinfo = "text",
+#       text = ~paste("Well:", well, "<br>Empty")
+#     ) %>%
+#     layout(
+#       title = title,
+#       legend = list(title = list(text = "Specimen Type")),
+#       yaxis = list(
+#         title = "", tickvals = seq(1, n_rows), ticktext = rev(LETTERS[1:n_rows]),
+#         showgrid = F
+#         # autorange = "reversed"
+#       ),
+#       xaxis = list(title = "", tickvals = seq(1, n_cols),
+#                    showgrid = F),
+#       showlegend = TRUE,
+#       shapes = list(
+#         list(
+#           type = "rect",
+#           x0 = 0.5, x1 = n_cols + 0.5,
+#           y0 = 0.5, y1 = n_rows + 0.5,
+#           line = list(color = "black", width = 1),
+#           fillcolor = "rgba(0,0,0,0)"
+#         )
+#       )
+#
+#     )
+#
+#   return(p)
+# }
+
+# plate_plot_plotly <- function(data, position, value, plate_size = 96, title = NULL, colour = NULL) {
+#   data_v <<- data
+#   data <- data |>
+#     dplyr::mutate(
+#       row = stringr::str_extract({{ position }}, pattern = "[:upper:]+"),
+#       col = as.numeric(stringr::str_extract({{ position }}, pattern = "\\d+")),
+#       row_num = as.numeric(match(row, LETTERS))
+#     )
+#
+#
+#   # determine number of rows and columns
+#   dims <- switch(
+#     as.character(plate_size),
+#     "6" = c(2, 3),
+#     "12" = c(3, 4),
+#     "24" = c(4, 6),
+#     "48" = c(6, 8),
+#     "96" = c(8, 12),
+#     "384" = c(16, 24),
+#     "1536" = c(32, 48)
+#   )
+#   n_rows <- dims[1]; n_cols <- dims[2]
+#
+#   plate_layout_grid <- expand.grid(
+#     Row = LETTERS[1:n_rows],
+#     Column = 1:n_cols
+#   )
+#   plate_layout_grid$well <- paste(plate_layout_grid$Row, plate_layout_grid$Column, sep = "")
+#   empty_wells <- setdiff(plate_layout_grid$well, data$well)
+#   empty_df <- plate_layout_grid |>
+#     filter(well %in% empty_wells) |>
+#     mutate(
+#       row_num = as.numeric(match(Row, LETTERS)),
+#       col = Column,
+#       value = "Empty Well"
+#     )
+#   # flip y-axis (to match lab plate orientation)
+#   data$row_num <- abs(data$row_num - (n_rows + 1))
+#   empty_df$row_num <- abs(empty_df$row_num - (n_rows + 1))
+#
+#   # for (col in setdiff(names(data), names(empty_df))) {
+#   #   empty_df[[col]] <- NA
+#   # }
+#  p <- plot_ly()
+#
+#   p <- p %>% add_trace(
+#     data = data,
+#     x = ~col,
+#     y = ~row_num,
+#     type = "scatter",
+#     mode = "markers",
+#     color = ~{{ value }},
+#     colors = colour,
+#     text = ~paste("Well:", {{ position }},
+#                   "<br>Specimen Type:", {{ value }},
+#                   ifelse({{ value }} == "Samples",
+#                          paste0("<br>Patient ID: ", data$subject_id,
+#                                 "<br>Timepoint: ", data$timepoint),
+#                          ""),
+#                   "<br> Biosample Barcode: ", data$biosample_id_barcode,
+#                   "<br> Specimen Dilution Factor: ", data$specimen_dilution_factor,
+#                   "<br> Feature: ", data$feature
+#     ),
+#     hoverinfo = "text",
+#     marker = list(size = 20, line = list(width = 1, color = "black"), symbol = "circle")
+#   ) %>%
+#     add_trace(
+#       data = empty_df,
+#       x = ~col,
+#       y = ~row_num,
+#       type = "scatter",
+#       mode = "markers",
+#       marker = list(size = 20, color = "white", line = list(width = 1, color = "grey")),
+#       hoverinfo = "text",
+#       text = ~paste("Well:", well, "<br>Empty")
+#     ) %>%
+#     layout(
+#       title = title,
+#       legend = list(title = list(text = "Specimen Type")),
+#       yaxis = list(
+#         title = "", tickvals = seq(1, n_rows), ticktext = rev(LETTERS[1:n_rows]),
+#         showgrid = F
+#         # autorange = "reversed"
+#       ),
+#       xaxis = list(title = "", tickvals = seq(1, n_cols),
+#                    showgrid = F),
+#       showlegend = TRUE,
+#       shapes = list(
+#         list(
+#           type = "rect",
+#           x0 = 0.5, x1 = n_cols + 0.5,
+#           y0 = 0.5, y1 = n_rows + 0.5,
+#           line = list(color = "black", width = 1),
+#           fillcolor = "rgba(0,0,0,0)"
+#         )
+#       )
+#
+#     )
+#
+#   return(p)
+# }
+
 
 
 # Helper function to combine plate metadata from batch load
@@ -1788,13 +2238,13 @@ create_batch_invalid_message_table <- function(validation_result, bead_array_val
 
 observeEvent(input$uplaod_batch_button, {
 data_list <- batch_data_list()
-head_list <- bead_array_header_list()
-plate_list <- bead_array_plate_list()
-plates_map <- layout_template_sheets()[["plates_map"]]
-antigen_list <- layout_template_sheets()[["antigen_list"]]
-plate_id_data <- layout_template_sheets()[["plate_id"]]
-timepoint_map <- layout_template_sheets()[["timepoint"]]
-subject_map <- layout_template_sheets()[["subject_groups"]]
+head_list <<- bead_array_header_list()
+plate_list <<- bead_array_plate_list()
+plates_map <<- layout_template_sheets()[["plates_map"]]
+antigen_list <<- layout_template_sheets()[["antigen_list"]]
+plate_id_data <<- layout_template_sheets()[["plate_id"]]
+timepoint_map <<- layout_template_sheets()[["timepoint"]]
+subject_map <<- layout_template_sheets()[["subject_groups"]]
 
 batch_header <- construct_batch_upload_metadata(plates_map = layout_template_sheets()[["plates_map"]],
                                                 plate_metadata_list = bead_array_header_list(),
@@ -1889,7 +2339,35 @@ if (nrow(controls_map) > 0) {
 
 ## Antigen family information
 antigen_family_table <<- prepare_batch_antigen_famly(antigen_list = layout_template_sheets()[["antigen_list"]])
-
+# existing <- dbGetQuery(conn, "SELECT study_accesssion, antigen FROM antigen_family_table")
+#
+# # Filter out rows already present
+# new_rows <<- dplyr::anti_join(antigen_family_table, existing,
+#                              by = c("study_accesssion", "antigen"))
+# for(i in seq_len(nrow(antigen_family_table))) {
+#   row <- antigen_family_table[i, ]
+#   sql <- "
+#     INSERT INTO antigen_family_table (
+#       study_accesssion,
+#       antigen,
+#       antigen_family,
+#       standard_curve_concentration,
+#       antigen_name,
+#       virus_bacterial_strain
+#     )
+#     SELECT ?, ?, ?, ?, ?, ?
+#     WHERE NOT EXISTS (
+#       SELECT 1 FROM antigen_family_table
+#       WHERE study_accesssion = ? AND antigen = ?
+#     );
+#   "
+#  query <-  glue::glue_sql(sql, .con = con,
+#                  row$study_accesssion, row$antigen, row$antigen_family,
+#                  row$standard_curve_concentration, row$antigen_name,
+#                  row$virus_bacterial_strain, row$study_accesssion, row$antigen
+#   )
+#
+# }
 
 
 
@@ -2114,6 +2592,11 @@ prepare_batch_antigen_famly <- function(antigen_list) {
 
   return(antigen_list_df)
 }
+
+
+
+
+
 # output$batch_plate_table <- renderRHandsontable({
 #   req(sample_dilution_plate_df())
 #   rhandsontable(sample_dilution_plate_df(), readOnly = FALSE) %>%
