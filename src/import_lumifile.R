@@ -901,12 +901,16 @@ observeEvent(experimentPath(), {
   names(all_data) <- basename(excel_files)
 
   # Separate lists (like your upload handler)
-  header_list <<- lapply(all_data, `[[`, "header")
-  plate_list  <<- lapply(all_data, `[[`, "plate")
+  header_list <- lapply(all_data, `[[`, "header")
+  plate_list  <- lapply(all_data, `[[`, "plate")
 
   # Save to reactives (assuming you defined these as reactiveVals)
   bead_array_header_list(header_list)
   bead_array_plate_list(plate_list)
+
+  all_plates <- read_bind_xlsx(folder = path, x = "plate")
+  batch_plate_data(all_plates)
+
 
   showNotification("Data Files Uploaded")
 })
@@ -992,15 +996,82 @@ observeEvent(input$upload_layout_file, {
   cat("\nSheets found:", paste(sheets, collapse = ", "), "\n")
 
   # Read each sheet, skipping the first 2 rows
+  # all_sheets <- lapply(sheets, function(sheet_name) {
+  #   skip_rows <- if (sheet_name == "timepoint")  4 else 2
+  #   readxl::read_excel(inLayoutFile()$datapath, sheet = sheet_name, skip = skip_rows)
+  # })
   all_sheets <- lapply(sheets, function(sheet_name) {
-    skip_rows <- if (sheet_name == "timepoint")  3 else 2
-    readxl::read_excel(inLayoutFile()$datapath, sheet = sheet_name, skip = skip_rows)
+    skip_rows <- if (sheet_name == "timepoint") 4 else 2
+
+    df <- readxl::read_excel(
+      inLayoutFile()$datapath,
+      sheet = sheet_name,
+      skip = skip_rows
+    )
+
+    # Remove trailing rows that are all NA
+    df <- df[rowSums(!is.na(df)) > 0, ]
+
+    return(df)
   })
+
   names(all_sheets) <- sheets  # Assign sheet names
 
   # Now assign to reactive Values object
   layout_template_sheets(all_sheets)
 
+  batch_header <- construct_batch_upload_metadata(plates_map = all_sheets[["plates_map"]],
+                                                   plate_metadata_list = bead_array_header_list(),
+                                                   workspace_id = userWorkSpaceID(),
+                                                   currentuser = currentuser())
+
+  batch_metadata <- combine_plate_metadata(head_list = batch_header)
+  # store the number of wells
+  batch_metadata <- merge(
+           batch_metadata,
+           all_sheets[["plate_id"]][, c("plate_filename", "number_of_wells")],
+           by.x = "file_name", by.y = "plate_filename",
+           all.x = TRUE
+  )
+names(batch_metadata)[names(batch_metadata) == "number_of_wells"] <- "n_wells"
+batch_metadata <- batch_metadata
+validate_metadata_result <- validate_batch_plate_metadata(plate_metadata = batch_metadata, plate_id_data = all_sheets[["plate_id"]])
+
+bead_array_validation <- validate_batch_bead_array_data(combined_plate_data = batch_plate_data(), antigen_list = all_sheets[["antigen_list"]],
+                                blank_keyword = input$batch_blank)
+
+# bead_array_validation <- validate_batch_bead_array(plate_data_list = bead_array_plate_list(), antigen_list = all_sheets[["antigen_list"]],
+#                           blank_keyword = input$batch_blank)
+
+if (bead_array_validation$is_valid && validate_metadata_result$is_valid) {
+  batch_validated <- TRUE
+  batch_metadata(batch_metadata)
+} else {
+  batch_validated <- FALSE
+}
+
+output$batch_validation_status <- renderUI({
+  createValidateBatchBadge(batch_validated)
+})
+
+output$batch_invalid_messages <- renderTable({
+  if (!batch_validated) {
+    create_batch_invalid_message_table(validate_metadata_result, bead_array_validation)
+  } else {
+    NULL
+  }
+})
+
+output$upload_batch_data_button <- renderUI({
+  if (batch_validated) {
+    actionButton("uplaod_batch_button", "Upload Batch")
+  } else {
+    NULL
+  }
+})
+
+# validate_metadata_result <- validate_batch_plate(plate_metadata = batch_metadata, plate_data_list = bead_array_plate_list(),
+#                                          plate_id_data = all_sheets[["plate_id"]])
   # Dynamically generate UI
   output$view_layout_file_ui <- renderUI({
     req(layout_template_sheets())
@@ -1030,6 +1101,7 @@ observeEvent(input$upload_layout_file, {
 
 observeEvent(layout_template_sheets(), {
   cat("changed layout sheets")
+
 })
 
 #
@@ -1256,92 +1328,92 @@ observeEvent(input$xPonentFile, {
 #   batch_data_list(files_list)
 # })
 
-observeEvent(input$upload_batch_bead_array, {
-  req(input$upload_batch_bead_array)
-  uploaded_files <- input$upload_batch_bead_array
-
-  # Use lapply to process all uploaded files
-  all_data <- lapply(uploaded_files$datapath, function(path) {
-    # Read header (first 7 rows)
-    header_info <- openxlsx::read.xlsx(path, rows = 1:7, colNames = FALSE, sheet = 1)
-    header_info <- parse_metadata_df(header_info)
-    # Read plate data (from row 8 onward)
-    plate_data <- openxlsx::read.xlsx(path, startRow = 8, sheet = 1, colNames = TRUE)
-
-    # Remove completely empty rows
-    plate_data <- plate_data[!apply(
-      plate_data, 1,
-      function(x) all(is.na(x) | trimws(x) == "" | trimws(x) == "NA")
-    ), ]
-
-    list(header = header_info, plate = plate_data)
-  })
-
-  # Assign names using uploaded filenames
-  names(all_data) <- uploaded_files$name
-
-  # Separate into two named lists
-  header_list <- lapply(all_data, `[[`, "header")
-  plate_list  <- lapply(all_data, `[[`, "plate")
-
-  # Store in reactiveVals
-  bead_array_header_list(header_list)
-  bead_array_plate_list(plate_list)
-
-  plate_names <- sapply(header_list, function(x) x$plate)
-  sample_dilution_plate_df(
-    data.frame(
-      plate = plate_names,
-      sample_dilution_factor = NA_real_,
-      stringsAsFactors = FALSE
-    )
-  )
-
-  batch_header <- construct_batch_upload_metadata(plates_map = layout_template_sheets()[["plates_map"]],
-                                                  plate_metadata_list = bead_array_header_list(),
-                                                  workspace_id = userWorkSpaceID(),
-                                                  currentuser = currentuser())
-
-  batch_metadata <- combine_plate_metadata(head_list = batch_header)
-  validation_result <- validate_batch_plate(plate_metadata = batch_metadata, plate_data_list = bead_array_plate_list(),
-                                             plate_id_data = layout_template_sheets()[["plate_id"]])
-  bead_array_validation <- validate_batch_bead_array(plate_data_list = bead_array_plate_list(),
-                                                      antigen_list = layout_template_sheets()[["antigen_list"]],
-                                                      blank_keyword = input$batch_blank)
-  if (bead_array_validation$is_valid && validation_result$is_valid) {
-    batch_validated <- TRUE
-  } else {
-    batch_validated <- FALSE
-  }
-
-
-
-  output$batch_validation_status <- renderUI({
-    createValidateBatchBadge(batch_validated)
-  })
-
-  output$batch_invalid_messages <- renderTable({
-    if (!batch_validated) {
-      create_batch_invalid_message_table(validation_result, bead_array_validation)
-    } else {
-      NULL
-    }
-  })
-
-  output$upload_batch_data_button <- renderUI({
-    if (batch_validated) {
-      actionButton("uplaod_batch_button", "Upload Batch")
-    } else {
-      NULL
-    }
-  })
-  # sample_dilution_plate_df(
-  #   data.frame(
-  #     plate_name = names(bead_array_plate_list()),
-  #     sample_dilution_factor = NA_real_,
-  #     stringsAsFactors = FALSE
-  #   ))
-})
+# observeEvent(input$upload_batch_bead_array, {
+#   req(input$upload_batch_bead_array)
+#   uploaded_files <- input$upload_batch_bead_array
+#
+#   # Use lapply to process all uploaded files
+#   all_data <- lapply(uploaded_files$datapath, function(path) {
+#     # Read header (first 7 rows)
+#     header_info <- openxlsx::read.xlsx(path, rows = 1:7, colNames = FALSE, sheet = 1)
+#     header_info <- parse_metadata_df(header_info)
+#     # Read plate data (from row 8 onward)
+#     plate_data <- openxlsx::read.xlsx(path, startRow = 8, sheet = 1, colNames = TRUE)
+#
+#     # Remove completely empty rows
+#     plate_data <- plate_data[!apply(
+#       plate_data, 1,
+#       function(x) all(is.na(x) | trimws(x) == "" | trimws(x) == "NA")
+#     ), ]
+#
+#     list(header = header_info, plate = plate_data)
+#   })
+#
+#   # Assign names using uploaded filenames
+#   names(all_data) <- uploaded_files$name
+#
+#   # Separate into two named lists
+#   header_list <- lapply(all_data, `[[`, "header")
+#   plate_list  <- lapply(all_data, `[[`, "plate")
+#
+#   # Store in reactiveVals
+#   bead_array_header_list(header_list)
+#   bead_array_plate_list(plate_list)
+#
+#   plate_names <- sapply(header_list, function(x) x$plate)
+#   sample_dilution_plate_df(
+#     data.frame(
+#       plate = plate_names,
+#       sample_dilution_factor = NA_real_,
+#       stringsAsFactors = FALSE
+#     )
+#   )
+#
+#   batch_header <- construct_batch_upload_metadata(plates_map = layout_template_sheets()[["plates_map"]],
+#                                                   plate_metadata_list = bead_array_header_list(),
+#                                                   workspace_id = userWorkSpaceID(),
+#                                                   currentuser = currentuser())
+#
+#   batch_metadata <- combine_plate_metadata(head_list = batch_header)
+#   validation_result <- validate_batch_plate(plate_metadata = batch_metadata, plate_data_list = bead_array_plate_list(),
+#                                              plate_id_data = layout_template_sheets()[["plate_id"]])
+#   bead_array_validation <- validate_batch_bead_array(plate_data_list = bead_array_plate_list(),
+#                                                       antigen_list = layout_template_sheets()[["antigen_list"]],
+#                                                       blank_keyword = input$batch_blank)
+#   if (bead_array_validation$is_valid && validation_result$is_valid) {
+#     batch_validated <- TRUE
+#   } else {
+#     batch_validated <- FALSE
+#   }
+#
+#
+#
+#   output$batch_validation_status <- renderUI({
+#     createValidateBatchBadge(batch_validated)
+#   })
+#
+#   output$batch_invalid_messages <- renderTable({
+#     if (!batch_validated) {
+#       create_batch_invalid_message_table(validation_result, bead_array_validation)
+#     } else {
+#       NULL
+#     }
+#   })
+#
+#   output$upload_batch_data_button <- renderUI({
+#     if (batch_validated) {
+#       actionButton("uplaod_batch_button", "Upload Batch")
+#     } else {
+#       NULL
+#     }
+#   })
+#   # sample_dilution_plate_df(
+#   #   data.frame(
+#   #     plate_name = names(bead_array_plate_list()),
+#   #     sample_dilution_factor = NA_real_,
+#   #     stringsAsFactors = FALSE
+#   #   ))
+# })
 # Display basic info about uploaded files
 output$file_summary <- renderPrint({
  # data_list <- batch_data_list()
@@ -1460,6 +1532,7 @@ construct_batch_upload_metadata <- function(plates_map, plate_metadata_list, cur
 
       plate_num <- df$plate[1]
 
+
       # Match with dilution table
       match_row <- sample_dilutions_by_plate[sample_dilutions_by_plate$plate_number == plate_num, , drop = FALSE]
 
@@ -1491,13 +1564,16 @@ construct_batch_upload_metadata <- function(plates_map, plate_metadata_list, cur
       # df$study_accession <- unique(plates_map$study_name)
     })
 
-
+    # add in source file for later join
+    for (nm in names(plate_metadata_list_updated)) {
+      plate_metadata_list_updated[[nm]]$source_file <- nm
+    }
 
     return(plate_metadata_list_updated)
 }
 
 plot_plate_layout <- function(plates_map, plate_id_data) {
-  plates_map_v <<- plates_map
+  #plates_map_v <<- plates_map
   # Join in number_of_wells info
   plates_map_joined <- merge(
     plates_map,
@@ -1597,7 +1673,7 @@ plot_plate_layout <- function(plates_map, plate_id_data) {
 }
 # A plotly version of the plot_plate_function from the ggplate R library
 plate_plot_plotly2 <- function(data, plate_size = 96, title = NULL, colour = NULL) {
-  #data_v <<- data
+  data_v <<- data
   cat("Plate")
   print(unique(data$plate_number))
  cat("Plate Size")
@@ -1659,7 +1735,7 @@ plate_plot_plotly2 <- function(data, plate_size = 96, title = NULL, colour = NUL
         "<br>Specimen Type:", `Specimen Type`,
         ifelse(`Specimen Type` == "Samples",
                paste0("<br>Patient ID: ", subject_id,
-                      "<br>Timepoint: ", timepoint),
+                      "<br>Timepoint: ", timepoint_tissue_abbreviation),
                ""),
         "<br>Biosample Barcode:", biosample_id_barcode,
         "<br>Specimen Dilution Factor:", specimen_dilution_factor,
@@ -2236,142 +2312,169 @@ create_batch_invalid_message_table <- function(validation_result, bead_array_val
 }
 
 
+
 observeEvent(input$uplaod_batch_button, {
-data_list <- batch_data_list()
-head_list <<- bead_array_header_list()
-plate_list <<- bead_array_plate_list()
-plates_map <<- layout_template_sheets()[["plates_map"]]
-antigen_list <<- layout_template_sheets()[["antigen_list"]]
-plate_id_data <<- layout_template_sheets()[["plate_id"]]
-timepoint_map <<- layout_template_sheets()[["timepoint"]]
-subject_map <<- layout_template_sheets()[["subject_groups"]]
+  batch_plates <<- batch_plate_data()
+  metadata_batch <<- batch_metadata()
+  timepoint_map_in <<- layout_template_sheets()[["timepoint"]]
+  subject_map_in <<- layout_template_sheets()[["subject_groups"]]
+  antigen_list_in <<- layout_template_sheets()[["antigen_list"]]
+  plates_map_in <<-  layout_template_sheets()[["plates_map"]]
 
-batch_header <- construct_batch_upload_metadata(plates_map = layout_template_sheets()[["plates_map"]],
-                                                plate_metadata_list = bead_array_header_list(),
-                                                workspace_id = userWorkSpaceID(),
-                                                currentuser = currentuser())
-# metadata to store in the header table
-batch_metadata <- combine_plate_metadata(head_list = batch_header)
-# store the number of wells
-batch_metadata <- merge(
-       batch_metadata,
-       plate_id_data[, c("plate_filename", "number_of_wells")],
-       by.x = "file_name", by.y = "plate_filename",
-       all.x = TRUE
-)
-names(batch_metadata)[names(batch_metadata) == "number_of_wells"] <- "n_wells"
-
-batch_metadata <<- batch_metadata
-# get the study accession of the batch and plate ids that will be uploaded
-batch_study_accession <- unique(batch_metadata$study_accession)
-plates_to_upload <- unique(batch_metadata$plate_id)
-
-plate_list_sql <- paste0("'", paste(plates_to_upload, collapse = "', '"), "'")
-query <- sprintf("
-  SELECT
-    xmap_header_id,
-    study_accession,
-    experiment_accession,
-    plate_id,
-    file_name,
-    acquisition_date,
-    reader_serial_number,
-    rp1_pmt_volts,
-    rp1_target,
-    auth0_user,
-    workspace_id,
-    plateid,
-    plate,
-    sample_dilution_factor,
-    n_wells
-  FROM madi_results.xmap_header
-  WHERE study_accession = '%s'
-    AND plate_id IN (%s);
-", batch_study_accession, plate_list_sql)
-
-existing_plates <- DBI::dbGetQuery(conn, query)
-if (nrow(existing_plates) > 0) {
-  cat("These plates already exist for the study")
-} else {
-  cat("These plates do not exist for the study")
+  ## join in plates
+  batch_plates_2 <- merge(batch_plates, metadata_batch[, c("source_file", "plate")],
+                          by.x = "source_file",
+                          all.x = T)
+  cat("after join batch ")
+  # obtain samples to upload
+  sample_map <<- plates_map[plates_map_in$specimen_type == "X",]
+  if (nrow(sample_map) > 0) {
+   samples_to_upload <<-  prepare_batch_bead_assay_samples(sample_plate_map = sample_map,
+                                     combined_plate_data = batch_plates, batch_metadata = metadata_batch,
+                                     antigen_list = antigen_list_in, subject_map = subject_map_in)
+    # samples_to_upload <<- prepare_batch_bead_assay_samples(sample_plate_map = sample_map, combined_plate_data = combined_plate_data,
+    #                                                     antigen_list = layout_template_sheets()[["antigen_list"]],
+    #                                                     subject_map = subject_map)
+  }
+})
 
 
-
-plate_data_list2 <- plate_list
-# add experiment name and plate to each raw assay data
-for (i in seq_along(plate_data_list2)) {
-  plate_data_list2[[i]]$plate <- batch_metadata$plate[i]
-  plate_data_list2[[i]]$plate_id <- batch_metadata$plate_id[i]
-  plate_data_list2[[i]]$experiment_name <- batch_metadata$experiment_name[i]
-}
-
-# combine all plates together
-combined_plate_data <- dplyr::bind_rows(plate_data_list2)
-
-
-# obtain samples to upload
-sample_map <- plates_map[plates_map$specimen_type == "X",]
-if (nrow(sample_map) > 0) {
-  samples_to_upload <<- prepare_batch_bead_assay_samples(sample_plate_map = sample_map, combined_plate_data = combined_plate_data,
-                                                      antigen_list = layout_template_sheets()[["antigen_list"]],
-                                                      subject_map = subject_map)
-}
-
-
-## Standards
-standard_map <- plates_map[plates_map$specimen_type == "S",]
-if (nrow(standard_map) > 0) {
-  standards_to_upload <<- prepare_batch_bead_assay_standards(standard_plate_map = standard_map, combined_plate_data = combined_plate_data,
-                                                          antigen_list = layout_template_sheets()[["antigen_list"]])
-}
-## Blanks
-blanks_map <- plates_map[plates_map$specimen_type == "B",]
-if (nrow(blanks_map) > 0) {
-  blanks_to_upload <<- prepare_batch_bead_assay_blanks(blanks_plate_map = blanks_map, combined_plate_data = combined_plate_data,
-                                                    antigen_list = layout_template_sheets()[["antigen_list"]])
-}
-# controls upload
-controls_map <- plates_map[plates_map$specimen_type == "C",]
-if (nrow(controls_map) > 0) {
-  controls_to_upload <<- prepare_batch_bead_assay_controls(controls_plate_map = controls_map, combined_plate_data = combined_plate_data,
-                                                          antigen_list = layout_template_sheets()[["antigen_list"]])
-}
-
-## Antigen family information
-antigen_family_table <<- prepare_batch_antigen_famly(antigen_list = layout_template_sheets()[["antigen_list"]])
-# existing <- dbGetQuery(conn, "SELECT study_accesssion, antigen FROM antigen_family_table")
+# observeEvent(input$uplaod_batch_button, {
+# data_list <- batch_data_list()
+# head_list <<- bead_array_header_list()
+# plate_list <<- bead_array_plate_list()
+# plates_map <<- layout_template_sheets()[["plates_map"]]
+# antigen_list <<- layout_template_sheets()[["antigen_list"]]
+# plate_id_data <<- layout_template_sheets()[["plate_id"]]
+# timepoint_map <<- layout_template_sheets()[["timepoint"]]
+# subject_map <<- layout_template_sheets()[["subject_groups"]]
 #
-# # Filter out rows already present
-# new_rows <<- dplyr::anti_join(antigen_family_table, existing,
-#                              by = c("study_accesssion", "antigen"))
-# for(i in seq_len(nrow(antigen_family_table))) {
-#   row <- antigen_family_table[i, ]
-#   sql <- "
-#     INSERT INTO antigen_family_table (
-#       study_accesssion,
-#       antigen,
-#       antigen_family,
-#       standard_curve_concentration,
-#       antigen_name,
-#       virus_bacterial_strain
-#     )
-#     SELECT ?, ?, ?, ?, ?, ?
-#     WHERE NOT EXISTS (
-#       SELECT 1 FROM antigen_family_table
-#       WHERE study_accesssion = ? AND antigen = ?
-#     );
-#   "
-#  query <-  glue::glue_sql(sql, .con = con,
-#                  row$study_accesssion, row$antigen, row$antigen_family,
-#                  row$standard_curve_concentration, row$antigen_name,
-#                  row$virus_bacterial_strain, row$study_accesssion, row$antigen
-#   )
+# batch_header <- construct_batch_upload_metadata(plates_map = layout_template_sheets()[["plates_map"]],
+#                                                 plate_metadata_list = bead_array_header_list(),
+#                                                 workspace_id = userWorkSpaceID(),
+#                                                 currentuser = currentuser())
+# # metadata to store in the header table
+# batch_metadata <- combine_plate_metadata(head_list = batch_header)
+# # store the number of wells
+# batch_metadata <- merge(
+#        batch_metadata,
+#        plate_id_data[, c("plate_filename", "number_of_wells")],
+#        by.x = "file_name", by.y = "plate_filename",
+#        all.x = TRUE
+# )
+# names(batch_metadata)[names(batch_metadata) == "number_of_wells"] <- "n_wells"
+#
+# batch_metadata <<- batch_metadata
+# # get the study accession of the batch and plate ids that will be uploaded
+# batch_study_accession <- unique(batch_metadata$study_accession)
+# plates_to_upload <- unique(batch_metadata$plate_id)
+#
+# plate_list_sql <- paste0("'", paste(plates_to_upload, collapse = "', '"), "'")
+# query <- sprintf("
+#   SELECT
+#     xmap_header_id,
+#     study_accession,
+#     experiment_accession,
+#     plate_id,
+#     file_name,
+#     acquisition_date,
+#     reader_serial_number,
+#     rp1_pmt_volts,
+#     rp1_target,
+#     auth0_user,
+#     workspace_id,
+#     plateid,
+#     plate,
+#     sample_dilution_factor,
+#     n_wells
+#   FROM madi_results.xmap_header
+#   WHERE study_accession = '%s'
+#     AND plate_id IN (%s);
+# ", batch_study_accession, plate_list_sql)
+#
+# existing_plates <- DBI::dbGetQuery(conn, query)
+# if (nrow(existing_plates) > 0) {
+#   cat("These plates already exist for the study")
+# } else {
+#   cat("These plates do not exist for the study")
+#
+#
+#
+# plate_data_list2 <- plate_list
+# # add experiment name and plate to each raw assay data
+# for (i in seq_along(plate_data_list2)) {
+#   plate_data_list2[[i]]$plate <- batch_metadata$plate[i]
+#   plate_data_list2[[i]]$plate_id <- batch_metadata$plate_id[i]
+#   plate_data_list2[[i]]$experiment_name <- batch_metadata$experiment_name[i]
+# }
+#
+# # combine all plates together
+# combined_plate_data <- dplyr::bind_rows(plate_data_list2)
+#
+#
+# # obtain samples to upload
+# sample_map <- plates_map[plates_map$specimen_type == "X",]
+# if (nrow(sample_map) > 0) {
+#   samples_to_upload <<- prepare_batch_bead_assay_samples(sample_plate_map = sample_map, combined_plate_data = combined_plate_data,
+#                                                       antigen_list = layout_template_sheets()[["antigen_list"]],
+#                                                       subject_map = subject_map)
+# }
+#
+#
+# ## Standards
+# standard_map <- plates_map[plates_map$specimen_type == "S",]
+# if (nrow(standard_map) > 0) {
+#   standards_to_upload <<- prepare_batch_bead_assay_standards(standard_plate_map = standard_map, combined_plate_data = combined_plate_data,
+#                                                           antigen_list = layout_template_sheets()[["antigen_list"]])
+# }
+# ## Blanks
+# blanks_map <- plates_map[plates_map$specimen_type == "B",]
+# if (nrow(blanks_map) > 0) {
+#   blanks_to_upload <<- prepare_batch_bead_assay_blanks(blanks_plate_map = blanks_map, combined_plate_data = combined_plate_data,
+#                                                     antigen_list = layout_template_sheets()[["antigen_list"]])
+# }
+# # controls upload
+# controls_map <- plates_map[plates_map$specimen_type == "C",]
+# if (nrow(controls_map) > 0) {
+#   controls_to_upload <<- prepare_batch_bead_assay_controls(controls_plate_map = controls_map, combined_plate_data = combined_plate_data,
+#                                                           antigen_list = layout_template_sheets()[["antigen_list"]])
+# }
+#
+# ## Antigen family information
+# antigen_family_table <<- prepare_batch_antigen_famly(antigen_list = layout_template_sheets()[["antigen_list"]])
+# # existing <- dbGetQuery(conn, "SELECT study_accesssion, antigen FROM antigen_family_table")
+# #
+# # # Filter out rows already present
+# # new_rows <<- dplyr::anti_join(antigen_family_table, existing,
+# #                              by = c("study_accesssion", "antigen"))
+# # for(i in seq_len(nrow(antigen_family_table))) {
+# #   row <- antigen_family_table[i, ]
+# #   sql <- "
+# #     INSERT INTO antigen_family_table (
+# #       study_accesssion,
+# #       antigen,
+# #       antigen_family,
+# #       standard_curve_concentration,
+# #       antigen_name,
+# #       virus_bacterial_strain
+# #     )
+# #     SELECT ?, ?, ?, ?, ?, ?
+# #     WHERE NOT EXISTS (
+# #       SELECT 1 FROM antigen_family_table
+# #       WHERE study_accesssion = ? AND antigen = ?
+# #     );
+# #   "
+# #  query <-  glue::glue_sql(sql, .con = con,
+# #                  row$study_accesssion, row$antigen, row$antigen_family,
+# #                  row$standard_curve_concentration, row$antigen_name,
+# #                  row$virus_bacterial_strain, row$study_accesssion, row$antigen
+# #   )
+# #
+# # }
+#
+#
 #
 # }
-
-
-
-}
 # # plate_data_list2 <- plate_data_list
 # # # names(plate_data_list2) <- batch_metadata$plate_id
 # # names(plate_data_list2) <- head_list$plate_id
@@ -2393,10 +2496,10 @@ antigen_family_table <<- prepare_batch_antigen_famly(antigen_list = layout_templ
 
 #df <-do.call(rbind, plate_data_list2)
 
-})
+#})
 
 
-prepare_batch_bead_assay_samples <- function(sample_plate_map, combined_plate_data, antigen_list, subject_map) {
+prepare_batch_bead_assay_samples <- function(sample_plate_map, combined_plate_data, batch_metadata, antigen_list, subject_map) {
   sample_joined <- merge(sample_plate_map, subject_map,
                          by = c("study_name", "subject_id"),
                          all.x = TRUE
@@ -2404,11 +2507,17 @@ prepare_batch_bead_assay_samples <- function(sample_plate_map, combined_plate_da
   sample_joined$agroup <-ifelse(is.na(sample_joined$groupb),
                                 sample_joined$groupa,
                                 paste(sample_joined$groupa, sample_joined$groupb, sep = "_"))
+  # sample_j <- merge(
+  #   sample_joined,
+  #   combined_plate_data[, !(names(combined_plate_data) %in% c("Type", "Description"))],
+  #   by.x = c("experiment_name", "plate_number", "well"),
+  #   by.y = c("experiment_name", "plate", "Well")
+  # )
   sample_j <- merge(
     sample_joined,
     combined_plate_data[, !(names(combined_plate_data) %in% c("Type", "Description"))],
-    by.x = c("experiment_name", "plate_number", "well"),
-    by.y = c("experiment_name", "plate", "Well")
+    by.x = c("plate_number", "well"),
+    by.y = c("plate", "Well")
   )
 
   sample_long <- sample_j %>%
@@ -2434,15 +2543,21 @@ prepare_batch_bead_assay_samples <- function(sample_plate_map, combined_plate_da
                         by.y =  c("study_name", "experiment_name", "antigen_label_on_plate"),
                         all.x = T)
 
+  # join in the plate_id from the metadata
+  sample_long2 <- merge(sample_long2,
+                        batch_metadata[, c("source_file", "plate_id")],
+                        by = "source_file",
+                        all.x = T)
+
   sample_long2 <- sample_long2[, !names(sample_long2) %in% c("antigen")]
   names(sample_long2)[names(sample_long2) == "antigen_abbreviation"] <- "antigen"
   names(sample_long2)[names(sample_long2) == "study_name"] <- "study_accession"
   names(sample_long2)[names(sample_long2) == "experiment_name"] <- "experiment_accession"
   names(sample_long2)[names(sample_long2) == "specimen_type"] <- "stype"
   names(sample_long2)[names(sample_long2) == "specimen_dilution_factor"] <- "dilution"
-  names(sample_long2)[names(sample_long2) == "%.Agg.Beads"] <- "pctaggbeads"
-  names(sample_long2)[names(sample_long2) == "Sampling.Errors"] <- "samplingerrors"
-  names(sample_long2)[names(sample_long2) == "timepoint"] <- "timeperiod"
+  names(sample_long2)[names(sample_long2) == "% Agg Beads"] <- "pctaggbeads"
+  names(sample_long2)[names(sample_long2) == "Sampling Errors"] <- "samplingerrors"
+  names(sample_long2)[names(sample_long2) == "timepoint_tissue_abbreviation"] <- "timeperiod"
   names(sample_long2)[names(sample_long2) == "subject_id"] <- "patientid"
   names(sample_long2)[names(sample_long2) == "biosample_id_barcode"] <- "sampleid"
 

@@ -5,7 +5,7 @@ source("global.R", local = TRUE)
 
 
 #Set to 1 for local and do not push in prod
-# Sys.setenv(LOCAL_DEV = "1")
+#Sys.setenv(LOCAL_DEV = "1")
 
 
 # Source authentication configuration (Step 1)
@@ -855,6 +855,8 @@ server <- function(input, output, session) {
       lumcsv_reactive <- reactiveVal()
 
       ## Layout sheets
+      batch_plate_data <- reactiveVal() # all plates combined from folder upload
+      batch_metadata <- reactiveVal() # store validated metadata for the batch
       experimentPath <- reactiveVal()
       inLayoutFile <- reactiveVal()
       avaliableLayoutSheets <- reactiveVal()

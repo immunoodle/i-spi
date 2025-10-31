@@ -136,6 +136,22 @@ check_blank_description <- function(df) {
   }
 }
 
+# return type differs
+check_blank_description_batch <- function(df) {
+  df <- df[grepl("^B", df$Type) &
+             !grepl("Blank", df$Description) &
+             !grepl("^[A-Za-z0-9]+_\\d+$", df$Description),]
+  if(nrow(df) > 0) {
+    blank_message <- paste("Need to modify the Blank description column to be like [source]_[dilution_factor] e.g. PBS_1: Well",
+                           paste(df$Well, "| Value:", df$Description, collapse = ", ")
+    )
+    return(list(FALSE, blank_message))
+  } else {
+    return(list(TRUE))
+  }
+
+}
+
 
 # blank keyword can either be 'empty_well' or 'use_as_blank'
 check_blank_in_sample <- function(df, blank_keyword) {
@@ -195,7 +211,7 @@ check_agg_bead_column <- function(df) {
 }
 
 check_batch_agg_bead_column <- function(df) {
-  required_cols <- c("X..Agg.Beads", "%.Agg.Beads")
+  required_cols <- c("% Agg Beads", "X..Agg.Beads", "%.Agg.Beads")
   result <- any(required_cols %in% names(df))
 
   if (!result) {
@@ -209,7 +225,7 @@ check_batch_agg_bead_column <- function(df) {
 check_bead_count <- function(df) {
 
 start_col <- which(names(df) == "Description")
-possible_end_names <- c("X..Agg.Beads", "%.Agg.Beads")
+possible_end_names <- c("% Agg Beads", "X..Agg.Beads", "%.Agg.Beads")
 end_col <- which(names(df) %in% possible_end_names)
 # end_col <- which(names(df) == "X..Agg.Beads")
 

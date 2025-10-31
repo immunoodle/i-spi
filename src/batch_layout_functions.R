@@ -243,3 +243,154 @@ generate_layout_template <- function(folder, study_accession, experiment_accessi
 #                                             n_wells = 96,
 #                                             header_list = header_list)
 
+validate_batch_plate_metadata <- function(plate_metadata, plate_id_data) {
+  message_list <- c()
+
+  check_uploaded_file_in_layout <- plate_metadata$file_name %in% plate_id_data$plate_filename
+  if (!all(check_uploaded_file_in_layout)) {
+    message_list <- c("Some uploaded plates are misssing in the layout file.")
+  }
+  # validate the required columns
+  required_cols <- c("file_name", "rp1_pmt_volts", "rp1_target", "acquisition_date")
+  missing_cols <- setdiff(required_cols, names(plate_metadata))
+
+  if (length(missing_cols) > 0) {
+    message_list <- c(
+      message_list,
+      paste("The following required plate metadata columns are missing so further parsing cannot be conducted:",
+            paste(missing_cols, collapse = ", "))
+    )
+    # If critical metadata is missing, return early
+    return(list(
+      is_valid = FALSE,
+      messages = message_list
+    ))
+  }
+
+  # plate_metadata <<- plate_metadata
+
+  # check to see if all files passes file Path
+  pass_file_path <- all(looks_like_file_path(plate_metadata$file_name))
+  if (!pass_file_path) {
+    message_list <- c(message_list, "Ensure that alll file paths have foward or backward slashes based on Mac or Windows")
+  }
+
+  pass_rp1_pmt_volts <- all(check_rp1_numeric(plate_metadata$rp1_pmt_volts))
+  is_numeric <- check_rp1_numeric(plate_metadata$rp1_pmt_volts)
+  if (!pass_rp1_pmt_volts) {
+    bad_rp1_pmt_volts <- plate_metadata[!is_numeric, c("plateid", "rp1_pmt_volts")]
+    labeled_vals <- paste(bad_rp1_pmt_volts$plateid, bad_rp1_pmt_volts$rp1_pmt_volts, sep = ":")
+
+    message_list <- c(message_list, paste(
+      "Ensure that all files have an RP1 PMT (Volts) field that is numeric and if it is a decimal only one period is present. Values by plateid:",
+      paste(labeled_vals, collapse = ", "))
+    )
+  }
+  pass_rp1_target <- all(check_rp1_numeric(plate_metadata$rp1_target))
+  is_target_numeric <- check_rp1_numeric(plate_metadata$rp1_target)
+  if (!pass_rp1_target) {
+    invalid_rp1_target <- plate_metadata[!is_target_numeric, c("plateid", "rp1_target")]
+    labeled_bad_rp1_target <- paste(invalid_rp1_target$plateid, invalid_rp1_target$rp1_target, sep = ":")
+    message_list <- c(message_list, paste("Ensure that the RP1 Target is numeric and if it is a decimal only one period is present. Values by plateid:",
+                                          paste(labeled_bad_rp1_target,collapse = ", ")))
+  }
+
+  pass_time_format <- all(check_time_format(capitalize_am_pm(plate_metadata$acquisition_date)))
+  is_time_format <- check_time_format(capitalize_am_pm(plate_metadata$acquisition_date))
+  if (!pass_time_format) {
+    invalid_time_format <- plate_metadata[!is_time_format, c("plateid", "aquisition_date")]
+    labeled_invalid_time_format <- paste(invalid_time_format$plateid, invalid_time_format$aquisition_date)
+    message_list <- c(message_list, paste("Ensure the acquisition date is in the following date time format: DD-MMM-YYYY, HH:MM AM/PM Example: 01-Oct-2025, 12:12 PM  |Current Value by plateid:",
+                                          paste(labeled_invalid_time_format, collapse = ", ")))
+  }
+  is_valid <- length(message_list) == 0
+
+  if (is_valid)  {
+    return(list(
+      is_valid = is_valid,
+      messages = message_list,
+      updated_plate_data = plate_data
+    ))
+  } else {
+    return(list(
+      is_valid = is_valid,
+      messages = message_list
+    ))
+  }
+}
+
+validate_batch_bead_array_data <- function(combined_plate_data, antigen_list, blank_keyword) {
+  cat("in validate_batch_bead_array")
+  # combined_plate_data <<- combined_plate_data
+  # antigen_list_in <<- antigen_list
+  # blank_keyword <<- blank_keyword
+
+  message_list <- c()
+  unique_plates <- unique(combined_plate_data$source_file)
+  # obtain antigens from the layout file that are labeled on the plate
+  valid_antigens <- unique(antigen_list$antigen_label_on_plate)
+  check_antigens <- all(valid_antigens %in% names(combined_plate_data))
+  if (!check_antigens) {
+    missing_antigens <- valid_antigens[!valid_antigens %in% names(combined_plate_data)]
+    message_list <- c(message_list,  paste(
+      "The following antigens are missing in the layout/data file:",
+      paste(missing_antigens, collapse = ", ")
+    ))
+  }
+
+  cat("after antigens")
+
+  pass_agg_bead_check <- check_batch_agg_bead_column(combined_plate_data)
+  if (!pass_agg_bead_check$result) {
+    message_list <- c(message_list, pass_agg_bead_check$message)
+  } else {
+    for (plate in unique_plates) {
+      pass_bead_count_check <- check_bead_count(combined_plate_data[combined_plate_data$source_file == plate,])
+      if (!pass_bead_count_check[[1]]) {
+        message_list <- c(message_list, paste(plate, pass_bead_count_check$message, sep = ": "))
+      }
+    }
+    cat("after bead count check")
+  }
+
+  # examine blanks in type column
+  for (plate in unique_plates) {
+    plate_data <- combined_plate_data[combined_plate_data$source_file == plate,]
+    procceed_to_blank_check <- check_blank_in_sample_boolean(df = plate_data)
+    cat("blank_check")
+    if (!procceed_to_blank_check) {
+      plate_data <- check_blank_in_sample(plate_data, blank_keyword = blank_keyword)
+    }
+    pass_blank_description <- check_blank_description_batch(plate_data)
+
+    if (!pass_blank_description[[1]]) {
+      message_list <- c(
+        message_list,
+        paste("Plate:", plate, "-", pass_blank_description[[2]])
+      )
+    }
+
+    # 3. Write updated rows back into the combined df
+    combined_plate_data[combined_plate_data$source_file == plate, ] <- plate_data
+
+  }
+
+  is_valid <- length(message_list) == 0
+
+  cat("after is valid bead array")
+  if (is_valid)  {
+    return(list(
+      is_valid = is_valid,
+      messages = message_list
+    ))
+  } else {
+    return(list(
+      is_valid = is_valid,
+      messages = message_list
+    ))
+  }
+
+}
+
+
+
