@@ -923,8 +923,8 @@ observeEvent(experimentPath(), {
   names(all_data) <- basename(excel_files)
 
   # Separate lists (like your upload handler)
-  header_list <<- lapply(all_data, `[[`, "header")
-  plate_list  <<- lapply(all_data, `[[`, "plate")
+  header_list <- lapply(all_data, `[[`, "header")
+  plate_list  <- lapply(all_data, `[[`, "plate")
 
   # Save to reactives (assuming you defined these as reactiveVals)
   bead_array_header_list(header_list)
