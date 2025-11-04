@@ -1,4 +1,5 @@
 
+
 # read in the folder where the files are and the common word
 # Usually the common word is 'plate'
 read_bind_xlsx <- function (folder, x){
@@ -10,6 +11,18 @@ read_bind_xlsx <- function (folder, x){
     #set_names(~basename(.))%>%
     map_dfr(read_excel,sheet=1, skip=7, col_types="text",.id="source_file")
 }
+
+process_uploaded_files <- function(upload_df) {
+  tmpdir <- file.path(tempdir(), "uploaded_batch")
+  if (!dir.exists(tmpdir)) dir.create(tmpdir)
+
+  for (i in 1:nrow(upload_df)) {
+    file.copy(upload_df$datapath[i], file.path(tmpdir, upload_df$name[i]), overwrite = TRUE)
+  }
+
+  read_bind_xlsx(folder = tmpdir, x = "plate")
+}
+
 
 generate_well_list <- function(plate_size) {
   # Matches logic from plate_plot()
@@ -42,7 +55,7 @@ generate_well_list <- function(plate_size) {
 }
 
 
-generate_layout_template <- function(folder, study_accession, experiment_accession, n_wells, header_list, output_file) {
+generate_layout_template <- function(all_plates, study_accession, experiment_accession, n_wells, header_list, output_file) {
   wb <- createWorkbook()
   bold_style <- createStyle(textDecoration = "bold")
   italic_style  <- createStyle(textDecoration = "italic")
@@ -62,7 +75,7 @@ generate_layout_template <- function(folder, study_accession, experiment_accessi
   plate_id <- plate_id[, c("study_name", "experiment_name", "number_of_wells", "plate_number", "plateid", "plate_filename"),]
 
   # combine all plates together
-  all_plates <- read_bind_xlsx(folder = folder, x = "plate")
+  # all_plates <- read_bind_xlsx(folder = folder, x = "plate")
   antigen_names <- names(all_plates)[!(names(all_plates) %in% c( "source_file", "Well", "Type", "Description", "% Agg Beads", "Sampling Errors"))]
 
   antigen_df <- tibble(

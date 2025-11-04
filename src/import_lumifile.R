@@ -122,9 +122,13 @@ output$readxMapData <- renderUI({
                    ),
                    conditionalPanel(
                      condition = "input.xPonentFile == 'Layout Template'",
-                     shinyDirButton("experiment_folder", "Select an Experiment Folder", "Please select a folder containing your experiment files."),
-                     helpText("In this folder: raw bead array data (excel formatted) and completed layout template (after filling out generated template)"),
-                     uiOutput("folderpath"),
+                    # shinyDirButton("experiment_folder", "Select an Experiment Folder", "Please select a folder containing your experiment files."),
+                     fileInput("upload_experiment_files",
+                               label = "Select all experiment raw data files",
+                               accept = c(".xlsx",".xls"),
+                               multiple = TRUE),
+                    # helpText("In this folder: raw bead array data (excel formatted) and completed layout template (after filling out generated template)"),
+                    # uiOutput("folderpath"),
                      conditionalPanel(
                        condition = "output.hasExperimentPath",
                         radioButtons(inputId = "n_wells_on_plate", "Select Number of Wells to Generate on Plates",
@@ -856,16 +860,72 @@ observeEvent(input$savexMapButton, {
 
 # account for Windows and Mac operating systems. Ignores winslash when on Mac
 #roots <- c(home = normalizePath("~", winslash = c("/")))
-roots <- c(home = normalizePath("~", winslash = "/"), shinyFiles::getVolumes()())
+#roots <- c(home = normalizePath("~", winslash = "/"), shinyFiles::getVolumes()())
 
 
 # Initialize folder selection
-shinyDirChoose(input, "experiment_folder", roots = roots, session = session)
+#shinyDirChoose(input, "experiment_folder", roots = roots, session = session)
 
-# folderPath <- reactive({
-#   req(input$folder)
-#   parseDirPath(roots, input$folder)
-# })
+
+observeEvent(input$upload_experiment_files, {
+  req(input$upload_experiment_files)
+
+  current_exp_files <- input$upload_experiment_files
+  batch_data_list <- list()
+
+  for (i in 1:nrow(current_exp_files)) {
+    file_path <- current_exp_files$datapath[i]
+    file_name <- current_exp_files$name[i]
+
+    # full sheet
+    bead_array_plate <- openxlsx::read.xlsx(file_path, colNames = FALSE, sheet = 1)
+    well_row <- which(bead_array_plate[,1] == "Well")
+
+    #  Header block
+    header_info <- openxlsx::read.xlsx(
+      file_path,
+      rows = 1:(well_row - 1),
+      colNames = FALSE,
+      sheet = 1
+    )
+    header_info <- parse_metadata_df(header_info)
+
+    # Plate block
+    plate_data <- openxlsx::read.xlsx(
+      file_path,
+      startRow = well_row,
+      sheet = 1,
+      colNames = TRUE
+    )
+
+    names(plate_data) <- gsub("\\.", " ", names(plate_data))
+
+    plate_data <- plate_data[!apply(
+      plate_data, 1,
+      function(x) all(is.na(x) | trimws(x) == "" | trimws(x) == "NA")
+    ),]
+
+    batch_data_list[[file_name]] <- list(
+      header = header_info,
+      plate = plate_data
+    )
+  }
+
+  # Store header & plate lists
+  header_list <- lapply(batch_data_list, `[[`, "header")
+  plate_list  <- lapply(batch_data_list, `[[`, "plate")
+
+  bead_array_header_list(header_list)
+  bead_array_plate_list(plate_list)
+
+  # build combined plate data like folder mode
+  all_plates <- process_uploaded_files(input$upload_experiment_files)
+  batch_plate_data(all_plates)
+
+  showNotification("Experiment Excel Files Uploaded")
+})
+
+
 
 # Observe and display the selected folder
 # output$folderpath <- renderPrint({
@@ -875,80 +935,85 @@ shinyDirChoose(input, "experiment_folder", roots = roots, session = session)
 #   parseDirPath(roots, input$experiment_folder)
 # })
 
-output$folderpath <- renderUI({
-  req(input$experiment_folder)
-  folder <- parseDirPath(roots, input$experiment_folder)
-  experimentPath(parseDirPath(roots, input$experiment_folder))
-  HTML(paste0("<b>Selected folder:</b>", folder, "</span>"))
-})
-
+# output$folderpath <- renderUI({
+#   req(input$experiment_folder)
+#   folder <- parseDirPath(roots, input$experiment_folder)
+#   experimentPath(parseDirPath(roots, input$experiment_folder))
+#   HTML(paste0("<b>Selected folder:</b>", folder, "</span>"))
+# })
+#
 output$hasExperimentPath <- reactive({
-  path <- experimentPath()
-  !is.null(path) && nzchar(path)   # nzchar() checks for non-empty string
+  path_df <- input$upload_experiment_files   # fileInput returns a data frame
+
+  !is.null(path_df) && nrow(path_df) > 0
+  # path <- input$upload_experiment_files#experimentPath()
+ # !is.null(path) && nzchar(path)   # nzchar() checks for non-empty string
 })
 outputOptions(output, "hasExperimentPath", suspendWhenHidden = FALSE)
 
-observeEvent(experimentPath(), {
-  cat("changed experiment_folder")
-  path <- experimentPath()
-  excel_files <- list.files(path, pattern = "\\.xlsx?$", full.names = TRUE)
-  # exclude any layout files
-  excel_files <- excel_files[!grepl("layout_template", excel_files, ignore.case = TRUE)]
-  req(length(excel_files) > 0)
-
-
-
-  all_data <- lapply(excel_files, function(file_path) {
-    # read in whole dataset
-    bead_array_plate <- openxlsx::read.xlsx(file_path, colNames = FALSE, sheet = 1)
-    well_row <- which(bead_array_plate[,c(1)] == "Well")
-
-    # Read header (first 7 rows)
-    header_info <- openxlsx::read.xlsx(file_path, rows = 1:(well_row - 1), colNames = FALSE, sheet = 1)
-    header_info <- parse_metadata_df(header_info)   # Your custom function
-
-    # Read plate data (from row 8 onward)
-    plate_data <- openxlsx::read.xlsx(file_path, startRow = well_row, sheet = 1, colNames = TRUE)
-    # clean up column names to replace . with a space
-    names(plate_data) <- gsub("\\.", " ", names(plate_data))
-    # Remove completely empty rows
-    plate_data <- plate_data[!apply(
-      plate_data, 1,
-      function(x) all(is.na(x) | trimws(x) == "" | trimws(x) == "NA")
-    ), ]
-
-    list(header = header_info, plate = plate_data)
-  })
-
-  names(all_data) <- basename(excel_files)
-
-  # Separate lists (like your upload handler)
-  header_list <- lapply(all_data, `[[`, "header")
-  plate_list  <- lapply(all_data, `[[`, "plate")
-
-  # Save to reactives (assuming you defined these as reactiveVals)
-  bead_array_header_list(header_list)
-  bead_array_plate_list(plate_list)
-
-  all_plates <- read_bind_xlsx(folder = path, x = "plate")
-  batch_plate_data(all_plates)
-
-
-  showNotification("Data Files Uploaded")
-})
-
-
-
+# observeEvent(experimentPath(), {
+#   cat("changed experiment_folder")
+#   path <- experimentPath()
+#   excel_files <- list.files(path, pattern = "\\.xlsx?$", full.names = TRUE)
+#   # exclude any layout files
+#   excel_files <- excel_files[!grepl("layout_template", excel_files, ignore.case = TRUE)]
+#   req(length(excel_files) > 0)
+#
+#
+#
+#   all_data <- lapply(excel_files, function(file_path) {
+#     # read in whole dataset
+#     bead_array_plate <- openxlsx::read.xlsx(file_path, colNames = FALSE, sheet = 1)
+#     well_row <- which(bead_array_plate[,c(1)] == "Well")
+#
+#     # Read header (first 7 rows)
+#     header_info <- openxlsx::read.xlsx(file_path, rows = 1:(well_row - 1), colNames = FALSE, sheet = 1)
+#     header_info <- parse_metadata_df(header_info)   # Your custom function
+#
+#     # Read plate data (from row 8 onward)
+#     plate_data <- openxlsx::read.xlsx(file_path, startRow = well_row, sheet = 1, colNames = TRUE)
+#     # clean up column names to replace . with a space
+#     names(plate_data) <- gsub("\\.", " ", names(plate_data))
+#     # Remove completely empty rows
+#     plate_data <- plate_data[!apply(
+#       plate_data, 1,
+#       function(x) all(is.na(x) | trimws(x) == "" | trimws(x) == "NA")
+#     ), ]
+#
+#     list(header = header_info, plate = plate_data)
+#   })
+#
+#   names(all_data) <- basename(excel_files)
+#
+#   # Separate lists (like your upload handler)
+#   header_list <- lapply(all_data, `[[`, "header")
+#   plate_list  <- lapply(all_data, `[[`, "plate")
+#
+#   # Save to reactives (assuming you defined these as reactiveVals)
+#   bead_array_header_list(header_list)
+#   bead_array_plate_list(plate_list)
+#
+#   all_plates <- read_bind_xlsx(folder = path, x = "plate")
+#   batch_plate_data(all_plates)
+#
+#
+#   showNotification("Data Files Uploaded")
+# })
+#
+#
 
 output$blank_layout_file <- downloadHandler(
   filename = function() {
     paste0(input$readxMap_study_accession, "_", input$readxMap_experiment_accession_import, "_layout_template.xlsx")
   },
   content = function(file) {
-    req(experimentPath())
+    req(input$upload_experiment_files)
     req(bead_array_header_list())
+
+    all_plates <- process_uploaded_files(input$upload_experiment_files)
+
     generate_layout_template(
-      folder = experimentPath(),
+      all_plates = all_plates,
       study_accession = input$readxMap_study_accession,
       experiment_accession = input$readxMap_experiment_accession_import,
       n_wells = input$n_wells_on_plate,
@@ -958,35 +1023,6 @@ output$blank_layout_file <- downloadHandler(
   }
 )
 
-# output$blank_layout_file <- downloadHandler(
-#   filename = function() {
-#     paste0("layout_template.xlsx")
-#   },
-#   content = function(file) {
-#     file.copy("www/blank_layout_template.xlsx", file)
-#   }
-# )
-
-# When a file is uploaded, read all sheets and store them
-# observeEvent(input$upload_layout_file, {
-#   req(input$upload_layout_file)
-#
-#   file_path <- input$upload_layout_file$datapath
-#   sheet_names <- readxl::excel_sheets(file_path)
-#
-#   # Skip the first 2 rows and use 3rd as header
-#   layout_template_sheets$sheets <- purrr::map(sheet_names, ~ read_excel(
-#     file_path,
-#     sheet = .x,
-#     skip = 2,
-#     col_names = TRUE
-#   ))
-#
-#   names(layout_template_sheets$sheets) <- sheet_names
-#
-#
-#   print(names(layout_template_sheets$sheets))
-# })
 
 observeEvent(input$upload_layout_file, {
  # req(input$upload_layout_file)
