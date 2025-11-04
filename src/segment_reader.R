@@ -945,7 +945,8 @@ parse_plate_header <- function(plates) {
 #   return(plates)
 # }
 
-parse_metadata_df <- function(df) {
+parse_metadata_df <- function(df, meta_var_list = c("file_name","acquisition_date","reader_serial_number", "rp1_pmt_volts","rp1_target","plateid",
+                                                    "plate_id", "plate")) {
   # Extract the column as a character vector
   meta_lines <- df$X1
 
@@ -956,16 +957,22 @@ parse_metadata_df <- function(df) {
     data.frame(field = trimws(parts[1]), value = value, stringsAsFactors = FALSE)
   }))
 
- if (meta_df[meta_df$field == "Plate ID",]$value == "") {
-    meta_df[meta_df$field == "Plate ID",]$value <- meta_df[meta_df$field == "File Name",]$value
+  meta_df$field <- gsub(" ", "_", tolower(meta_df$field))
+  meta_df$field <- gsub("[()]", "", meta_df$field)
+
+  #names(meta_df) <- gsub(" ", "_", names(meta_df))
+  meta_df <- meta_df[meta_df$field %in% meta_var_list,]
+
+ if (meta_df[meta_df$field == "plate_id",]$value == "") {
+    meta_df[meta_df$field == "plate_id",]$value <- meta_df[meta_df$field == "file_name",]$value
   }
 
-  meta_df[meta_df$field == "Plate ID", "value"] <-
-    str_trim(str_replace_all(meta_df[meta_df$field == "Plate ID", "value"], "\\s", ""), side = "both")
+  meta_df[meta_df$field == "plate_id", "value"] <-
+    str_trim(str_replace_all(meta_df[meta_df$field == "plate_id", "value"], "\\s", ""), side = "both")
 
 
-  if (meta_df[meta_df$field == "Plate ID",]$value != "") {
-    meta_df$field[meta_df$field == "Plate ID"] <- "plateid"
+  if (meta_df[meta_df$field == "plate_id",]$value != "") {
+    meta_df$field[meta_df$field == "plate_id"] <- "plateid"
 
   }
   #meta_df <-  meta_df[meta_df$field != "Plate ID",]
@@ -984,14 +991,18 @@ parse_metadata_df <- function(df) {
 
   meta_df <- meta_df %>%
                pivot_wider(names_from = field, values_from = value)
-  names(meta_df) <- tolower(names(meta_df))
-  names(meta_df) <- gsub(" ", "_", names(meta_df))
+
+  # names(meta_df) <- tolower(names(meta_df))
+  # names(meta_df) <- gsub(" ", "_", names(meta_df))
   #names(meta_df)[names(meta_df) == "plate_id"] <- "plateid"
 
-  names(meta_df) <- gsub("[()]", "", names(meta_df))
+  # names(meta_df) <- gsub("[()]", "", names(meta_df))
 
 
   meta_df <- clean_plateids(meta_df)
+  cat("Meta df names ")
+  print(names(meta_df))
+  meta_df <- meta_df
 
   # Convert time to this form for db
  #meta_df$acquisition_date <- as.POSIXct(strptime(gsub(",",":",gsub(" ","",meta_df[["acquisition_date"]])),format='%d-%b-%Y:%H:%M%p'), tz = "EST")

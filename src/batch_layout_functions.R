@@ -71,6 +71,9 @@ generate_layout_template <- function(folder, study_accession, experiment_accessi
     antigen_label_on_plate = antigen_names,
     antigen_abbreviation = NA_character_,
     standard_curve_max_concentration = 100000,
+    l_asy_constraint_method = "unconstrained",
+    l_asy_min_constraint = 0,
+    l_asy_max_constraint = 0,
     antigen_family = NA_character_,
     antigen_name = NA_character_,
     virus_bacterial_strain = NA_character_,
@@ -112,13 +115,25 @@ generate_layout_template <- function(folder, study_accession, experiment_accessi
     groupb = NA_character_
   )
 
+  cell_valid_table <- tibble(
+    tibble(
+      l_asy_constraint_method = c(
+        "unconstrained",
+        "user_defined",
+        "range_of_blanks",
+        "geometric_mean_of_blanks"
+      )
+    )
+  )
+
 
   workbook <- list(
     plate_id = plate_id,
     subject_groups = subject_groups,
     timepoint = timepoint,
     antigen_list = antigen_df,
-    plates_map = plate_well_map
+    plates_map = plate_well_map,
+    cell_valid = cell_valid_table
   )
   # Loop over list elements and write each to a sheet
   for (nm in names(workbook)) {
@@ -192,7 +207,9 @@ generate_layout_template <- function(folder, study_accession, experiment_accessi
                  rows = c(1:4), cols = 1:ncol(workbook[[nm]]), gridExpand = TRUE)
 
       } else if (nm == "antigen_list") {
-        ex_antigen_list <- c("Vietnam342","IgG_total", "FHA (27)","FHA", 100000, "Pertussis", "Filamentous hemagglutinin adhesin ", "Bordetella pertussis strain Tohama I",
+        writeData(wb, nm, "user defined constraint", startRow = 1, startCol = 7)
+
+        ex_antigen_list <- c("Vietnam342","IgG_total", "FHA (27)","FHA", 100000, "unconstrained", 1, 10, "Pertussis", "Filamentous hemagglutinin adhesin ", "Bordetella pertussis strain Tohama I",
                             "SinoBiological",	"FHA123456789")
         writeData(wb, nm, t(ex_antigen_list),
                   startRow = 2, startCol = 1, colNames = FALSE)
@@ -219,7 +236,10 @@ generate_layout_template <- function(folder, study_accession, experiment_accessi
         addStyle(wb, nm, style = italic_style,
                  rows = c(1:2), cols = 1:ncol(workbook[[nm]]), gridExpand = TRUE)
 
-      }else {
+      } else if (nm == "cell_valid") {
+        writeData(wb, nm, workbook[[nm]], startRow = 1, startCol = 1)
+        addStyle(wb, nm, style = bold_style, rows = 1, cols = 1:ncol(workbook[[nm]]), gridExpand = TRUE)
+      } else {
       writeData(wb, nm, workbook[[nm]])
       addStyle(wb, nm, style = bold_style, rows = 1, cols = 1:ncol(workbook[[nm]]), gridExpand = TRUE)
     }
@@ -229,6 +249,23 @@ generate_layout_template <- function(folder, study_accession, experiment_accessi
     # # Bold a specific row, for example row 1
     # addStyle(wb, sheet = nm, style = bold_style, rows = 1, cols = 1:ncol(workbook[[nm]]), gridExpand = TRUE)
   }
+
+  validation_range <- paste0("cell_valid!$A$2:$A$", nrow(cell_valid_table) + 1)
+
+  # Find which column in antigen_list has l_asy_constraint_method
+  constraint_col <- which(names(antigen_df) == "l_asy_constraint_method")
+
+  # Apply data validation to the entire column (for all rows of antigen_df)
+  dataValidation(
+    wb,
+    sheet = "antigen_list",
+    cols = constraint_col,
+    rows = 2:(nrow(antigen_df) + 1),  # skip header row
+    type = "list",
+    value = validation_range,
+    allowBlank = TRUE
+  )
+
 
   saveWorkbook(wb, file = output_file, overwrite = TRUE)
 
@@ -392,5 +429,272 @@ validate_batch_bead_array_data <- function(combined_plate_data, antigen_list, bl
 
 }
 
+## this function merges layout info and raw file info for uploading samples
+prepare_batch_bead_assay_samples <- function(sample_plate_map, combined_plate_data, batch_metadata, antigen_list, subject_map) {
+  sample_joined <- merge(sample_plate_map, subject_map,
+                         by = c("study_name", "subject_id"),
+                         all.x = TRUE
+  )
+  sample_joined$agroup <-ifelse(is.na(sample_joined$groupb),
+                                sample_joined$groupa,
+                                paste(sample_joined$groupa, sample_joined$groupb, sep = "_"))
+  # sample_j <- merge(
+  #   sample_joined,
+  #   combined_plate_data[, !(names(combined_plate_data) %in% c("Type", "Description"))],
+  #   by.x = c("experiment_name", "plate_number", "well"),
+  #   by.y = c("experiment_name", "plate", "Well")
+  # )
+  sample_j <- merge(
+    sample_joined,
+    combined_plate_data[, !(names(combined_plate_data) %in% c("Type", "Description"))],
+    by.x = c("plate_number", "well"),
+    by.y = c("plate", "Well")
+  )
 
+  sample_long <- sample_j %>%
+    pivot_longer(
+      cols = matches("\\([0-9]+\\)"), # all columns containing bead count
+      names_to = "antigen",
+      values_to = "mfi_bead"
+    ) %>%
+    mutate(
+      # Remove the bead number from column name to get clean antigen name
+      antigen = gsub("\\.", " ", antigen),#str_remove(antigen, "\\.\\([0-9]+\\)"),
+      # Split MFI and bead count from the value column
+      antibody_mfi = as.numeric(str_extract(mfi_bead, "^[0-9.]+")),
+      antibody_n = as.numeric(str_extract(mfi_bead, "(?<=\\()[0-9]+(?=\\))"))
+    ) %>%
+    select(-mfi_bead) %>%
+    relocate(antigen, antibody_mfi, antibody_n, .after = biosample_id_barcode)
+
+
+  # join in the antigen abbreviation
+  sample_long2 <- merge(sample_long, antigen_list[, c("study_name", "experiment_name", "antigen_label_on_plate", "antigen_abbreviation")],
+                        by.x = c("study_name", "experiment_name", "antigen"),
+                        by.y =  c("study_name", "experiment_name", "antigen_label_on_plate"),
+                        all.x = T)
+
+  # join in the plate_id from the metadata
+  sample_long2 <- merge(sample_long2,
+                        batch_metadata[, c("source_file", "plate_id")],
+                        by = "source_file",
+                        all.x = T)
+
+  sample_long2 <- sample_long2[, !names(sample_long2) %in% c("antigen")]
+  names(sample_long2)[names(sample_long2) == "antigen_abbreviation"] <- "antigen"
+  names(sample_long2)[names(sample_long2) == "study_name"] <- "study_accession"
+  names(sample_long2)[names(sample_long2) == "experiment_name"] <- "experiment_accession"
+  names(sample_long2)[names(sample_long2) == "specimen_type"] <- "stype"
+  names(sample_long2)[names(sample_long2) == "specimen_dilution_factor"] <- "dilution"
+  names(sample_long2)[names(sample_long2) == "% Agg Beads"] <- "pctaggbeads"
+  names(sample_long2)[names(sample_long2) == "Sampling Errors"] <- "samplingerrors"
+  names(sample_long2)[names(sample_long2) == "timepoint_tissue_abbreviation"] <- "timeperiod"
+  names(sample_long2)[names(sample_long2) == "subject_id"] <- "patientid"
+  names(sample_long2)[names(sample_long2) == "biosample_id_barcode"] <- "sampleid"
+
+  samples_to_upload <- sample_long2[, c("study_accession", "experiment_accession", "plate_id", "timeperiod", "patientid", "well",
+                                        "stype", "sampleid", "agroup", "dilution", "pctaggbeads", "samplingerrors", "antigen",
+                                        "antibody_mfi", "antibody_n", "feature")]
+
+  return(samples_to_upload)
+}
+
+
+prepare_batch_bead_assay_standards <- function(standard_plate_map, combined_plate_data, antigen_list, batch_metadata) {
+  # standard_j <- merge(
+  #   standard_plate_map,
+  #   combined_plate_data[, !(names(combined_plate_data) %in% c("Type", "Description"))],
+  #   by.x = c("experiment_name", "plate_number", "well"),
+  #   by.y = c("experiment_name", "plate", "Well")
+  # )
+  standard_j <- merge(
+    standard_plate_map,
+    combined_plate_data[, !(names(combined_plate_data) %in% c("Type", "Description"))],
+    by.x = c("plate_number", "well"),
+    by.y = c("plate", "Well")
+  )
+
+  standard_long <- standard_j %>%
+    pivot_longer(
+      cols = matches("\\([0-9]+\\)"), # all columns containing bead count
+      names_to = "antigen",
+      values_to = "mfi_bead"
+    ) %>%
+    mutate(
+      # Remove the bead number from column name to get clean antigen name
+      antigen = gsub("\\.", " ", antigen),#str_remove(antigen, "\\.\\([0-9]+\\)"),
+      # Split MFI and bead count from the value column
+      antibody_mfi = as.numeric(str_extract(mfi_bead, "^[0-9.]+")),
+      antibody_n = as.numeric(str_extract(mfi_bead, "(?<=\\()[0-9]+(?=\\))"))
+    ) %>%
+    select(-mfi_bead) %>%
+    relocate(antigen, antibody_mfi, antibody_n, .after = biosample_id_barcode)
+
+  standard_long2 <- merge(standard_long, antigen_list[, c("study_name", "experiment_name", "antigen_label_on_plate", "antigen_abbreviation")],
+                          by.x = c("study_name", "experiment_name", "antigen"),
+                          by.y =  c("study_name", "experiment_name", "antigen_label_on_plate"),
+                          all.x = T)
+
+  # join in the plate_id from the metadata
+  standard_long2 <- merge(standard_long2,
+                          batch_metadata[, c("source_file", "plate_id")],
+                          by = "source_file",
+                          all.x = T)
+
+  standard_long2 <- standard_long2[, !names(standard_long2) %in% c("antigen")]
+  names(standard_long2)[names(standard_long2) == "antigen_abbreviation"] <- "antigen"
+  names(standard_long2)[names(standard_long2) == "study_name"] <- "study_accession"
+  names(standard_long2)[names(standard_long2) == "experiment_name"] <- "experiment_accession"
+  names(standard_long2)[names(standard_long2) == "specimen_type"] <- "stype"
+  names(standard_long2)[names(standard_long2) == "specimen_source"] <- "source"
+  names(standard_long2)[names(standard_long2) == "specimen_dilution_factor"] <- "dilution"
+  names(standard_long2)[names(standard_long2) == "biosample_id_barcode"] <- "sampleid"
+  names(standard_long2)[names(standard_long2) == "% Agg Beads"] <- "pctaggbeads"
+  names(standard_long2)[names(standard_long2) == "Sampling Errors"] <- "samplingerrors"
+
+  standards_to_upload <- standard_long2[, c("study_accession", "experiment_accession", "plate_id","well",
+                                            "stype", "sampleid", "source", "dilution", "pctaggbeads", "samplingerrors", "antigen",
+                                            "antibody_mfi", "antibody_n", "feature")]
+  return(standards_to_upload)
+}
+
+prepare_batch_bead_assay_blanks <- function(blanks_plate_map, combined_plate_data, antigen_list, batch_metadata) {
+  # blanks_j <- merge(blanks_plate_map, combined_plate_data[, !(names(combined_plate_data) %in% c("Type", "Description"))],
+  #                   by.x = c("experiment_name", "plate_number", "well"),
+  #                   by.y = c("experiment_name", "plate", "Well"))
+  blanks_j <- merge(blanks_plate_map, combined_plate_data[, !(names(combined_plate_data) %in% c("Type", "Description"))],
+                    by.x = c("plate_number", "well"),
+                    by.y = c("plate", "Well"))
+
+  blanks_long <- blanks_j %>%
+    pivot_longer(
+      cols = matches("\\([0-9]+\\)"), # all columns containing bead count
+      names_to = "antigen",
+      values_to = "mfi_bead"
+    ) %>%
+    mutate(
+      # Remove the bead number from column name to get clean antigen name
+      antigen = gsub("\\.", " ", antigen),#str_remove(antigen, "\\.\\([0-9]+\\)"),
+      # Split MFI and bead count from the value column
+      antibody_mfi = as.numeric(str_extract(mfi_bead, "^[0-9.]+")),
+      antibody_n = as.numeric(str_extract(mfi_bead, "(?<=\\()[0-9]+(?=\\))"))
+    ) %>%
+    select(-mfi_bead) %>%
+    relocate(antigen, antibody_mfi, antibody_n, .after = biosample_id_barcode)
+
+  blanks_long2 <- merge(blanks_long, antigen_list[, c("study_name", "experiment_name", "antigen_label_on_plate", "antigen_abbreviation")],
+                        by.x = c("study_name", "experiment_name", "antigen"),
+                        by.y =  c("study_name", "experiment_name", "antigen_label_on_plate"),
+                        all.x = T)
+
+  blanks_long2 <- merge(blanks_long2,
+                        batch_metadata[, c("source_file", "plate_id")],
+                        by = "source_file",
+                        all.x = T)
+
+  blanks_long2 <- blanks_long2[, !names(blanks_long2) %in% c("antigen")]
+  names(blanks_long2)[names(blanks_long2) == "antigen_abbreviation"] <- "antigen"
+  names(blanks_long2)[names(blanks_long2) == "study_name"] <- "study_accession"
+  names(blanks_long2)[names(blanks_long2) == "experiment_name"] <- "experiment_accession"
+  names(blanks_long2)[names(blanks_long2) == "specimen_type"] <- "stype"
+  names(blanks_long2)[names(blanks_long2) == "specimen_dilution_factor"] <- "dilution"
+  names(blanks_long2)[names(blanks_long2) == "% Agg Beads"] <- "pctaggbeads"
+  names(blanks_long2)[names(blanks_long2) == "Sampling Errors"] <- "samplingerrors"
+
+  blanks_to_upload <- blanks_long2[, c("study_accession", "experiment_accession", "plate_id","well",
+                                       "stype", "pctaggbeads", "samplingerrors", "antigen",
+                                       "antibody_mfi", "antibody_n", "dilution", "feature")]
+
+  return(blanks_to_upload)
+
+}
+
+prepare_batch_bead_assay_controls <- function(controls_plate_map, combined_plate_data, antigen_list, batch_metadata) {
+  # controls_j <- merge(controls_plate_map, combined_plate_data[, !(names(combined_plate_data) %in% c("Type", "Description"))],
+  #                     by.x = c("experiment_name", "plate_number", "well"),
+  #                     by.y = c("experiment_name", "plate", "Well"))
+  controls_j <- merge(controls_plate_map, combined_plate_data[, !(names(combined_plate_data) %in% c("Type", "Description"))],
+                      by.x = c("plate_number", "well"),
+                      by.y = c("plate", "Well"))
+
+  controls_long <- controls_j %>%
+    pivot_longer(
+      cols = matches("\\([0-9]+\\)"), # all columns containing bead count
+      names_to = "antigen",
+      values_to = "mfi_bead"
+    ) %>%
+    mutate(
+      # Remove the bead number from column name to get clean antigen name
+      antigen = gsub("\\.", " ", antigen),#str_remove(antigen, "\\.\\([0-9]+\\)"),
+      # Split MFI and bead count from the value column
+      antibody_mfi = as.numeric(str_extract(mfi_bead, "^[0-9.]+")),
+      antibody_n = as.numeric(str_extract(mfi_bead, "(?<=\\()[0-9]+(?=\\))"))
+    ) %>%
+    select(-mfi_bead) %>%
+    relocate(antigen, antibody_mfi, antibody_n, .after = biosample_id_barcode)
+
+  # merge in tehe antigen name
+  controls_long2 <- merge(controls_long, antigen_list[, c("study_name", "experiment_name", "antigen_label_on_plate", "antigen_abbreviation")],
+                          by.x = c("study_name", "experiment_name", "antigen"),
+                          by.y =  c("study_name", "experiment_name", "antigen_label_on_plate"),
+                          all.x = T)
+
+  # merge in the plate_id
+  controls_long2 <- merge(controls_long2,
+                        batch_metadata[, c("source_file", "plate_id")],
+                        by = "source_file",
+                        all.x = T)
+
+
+  controls_long2 <- controls_long2[, !names(controls_long2) %in% c("antigen")]
+  names(controls_long2)[names(controls_long2) == "antigen_abbreviation"] <- "antigen"
+  names(controls_long2)[names(controls_long2) == "study_name"] <- "study_accession"
+  names(controls_long2)[names(controls_long2) == "experiment_name"] <- "experiment_accession"
+  names(controls_long2)[names(controls_long2) == "specimen_type"] <- "stype"
+  names(controls_long2)[names(controls_long2) == "biosample_id_barcode"] <- "sampleid"
+  names(controls_long2)[names(controls_long2) == "specimen_source"] <- "source"
+
+  names(controls_long2)[names(controls_long2) == "specimen_dilution_factor"] <- "dilution"
+  names(controls_long2)[names(controls_long2) == "%.Agg.Beads"] <- "pctaggbeads"
+  names(controls_long2)[names(controls_long2) == "Sampling.Errors"] <- "samplingerrors"
+
+  controls_to_upload <- controls_long2[, c("study_accession", "experiment_accession", "plate_id","well",
+                                           "stype", "sampleid", "source", "dilution", "pctaggbeads", "samplingerrors", "antigen",
+                                           "antibody_mfi", "antibody_n", "feature")]
+  return(controls_to_upload)
+}
+
+
+prepare_batch_antigen_family <- function(antigen_list) {
+  antigen_list_df <- antigen_list[, c("study_name", "experiment_name", "antigen_abbreviation", "antigen_family", "standard_curve_max_concentration", "antigen_name", "virus_bacterial_strain", "antigen_source",
+                                      "catalog_number", "l_asy_min_constraint", "l_asy_max_constraint", "l_asy_constraint_method")]
+  names(antigen_list_df)[names(antigen_list_df) == "study_name"] <- "study_accession"
+  names(antigen_list_df)[names(antigen_list_df) == "experiment_name"] <- "experiment_accession"
+  names(antigen_list_df)[names(antigen_list_df) == "standard_curve_max_concentration"] <- "standard_curve_concentration"
+  names(antigen_list_df)[names(antigen_list_df) == "antigen_abbreviation"] <- "antigen"
+
+  return(antigen_list_df)
+}
+
+prepare_planned_visits <- function(timepoint_map) {
+  names(timepoint_map)[names(timepoint_map) == "study_name"] <- "study_accession"
+  names(timepoint_map)[names(timepoint_map) == "timepoint_tissue_abbreviation"] <- "timepoint_name"
+  names(timepoint_map)[names(timepoint_map) == "tissue_type"] <- "type"
+  names(timepoint_map)[names(timepoint_map) == "tissue_subtype"] <- "subtype"
+  names(timepoint_map)[names(timepoint_map) == "description"] <- "end_rule"
+  names(timepoint_map)[names(timepoint_map) == "min_time_since_day_0"] <- "min_start_day"
+  names(timepoint_map)[names(timepoint_map) == "max_time_since_day_0"] <- "max_start_day"
+
+
+
+  return(timepoint_map)
+}
+
+prepare_batch_header <- function(metadata_batch) {
+  metadata_batch <- metadata_batch[,c("study_accession", "experiment_name", "plate_id", "file_name", "acquisition_date",
+                                      "reader_serial_number", "rp1_pmt_volts", "rp1_target", "auth0_user", "workspace_id", "plateid", "plate", "sample_dilution_factor",
+                                      "n_wells")]
+  names(metadata_batch)[names(metadata_batch) == "experiment_name"] <- "experiment_accession"
+  return(metadata_batch)
+}
 
