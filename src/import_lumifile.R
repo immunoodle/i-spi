@@ -98,7 +98,7 @@ output$readxMapData <- renderUI({
                    shinyWidgets::radioGroupButtons(
                      inputId = "xPonentFile",
                      label = "File Format",
-                     choices = c("xPONENT", "RAW"),
+                     choices = c("xPONENT", "RAW", "Layout Template"),
                      selected = "RAW",
                      justified = TRUE,
                      checkIcon = list(
@@ -119,8 +119,69 @@ output$readxMapData <- renderUI({
                    ), conditionalPanel(
                      condition = "input.uploaded_sheet != ''",
                      uiOutput("raw_ui")
+                   ),
+                   conditionalPanel(
+                     condition = "input.xPonentFile == 'Layout Template'",
+                    # shinyDirButton("experiment_folder", "Select an Experiment Folder", "Please select a folder containing your experiment files."),
+                     fileInput("upload_experiment_files",
+                               label = "Select all experiment raw data files",
+                               accept = c(".xlsx",".xls"),
+                               multiple = TRUE),
+                    # helpText("In this folder: raw bead array data (excel formatted) and completed layout template (after filling out generated template)"),
+                    # uiOutput("folderpath"),
+                     conditionalPanel(
+                       condition = "output.hasExperimentPath",
+                        radioButtons(inputId = "n_wells_on_plate", "Select Number of Wells to Generate on Plates",
+                                  choices = c(96, 6, 12, 24, 48, 384, 1536),
+                                  selected = 96,
+                                  inline = T),
+                       downloadButton("blank_layout_file", "Generate a Layout file"),
+                       fileInput("upload_layout_file"
+                                 , label="Upload a completed layout file (only accepts xlsx, xls)"
+                                 , accept=c(".xlsx",".xls")
+                                 , multiple=FALSE)
+                     ),
+                     conditionalPanel(
+                       condition = "input.upload_layout_file != ''",
+                       uiOutput("view_layout_file_ui"),
+                       # actionButton("view_layout_plate_id_sheet", "View Layout Plate ID"),
+                       # actionButton("view_layout_plates_map_sheet", "View Layout Plate Map"),
+                       # actionButton("view_layout_antigen_list_sheet", "View Layout Antigen List")
+                     #),
+                    # uiOutput("file_summary"),
+                     uiOutput("plate_layout_selector"),
+                     plotlyOutput("selected_plate_layout_plot"),
+                    conditionalPanel(
+                      condition = "output.hasExperimentPath",
+                    tagList(
+                      tags$p("If this batch of plates contains wells without samples use the word the 'Blank' in the description column of the spreadsheet.
+          Then assign the two phrases below to indicate if the wells should be treated as blanks
+          (e.g. containing PBS) or if the wells should be treated as empty."),
 
-                   )
+                      selectInput("batch_blank", "Blank and Empty Well Handling",
+                                  choices = c("Skip Empty Wells" = "empty_well",
+                                              "Use as Blank" = "use_as_blank"))
+                    ),
+                     # fileInput("upload_batch_bead_array"
+                     #           , label="Upload one or more plate/batch files (only accepts xlsx, xls)"
+                     #           , accept=c(".xlsx",".xls")
+                     #           , multiple=TRUE),
+                     uiOutput("batch_validation_status"),
+                     tableOutput("batch_invalid_messages"),
+                     uiOutput("upload_batch_data_button")
+                    )
+
+                     )
+                      # actionButton("uplaod_batch", "Upload Batch")
+                    # uiOutput("plate_tabs")
+
+                     #rHandsontableOutput("batch_plate_table")
+
+
+
+                   #  verbatimTextOutput("layout_sheets")
+
+                     )
                  )
           ),
           column(9,
@@ -792,3 +853,2050 @@ observeEvent(input$savexMapButton, {
 
   }
 })
+
+
+
+### Layout template import
+
+# account for Windows and Mac operating systems. Ignores winslash when on Mac
+#roots <- c(home = normalizePath("~", winslash = c("/")))
+#roots <- c(home = normalizePath("~", winslash = "/"), shinyFiles::getVolumes()())
+
+
+# Initialize folder selection
+#shinyDirChoose(input, "experiment_folder", roots = roots, session = session)
+
+
+observeEvent(input$upload_experiment_files, {
+  req(input$upload_experiment_files)
+
+  current_exp_files <- input$upload_experiment_files
+  batch_data_list <- list()
+
+  for (i in 1:nrow(current_exp_files)) {
+    file_path <- current_exp_files$datapath[i]
+    file_name <- current_exp_files$name[i]
+
+    # full sheet
+    bead_array_plate <- openxlsx::read.xlsx(file_path, colNames = FALSE, sheet = 1)
+    well_row <- which(bead_array_plate[,1] == "Well")
+
+    #  Header block
+    header_info <- openxlsx::read.xlsx(
+      file_path,
+      rows = 1:(well_row - 1),
+      colNames = FALSE,
+      sheet = 1
+    )
+    header_info <- parse_metadata_df(header_info)
+
+    # Plate block
+    plate_data <- openxlsx::read.xlsx(
+      file_path,
+      startRow = well_row,
+      sheet = 1,
+      colNames = TRUE
+    )
+
+    names(plate_data) <- gsub("\\.", " ", names(plate_data))
+
+    plate_data <- plate_data[!apply(
+      plate_data, 1,
+      function(x) all(is.na(x) | trimws(x) == "" | trimws(x) == "NA")
+    ),]
+
+    batch_data_list[[file_name]] <- list(
+      header = header_info,
+      plate = plate_data
+    )
+  }
+
+  # Store header & plate lists
+  header_list <- lapply(batch_data_list, `[[`, "header")
+  plate_list  <- lapply(batch_data_list, `[[`, "plate")
+
+  bead_array_header_list(header_list)
+  bead_array_plate_list(plate_list)
+
+  # build combined plate data like folder mode
+  all_plates <- process_uploaded_files(input$upload_experiment_files)
+  batch_plate_data(all_plates)
+
+  showNotification("Experiment Excel Files Uploaded")
+})
+
+
+
+# Observe and display the selected folder
+# output$folderpath <- renderPrint({
+#   req(input$experiment_folder)
+#   # Parse the folder path selected
+#   experimentPath(parseDirPath(roots, input$experiment_folder))
+#   parseDirPath(roots, input$experiment_folder)
+# })
+
+# output$folderpath <- renderUI({
+#   req(input$experiment_folder)
+#   folder <- parseDirPath(roots, input$experiment_folder)
+#   experimentPath(parseDirPath(roots, input$experiment_folder))
+#   HTML(paste0("<b>Selected folder:</b>", folder, "</span>"))
+# })
+#
+output$hasExperimentPath <- reactive({
+  path_df <- input$upload_experiment_files   # fileInput returns a data frame
+
+  !is.null(path_df) && nrow(path_df) > 0
+  # path <- input$upload_experiment_files#experimentPath()
+ # !is.null(path) && nzchar(path)   # nzchar() checks for non-empty string
+})
+outputOptions(output, "hasExperimentPath", suspendWhenHidden = FALSE)
+
+# observeEvent(experimentPath(), {
+#   cat("changed experiment_folder")
+#   path <- experimentPath()
+#   excel_files <- list.files(path, pattern = "\\.xlsx?$", full.names = TRUE)
+#   # exclude any layout files
+#   excel_files <- excel_files[!grepl("layout_template", excel_files, ignore.case = TRUE)]
+#   req(length(excel_files) > 0)
+#
+#
+#
+#   all_data <- lapply(excel_files, function(file_path) {
+#     # read in whole dataset
+#     bead_array_plate <- openxlsx::read.xlsx(file_path, colNames = FALSE, sheet = 1)
+#     well_row <- which(bead_array_plate[,c(1)] == "Well")
+#
+#     # Read header (first 7 rows)
+#     header_info <- openxlsx::read.xlsx(file_path, rows = 1:(well_row - 1), colNames = FALSE, sheet = 1)
+#     header_info <- parse_metadata_df(header_info)   # Your custom function
+#
+#     # Read plate data (from row 8 onward)
+#     plate_data <- openxlsx::read.xlsx(file_path, startRow = well_row, sheet = 1, colNames = TRUE)
+#     # clean up column names to replace . with a space
+#     names(plate_data) <- gsub("\\.", " ", names(plate_data))
+#     # Remove completely empty rows
+#     plate_data <- plate_data[!apply(
+#       plate_data, 1,
+#       function(x) all(is.na(x) | trimws(x) == "" | trimws(x) == "NA")
+#     ), ]
+#
+#     list(header = header_info, plate = plate_data)
+#   })
+#
+#   names(all_data) <- basename(excel_files)
+#
+#   # Separate lists (like your upload handler)
+#   header_list <- lapply(all_data, `[[`, "header")
+#   plate_list  <- lapply(all_data, `[[`, "plate")
+#
+#   # Save to reactives (assuming you defined these as reactiveVals)
+#   bead_array_header_list(header_list)
+#   bead_array_plate_list(plate_list)
+#
+#   all_plates <- read_bind_xlsx(folder = path, x = "plate")
+#   batch_plate_data(all_plates)
+#
+#
+#   showNotification("Data Files Uploaded")
+# })
+#
+#
+
+output$blank_layout_file <- downloadHandler(
+  filename = function() {
+    paste0(input$readxMap_study_accession, "_", input$readxMap_experiment_accession_import, "_layout_template.xlsx")
+  },
+  content = function(file) {
+    req(input$upload_experiment_files)
+    req(bead_array_header_list())
+
+    all_plates <- process_uploaded_files(input$upload_experiment_files)
+
+    generate_layout_template(
+      all_plates = all_plates,
+      study_accession = input$readxMap_study_accession,
+      experiment_accession = input$readxMap_experiment_accession_import,
+      n_wells = input$n_wells_on_plate,
+      header_list = bead_array_header_list(),
+      output_file = file   # pass Shiny temp file
+    )
+  }
+)
+
+
+observeEvent(input$upload_layout_file, {
+ # req(input$upload_layout_file)
+
+  # # reset reactive that hold the data
+  inLayoutFile(NULL)
+  avaliableLayoutSheets(NULL)
+
+  layout_template_sheets(list())
+
+  # layout_template_sheets$plate_id <- NULL
+  # layout_template_sheets$plates_map <- NULL
+  # layout_template_sheets$antigen_list <- NULL
+
+  # Store the uploaded file
+  inLayoutFile(
+    input$upload_layout_file
+  )
+
+  if (is.null(inLayoutFile())) {
+    return(NULL)
+  }
+
+  # # Get file path
+  # inFile <- input$upload_layout_file$datapath
+
+  # Get all sheet names
+  sheets <- readxl::excel_sheets(inLayoutFile()$datapath)
+  cat("\nSheets found:", paste(sheets, collapse = ", "), "\n")
+
+  # Read each sheet, skipping the first 2 rows
+  # all_sheets <- lapply(sheets, function(sheet_name) {
+  #   skip_rows <- if (sheet_name == "timepoint")  4 else 2
+  #   readxl::read_excel(inLayoutFile()$datapath, sheet = sheet_name, skip = skip_rows)
+  # })
+  all_sheets <- lapply(sheets, function(sheet_name) {
+    skip_rows <- if (sheet_name == "timepoint") 4 else 2
+
+    df <- readxl::read_excel(
+      inLayoutFile()$datapath,
+      sheet = sheet_name,
+      skip = skip_rows
+    )
+
+    # Remove trailing rows that are all NA
+    df <- df[rowSums(!is.na(df)) > 0, ]
+
+    return(df)
+  })
+
+  names(all_sheets) <- sheets  # Assign sheet names
+
+  # Now assign to reactive Values object
+  layout_template_sheets(all_sheets)
+
+  batch_header <- construct_batch_upload_metadata(plates_map = all_sheets[["plates_map"]],
+                                                   plate_metadata_list = bead_array_header_list(),
+                                                   workspace_id = userWorkSpaceID(),
+                                                   currentuser = currentuser())
+
+  batch_metadata <- combine_plate_metadata(head_list = batch_header)
+  # store the number of wells
+  batch_metadata <- merge(
+           batch_metadata,
+           all_sheets[["plate_id"]][, c("plate_filename", "number_of_wells")],
+           by.x = "file_name", by.y = "plate_filename",
+           all.x = TRUE
+  )
+names(batch_metadata)[names(batch_metadata) == "number_of_wells"] <- "n_wells"
+batch_metadata <- batch_metadata
+validate_metadata_result <- validate_batch_plate_metadata(plate_metadata = batch_metadata, plate_id_data = all_sheets[["plate_id"]])
+
+bead_array_validation <- validate_batch_bead_array_data(combined_plate_data = batch_plate_data(), antigen_list = all_sheets[["antigen_list"]],
+                                blank_keyword = input$batch_blank)
+
+# bead_array_validation <- validate_batch_bead_array(plate_data_list = bead_array_plate_list(), antigen_list = all_sheets[["antigen_list"]],
+#                           blank_keyword = input$batch_blank)
+
+if (bead_array_validation$is_valid && validate_metadata_result$is_valid) {
+  batch_validated <- TRUE
+  batch_metadata(batch_metadata)
+} else {
+  batch_validated <- FALSE
+}
+
+output$batch_validation_status <- renderUI({
+  createValidateBatchBadge(batch_validated)
+})
+
+output$batch_invalid_messages <- renderTable({
+  if (!batch_validated) {
+    create_batch_invalid_message_table(validate_metadata_result, bead_array_validation)
+  } else {
+    NULL
+  }
+})
+
+# output$upload_batch_data_button <- renderUI({
+#   if (batch_validated) {
+#     actionButton("uplaod_batch_button", "Upload Batch")
+#   } else {
+#     NULL
+#   }
+# })
+
+output$upload_batch_data_button <- renderUI({
+
+  req(batch_metadata())
+  metadata_batch <- batch_metadata()
+  batch_study_accession <- unique(metadata_batch$study_accession)
+  plates_to_upload <- unique(metadata_batch$plate_id)
+
+  # Build SQL list
+  plate_list_sql <- paste0("'", paste(plates_to_upload, collapse = "', '"), "'")
+
+  query <- sprintf("
+    SELECT plate_id
+    FROM madi_results.xmap_header
+    WHERE study_accession = '%s'
+      AND plate_id IN (%s);
+  ", batch_study_accession, plate_list_sql)
+
+  existing_plates <- DBI::dbGetQuery(conn, query)
+  plates_exist <- nrow(existing_plates) > 0
+
+  # UI elements
+  badge <- createUploadedBatchBadge(plates_exist)
+  button <- if (batch_validated && !plates_exist) {
+    actionButton("uplaod_batch_button", "Upload Batch")
+  } else {
+    NULL
+  }
+
+  # Combine into UI block
+  tagList(
+    badge,
+    br(),
+    button
+  )
+})
+
+
+# validate_metadata_result <- validate_batch_plate(plate_metadata = batch_metadata, plate_data_list = bead_array_plate_list(),
+#                                          plate_id_data = all_sheets[["plate_id"]])
+  # Dynamically generate UI
+  output$view_layout_file_ui <- renderUI({
+    req(layout_template_sheets())
+    req(length(layout_template_sheets()) > 0)
+    fluidRow(
+      column(2, actionButton("view_layout_plate_id_sheet", "View Layout Plate ID")),
+      column(2, actionButton("view_layout_subject_group_sheet", "View Layout Subject Map")),
+      column(2, actionButton("view_layout_timepoint_sheet", "View Layout Timepoint")),
+      column(2, actionButton("view_layout_plates_map_sheet", "View Layout Plate Map")),
+      column(2, actionButton("view_layout_antigen_list_sheet", "View Layout Antigen List"))
+    )
+  })
+  # if ("plate_id" %in% names(all_sheets)) {
+  #   layout_template_sheets$plate_id <- all_sheets[["plate_id"]]
+  # }
+  # if ("plates_map" %in% names(all_sheets)) {
+  #   layout_template_sheets$plates_map <- all_sheets[["plates_map"]]
+  # }
+  # if ("antigen_list" %in% names(all_sheets)) {
+  #   layout_template_sheets$antigen_list <- all_sheets[["antigen_list"]]
+  # }
+  #
+  # cat("\nSheet dimensions:\n")
+  # print(lapply(all_sheets, dim))
+})
+
+
+observeEvent(layout_template_sheets(), {
+  cat("changed layout sheets")
+
+})
+
+#
+# observe({
+#   file <- input$upload_layout_file
+#   cat("current file: ")
+#   print(file)
+#   # If no file is selected
+#   if (is.null(file)) {
+#     cat("No layout file selected — resetting reactive values.\n")
+#     inLayoutFile(NULL)
+#     avaliableLayoutSheets(NULL)
+#     layout_template_sheets(list())
+#   }
+# })
+
+# observe({
+#   if (is.null(input$upload_layout_file)) {
+#     print("No file selected yet.")
+#   } else {
+#     print("File has been selected.")
+#     print(input$upload_layout_file) # Shows the file information
+#   }
+# })
+
+# observe({
+#   if (is.null(input$upload_layout_file)) {
+#     layout_template_sheets(list())
+#     removeModal()
+#     output$layout_plate_id_sheet <- rhandsontable::renderRHandsontable(NULL)
+#     output$layout_plates_map_sheet <- rhandsontable::renderRHandsontable(NULL)
+#     output$layout_antigen_list_sheet <- rhandsontable::renderRHandsontable(NULL)
+#   }
+# })
+# all_sheets <- reactive({
+#   req(input$upload_layout_file)
+#
+#   file_path <- input$upload_layout_file$datapath
+#   sheet_names <- excel_sheets(file_path)
+#
+#   # Read each sheet into a list
+#   sheets_list <- map(sheet_names, ~ read_excel(file_path, sheet = .x, skip = 2,))
+#   names(sheets_list) <- sheet_names
+#   sheets_list
+# })
+
+# output$layout_sheets <- renderPrint({
+#   req(layout_template_sheets)
+#   cat("Sheets loaded:\n")
+#   print(names(layout_template_sheets))
+#   cat("\n Sheet dimensions:\n")
+#   lapply(layout_template_sheets$all_sheets, dim)
+#   for(name in names(layout_template_sheets$all_sheets)) {
+#     print(head(layout_template_sheets$all_sheets[[name]], 5))
+#   }
+#
+# })
+observeEvent(input$view_layout_plate_id_sheet,{
+  print("view layout plate id sheet")
+
+  showModal(
+    modalDialog(
+      title = "Plate ID sheet ",
+      rhandsontable::rHandsontableOutput("layout_plate_id_sheet"),
+      size = "l",
+      easyClose = TRUE
+    )
+  )
+
+  output$layout_plate_id_sheet <- rhandsontable::renderRHandsontable({
+    req(layout_template_sheets()[["plate_id"]])
+    rhandsontable(layout_template_sheets()[["plate_id"]], readOnly = TRUE)
+  })
+
+  # platemetadata <<- header_info()
+  #print(header_info())
+})
+
+observeEvent(input$view_layout_subject_group_sheet, {
+  showModal(
+    modalDialog(
+      title = "Subject Map",
+      rhandsontable::rHandsontableOutput("layout_subject_groups_sheet"),
+      size = "l",
+      easyClose = TRUE
+    )
+  )
+
+  output$layout_subject_groups_sheet <- rhandsontable::renderRHandsontable({
+    req(layout_template_sheets()[["subject_groups"]])
+    rhandsontable(layout_template_sheets()[["subject_groups"]], readOnly = TRUE)
+  })
+})
+
+observeEvent(input$view_layout_timepoint_sheet, {
+  showModal(
+    modalDialog(
+      title = "Timepoint Map",
+      rhandsontable::rHandsontableOutput("layout_timepoint_sheet"),
+      size = "l",
+      easyClose = TRUE
+    )
+  )
+
+  output$layout_timepoint_sheet <- rhandsontable::renderRHandsontable({
+    req(layout_template_sheets()[["timepoint"]])
+    rhandsontable(layout_template_sheets()[["timepoint"]], readOnly = TRUE)
+  })
+})
+
+observeEvent(input$view_layout_plates_map_sheet,{
+  print("view layout plate map sheet")
+
+  showModal(
+    modalDialog(
+      title = "Plate map sheet ",
+      rhandsontable::rHandsontableOutput("layout_plates_map_sheet"),
+      size = "l",
+      easyClose = TRUE
+    )
+  )
+
+  output$layout_plates_map_sheet <- rhandsontable::renderRHandsontable({
+   req(layout_template_sheets()[["plates_map"]])
+    rhandsontable(layout_template_sheets()[["plates_map"]], readOnly = TRUE)
+  })
+
+})
+
+observeEvent(input$view_layout_antigen_list_sheet,{
+  print("view layout antigen list sheet")
+
+  showModal(
+    modalDialog(
+      title = "Antigen list sheet ",
+      rhandsontable::rHandsontableOutput("layout_antigen_list_sheet"),
+      size = "l",
+      easyClose = TRUE
+    )
+  )
+
+  output$layout_antigen_list_sheet <- rhandsontable::renderRHandsontable({
+    req(layout_template_sheets()[["antigen_list"]])
+    rhandsontable(layout_template_sheets()[["antigen_list"]], readOnly = TRUE)
+  })
+
+})
+
+
+## Clear old data from layout when navigate back to layout template
+observeEvent(input$xPonentFile, {
+  if (input$xPonentFile == "Layout Template") {
+    cat("Switched to Layout Template tab — clearing layout data\n")
+
+    # Clear all layout-related reactive values
+    inLayoutFile(NULL)
+    avaliableLayoutSheets(NULL)
+    layout_template_sheets(list())
+
+    # Remove the dynamically generated buttons
+    output$view_layout_file_ui <- renderUI({NULL})
+
+  }
+})
+
+
+# observeEvent(input$upload_batch_bead_array, {
+#   req(input$upload_batch_bead_array)
+#
+#   uploaded_files <- input$upload_batch_bead_array
+#
+#   # Read each Excel file into a list element
+#   files_list <- lapply(uploaded_files$datapath, function(file_path) {
+#     read_excel(file_path)
+#   })
+#
+#   # Assign filenames as names
+#   names(files_list) <- uploaded_files$name
+#
+#   # Store the list in the reactiveVal
+#   batch_data_list(files_list)
+# })
+# observeEvent(input$upload_batch_bead_array, {
+#   req(input$upload_batch_bead_array)
+#
+#   uploaded_files <- input$upload_batch_bead_array
+#
+#   # Read only the first sheet from each uploaded file
+#   files_list <- lapply(uploaded_files$datapath, function(path) {
+#     readxl::read_excel(path, sheet = 1)
+#   })
+#
+#   # Assign filenames as list names
+#   names(files_list) <- uploaded_files$name
+#
+#   # Store in reactiveVal
+#   batch_data_list(files_list)
+# })
+# observeEvent(input$upload_batch_bead_array, {
+#   req(input$upload_batch_bead_array)
+#   uploaded_files <- input$upload_batch_bead_array
+#
+#   # Read each file’s first sheet (header + data)
+#   files_list <- lapply(uploaded_files$datapath, function(path) {
+#     # Read header info (first 7 rows, no column names)
+#     header_info <- openxlsx::read.xlsx(path, rows = 1:7, colNames = FALSE, sheet = 1)
+#     # Read plate data (starting from row 8)
+#     plate_data <- openxlsx::read.xlsx(path, startRow = 8, sheet = 1, colNames = TRUE)
+#
+#     # Clean up: remove empty rows
+#     plate_data <- plate_data[!apply(
+#       plate_data, 1,
+#       function(x) all(is.na(x) | trimws(x) == "" | trimws(x) == "NA")
+#     ), ]
+#
+#     # Return both header and plate data
+#     list(header = header_info, plate = plate_data)
+#   })
+#
+#   # Assign filenames as list names
+#   names(files_list) <- uploaded_files$name
+#
+#   # Store in reactiveVal
+#   batch_data_list(files_list)
+# })
+
+# observeEvent(input$upload_batch_bead_array, {
+#   req(input$upload_batch_bead_array)
+#   uploaded_files <- input$upload_batch_bead_array
+#
+#   # Use lapply to process all uploaded files
+#   all_data <- lapply(uploaded_files$datapath, function(path) {
+#     # Read header (first 7 rows)
+#     header_info <- openxlsx::read.xlsx(path, rows = 1:7, colNames = FALSE, sheet = 1)
+#     header_info <- parse_metadata_df(header_info)
+#     # Read plate data (from row 8 onward)
+#     plate_data <- openxlsx::read.xlsx(path, startRow = 8, sheet = 1, colNames = TRUE)
+#
+#     # Remove completely empty rows
+#     plate_data <- plate_data[!apply(
+#       plate_data, 1,
+#       function(x) all(is.na(x) | trimws(x) == "" | trimws(x) == "NA")
+#     ), ]
+#
+#     list(header = header_info, plate = plate_data)
+#   })
+#
+#   # Assign names using uploaded filenames
+#   names(all_data) <- uploaded_files$name
+#
+#   # Separate into two named lists
+#   header_list <- lapply(all_data, `[[`, "header")
+#   plate_list  <- lapply(all_data, `[[`, "plate")
+#
+#   # Store in reactiveVals
+#   bead_array_header_list(header_list)
+#   bead_array_plate_list(plate_list)
+#
+#   plate_names <- sapply(header_list, function(x) x$plate)
+#   sample_dilution_plate_df(
+#     data.frame(
+#       plate = plate_names,
+#       sample_dilution_factor = NA_real_,
+#       stringsAsFactors = FALSE
+#     )
+#   )
+#
+#   batch_header <- construct_batch_upload_metadata(plates_map = layout_template_sheets()[["plates_map"]],
+#                                                   plate_metadata_list = bead_array_header_list(),
+#                                                   workspace_id = userWorkSpaceID(),
+#                                                   currentuser = currentuser())
+#
+#   batch_metadata <- combine_plate_metadata(head_list = batch_header)
+#   validation_result <- validate_batch_plate(plate_metadata = batch_metadata, plate_data_list = bead_array_plate_list(),
+#                                              plate_id_data = layout_template_sheets()[["plate_id"]])
+#   bead_array_validation <- validate_batch_bead_array(plate_data_list = bead_array_plate_list(),
+#                                                       antigen_list = layout_template_sheets()[["antigen_list"]],
+#                                                       blank_keyword = input$batch_blank)
+#   if (bead_array_validation$is_valid && validation_result$is_valid) {
+#     batch_validated <- TRUE
+#   } else {
+#     batch_validated <- FALSE
+#   }
+#
+#
+#
+#   output$batch_validation_status <- renderUI({
+#     createValidateBatchBadge(batch_validated)
+#   })
+#
+#   output$batch_invalid_messages <- renderTable({
+#     if (!batch_validated) {
+#       create_batch_invalid_message_table(validation_result, bead_array_validation)
+#     } else {
+#       NULL
+#     }
+#   })
+#
+#   output$upload_batch_data_button <- renderUI({
+#     if (batch_validated) {
+#       actionButton("uplaod_batch_button", "Upload Batch")
+#     } else {
+#       NULL
+#     }
+#   })
+#   # sample_dilution_plate_df(
+#   #   data.frame(
+#   #     plate_name = names(bead_array_plate_list()),
+#   #     sample_dilution_factor = NA_real_,
+#   #     stringsAsFactors = FALSE
+#   #   ))
+# })
+# Display basic info about uploaded files
+output$file_summary <- renderPrint({
+ # data_list <- batch_data_list()
+ # head_list <<- bead_array_header_list()
+ # plate_list <<- bead_array_plate_list()
+ # plates_map <<- layout_template_sheets()[["plates_map"]]
+ # antigen_list <<- layout_template_sheets()[["antigen_list"]]
+ # plate_id_data <<- layout_template_sheets()[["plate_id"]]
+ # timepoint_map <<- layout_template_sheets()[["timepoint"]]
+ # subject_map <<- layout_template_sheets()[["subject_groups"]]
+
+  # batch_header <- construct_batch_upload_metadata(plates_map = layout_template_sheets()[["plates_map"]],
+  #                                                plate_metadata_list = bead_array_header_list(),
+  #                                                workspace_id = userWorkSpaceID(),
+  #                                                currentuser = currentuser())
+
+
+  # if (length(data_list) == 0) {
+  #   cat("No batch files uploaded yet.")
+  # } else {
+  #   cat("Uploaded batch files:\n\n")
+  #   for (file in names(data_list)) {
+  #     df <- data_list[[file]]$plate
+  #     cat("•", file, "→", nrow(df), "rows x", ncol(df), "columns\n")
+  #   }
+  # }
+})
+
+plate_layout_plots <- reactive({
+  req(layout_template_sheets()[["plates_map"]])
+  req(layout_template_sheets()[["plate_id"]])
+
+  plates_map <- layout_template_sheets()[["plates_map"]]
+  plate_id_data <- layout_template_sheets()[["plate_id"]]
+
+  # Call your function
+  plot_plate_layout(plates_map, plate_id_data)
+})
+
+
+output$plate_layout_selector <- renderUI({
+  req(plate_layout_plots())
+  plots <- plate_layout_plots()
+
+  shinyWidgets::radioGroupButtons(
+    inputId = "select_plate_layout_plot",
+    label = "Select Plate Layout:",
+    choices = names(plots),
+    selected = names(plots)[1],
+    status = "success"
+  )
+})
+
+output$selected_plate_layout_plot <- renderPlotly({
+  req(input$select_plate_layout_plot)
+  req(plate_layout_plots())
+  plots <- plate_layout_plots()
+  plots[[input$select_plate_layout_plot]]
+})
+
+
+# # Dynamically generate tabs for each plot
+# output$plate_tabs <- renderUI({
+#   req(plate_layout_plots())
+#   plots <- plate_layout_plots()
+#
+#   tabs <- lapply(names(plots), function(name) {
+#     tabPanel(
+#       title = name,
+#       plotOutput(paste0("plot_", name))
+#     )
+#   })
+#
+#   do.call(tabsetPanel, tabs)
+# })
+#
+#
+# #  Render each plot
+# observe({
+#   req(plate_layout_plots())
+#   plots <- plate_layout_plots()
+#
+#   for (name in names(plots)) {
+#     local({
+#       plot_name <- name
+#       output[[paste0("plot_", plot_name)]] <- renderPlot({
+#         plots[[plot_name]]
+#       })
+#     })
+#   }
+# })
+
+# Join sample dilutions for the plate to the header
+construct_batch_upload_metadata <- function(plates_map, plate_metadata_list, currentuser, workspace_id) {
+
+  cat("plates map")
+  print(names(plates_map))
+  cat("plate metadata list")
+  print(plate_metadata_list)
+
+  # get unique sample dilution factors in a dataframe by plate_number
+  sample_dilutions_by_plate <- unique(
+    plates_map[plates_map$specimen_type == "X",
+               c("plate_number", "specimen_type", "specimen_dilution_factor")])
+
+    names(sample_dilutions_by_plate)[names(sample_dilutions_by_plate) == "specimen_dilution_factor"] <- "sample_dilution_factor"
+
+    print(sample_dilutions_by_plate)
+
+    experiment_by_plate <- unique(
+      plates_map[, c("plate_number", "experiment_name")]
+    )
+
+    # Add dilution factor to each head df in the list
+    plate_metadata_list_updated <- lapply(plate_metadata_list, function(df) {
+
+      plate_num <- df$plate[1]
+
+
+      # Match with dilution table
+      match_row <- sample_dilutions_by_plate[sample_dilutions_by_plate$plate_number == plate_num, , drop = FALSE]
+
+      # Add dilution column if match found
+      if (nrow(match_row) > 0) {
+        df$sample_dilution_factor <- match_row$sample_dilution_factor
+      } else {
+        df$sample_dilution_factor <- NA_real_
+      }
+
+      # add experiment_name
+      exp_row <- experiment_by_plate[
+        experiment_by_plate$plate_number == plate_num, , drop = FALSE
+      ]
+      if (nrow(exp_row) > 0) {
+        df$experiment_name <- exp_row$experiment_name
+      } else {
+        df$experiment_name <- NA_character_
+      }
+
+      # ## add metadata
+       df$study_accession <- unique(plates_map$study_name)
+       df$experiment_accession <- unique(plates_map$feature)
+       df$workspace_id <- workspace_id
+       df$auth0_user <- currentuser
+
+      return(df)
+      # ## add the study_name
+      # df$study_accession <- unique(plates_map$study_name)
+    })
+
+    # add in source file for later join
+    for (nm in names(plate_metadata_list_updated)) {
+      plate_metadata_list_updated[[nm]]$source_file <- nm
+    }
+
+    return(plate_metadata_list_updated)
+}
+
+plot_plate_layout <- function(plates_map, plate_id_data) {
+  #plates_map_v <<- plates_map
+  # Join in number_of_wells info
+  plates_map_joined <- merge(
+    plates_map,
+    plate_id_data[, c("study_name", "experiment_name", "plate_number", "number_of_wells")],
+    by = c("study_name", "experiment_name", "plate_number"),
+    all.x = TRUE
+  )
+  specimen_labels <- c(
+    "S" = "Standard Curve",
+    "C" = "Controls",
+    "X" = "Samples",
+    "B" = "Blanks"
+  )
+  plates_map_joined$`Specimen Type` <- specimen_labels[plates_map_joined$specimen_type]
+
+  # Initialize list for storing plots
+  plate_plots <- list()
+  specimen_palette <-  c("Blanks" = "#F3C300",
+                               "Controls" = "#2B3D26",
+                               "Standard Curve" = "#A1CAF1",
+                               "Samples" = "#8DB600")
+
+  # Get unique combinations of study, experiment, and plate
+  unique_combos <- unique(
+    plates_map_joined[, c("study_name", "experiment_name", "plate_number")]
+  )
+  # remove trailing NA rows
+  unique_combos <- unique_combos[rowSums(is.na(unique_combos)) != ncol(unique_combos), ]
+
+
+  # Loop through each combination
+  for (i in seq_len(nrow(unique_combos))) {
+    study <- unique_combos$study_name[i]
+    exp <- unique_combos$experiment_name[i]
+    plate <- unique_combos$plate_number[i]
+
+    # Filter data for this combination
+    plates_map_joined_filtered <- plates_map_joined[plates_map_joined$study_name == study & plates_map_joined$experiment_name == exp
+                                                    & plates_map_joined$plate_number == plate,]
+    plates_map_joined_filtered <- plates_map_joined_filtered[rowSums(is.na(plates_map_joined_filtered)) != ncol(plates_map_joined_filtered), ]
+
+    n_wells <- unique(plates_map_joined_filtered$number_of_wells)
+
+    # if (i == 1) {
+    #   message("First plate data preview:")
+    #   print(head(plates_map_joined_filtered))
+    #   assign("first_plate_data", plates_map_joined_filtered, envir = .GlobalEnv)
+    # }
+    # if (i == 2) {
+    #   assign("second_plate", plates_map_joined_filtered, envir = .GlobalEnv)
+    # }
+
+    # Build title
+    plot_title <- paste0(
+      "Study: ", study,
+      " | Experiment: ", exp,
+      " | Plate: ", plate,
+      " (", n_wells, " wells)"
+    )
+
+    plate_layout <- plate_plot_plotly2(
+      data = plates_map_joined_filtered,
+      plate_size = n_wells,
+      title = plot_title,
+      colour = specimen_palette
+    )
+    # plate_layout <- plate_plot_plotly(
+    #   data = plates_map_joined_filtered,
+    #   position = plates_map_joined_filtered$well,
+    #   value =  plates_map_joined_filtered$`Specimen Type`,
+    #   plate_size = n_wells,
+    #   title = plot_title,
+    #   colour = specimen_palette
+    # )
+    # plate_layout <- plate_plot(
+    #   data = plates_map_joined_filtered,
+    #   position = well,
+    #   value = `Specimen Type`,
+    #   plate_size = n_wells,
+    #    plate_type = "round",
+    #   title = plot_title,
+    #   colour = specimen_palette,
+    #    silent = FALSE,
+    #    scale = 1
+    # )
+
+
+
+    # Add plot to list
+    list_name <- paste(study, exp, plate, sep = "_")
+    plate_plots[[list_name]] <- plate_layout
+  }
+
+  #plate_plots <<- plate_plots
+
+  return(plate_plots)
+}
+# A plotly version of the plot_plate_function from the ggplate R library
+plate_plot_plotly2 <- function(data, plate_size = 96, title = NULL, colour = NULL) {
+  #data_v <<- data
+  cat("Plate")
+  print(unique(data$plate_number))
+ cat("Plate Size")
+ print(plate_size)
+  data <- data |>
+    dplyr::mutate(
+      row = stringr::str_extract(well, pattern = "[:upper:]+"),
+      col = as.numeric(stringr::str_extract(well, pattern = "\\d+")),
+      row_num = as.numeric(match(row, LETTERS))
+    )
+
+  # determine number of rows and columns
+  dims <- switch(
+    as.character(plate_size),
+    "6" = c(2, 3),
+    "12" = c(3, 4),
+    "24" = c(4, 6),
+    "48" = c(6, 8),
+    "96" = c(8, 12),
+    "384" = c(16, 24),
+    "1536" = c(32, 48)
+  )
+  n_rows <- dims[1]
+  n_cols <- dims[2]
+
+  # make grid of all wells
+  plate_layout_grid <- expand.grid(
+    Row = LETTERS[1:n_rows],
+    Column = 1:n_cols
+  )
+  plate_layout_grid$well <- paste(plate_layout_grid$Row, plate_layout_grid$Column, sep = "")
+
+  # find empty wells
+  empty_wells <- setdiff(plate_layout_grid$well, data$well)
+  empty_df <- plate_layout_grid |>
+    dplyr::filter(well %in% empty_wells) |>
+    dplyr::mutate(
+      row_num = as.numeric(match(Row, LETTERS)),
+      col = Column,
+      `Specimen Type` = "Empty Well"
+    )
+
+  # flip y-axis to match lab plate layout
+  data$row_num <- abs(data$row_num - (n_rows + 1))
+  empty_df$row_num <- abs(empty_df$row_num - (n_rows + 1))
+
+  # Build plot
+  p <- plot_ly() %>%
+    add_trace(
+      data = data,
+      x = ~col,
+      y = ~row_num,
+      type = "scatter",
+      mode = "markers",
+      color = ~`Specimen Type`,
+      colors = colour,
+      text = ~paste(
+        "Well:", well,
+        "<br>Specimen Type:", `Specimen Type`,
+        ifelse(`Specimen Type` == "Samples",
+               paste0("<br>Patient ID: ", subject_id,
+                      "<br>Timepoint: ", timepoint_tissue_abbreviation),
+               ""),
+        "<br>Biosample Barcode:", biosample_id_barcode,
+        "<br>Specimen Dilution Factor:", specimen_dilution_factor,
+        "<br>Feature:", feature
+      ),
+      hoverinfo = "text",
+      marker = list(size = 20, line = list(width = 1, color = "black"), symbol = "circle")
+    ) %>%
+    add_trace(
+      data = empty_df,
+      x = ~col,
+      y = ~row_num,
+      name = "Empty Well",
+      type = "scatter",
+      mode = "markers",
+      marker = list(size = 20, color = "white", line = list(width = 1, color = "grey")),
+      hoverinfo = "text",
+      text = ~paste("Well:", well, "<br>Empty")
+    ) %>%
+    layout(
+      title = title,
+      legend = list(title = list(text = "Specimen Type")),
+      yaxis = list(
+        title = "",
+        tickvals = seq(1, n_rows),
+        ticktext = rev(LETTERS[1:n_rows]),
+        showgrid = FALSE
+      ),
+      xaxis = list(
+        title = "",
+        tickvals = seq(1, n_cols),
+        showgrid = FALSE
+      ),
+      showlegend = TRUE,
+      shapes = list(
+        list(
+          type = "rect",
+          x0 = 0.5, x1 = n_cols + 0.5,
+          y0 = 0.5, y1 = n_rows + 0.5,
+          line = list(color = "black", width = 1),
+          fillcolor = "rgba(0,0,0,0)"
+        )
+      )
+    )
+
+  return(p)
+}
+
+# plate_plot_plotly <- function(data, position, value, plate_size = 96, title = NULL, colour = NULL) {
+#   data_v <<- data
+#   data <- data |>
+#     dplyr::mutate(
+#       row = stringr::str_extract({{ position }}, pattern = "[:upper:]+"),
+#       col = as.numeric(stringr::str_extract({{ position }}, pattern = "\\d+")),
+#       row_num = as.numeric(match(row, LETTERS))
+#     )
+#
+#
+#   # determine number of rows and columns
+#   dims <- switch(
+#     as.character(plate_size),
+#     "6" = c(2, 3),
+#     "12" = c(3, 4),
+#     "24" = c(4, 6),
+#     "48" = c(6, 8),
+#     "96" = c(8, 12),
+#     "384" = c(16, 24),
+#     "1536" = c(32, 48)
+#   )
+#   n_rows <- dims[1]; n_cols <- dims[2]
+#
+#   plate_layout_grid <- expand.grid(
+#     Row = LETTERS[1:n_rows],
+#     Column = 1:n_cols
+#   )
+#   plate_layout_grid$well <- paste(plate_layout_grid$Row, plate_layout_grid$Column, sep = "")
+#   empty_wells <- setdiff(plate_layout_grid$well, data$well)
+#   empty_df <- plate_layout_grid |>
+#     filter(well %in% empty_wells) |>
+#     mutate(
+#       row_num = as.numeric(match(Row, LETTERS)),
+#       col = Column,
+#       value = "Empty Well"
+#     )
+#   # flip y-axis (to match lab plate orientation)
+#   data$row_num <- abs(data$row_num - (n_rows + 1))
+#   empty_df$row_num <- abs(empty_df$row_num - (n_rows + 1))
+#
+#   # for (col in setdiff(names(data), names(empty_df))) {
+#   #   empty_df[[col]] <- NA
+#   # }
+#   p <- plot_ly()
+#
+#   p <- p %>% add_trace(
+#     data = data,
+#     x = ~col,
+#     y = ~row_num,
+#     type = "scatter",
+#     mode = "markers",
+#     color = ~{{ value }},
+#     colors = colour,
+#     text = ~paste("Well:", {{ position }},
+#                   "<br>Specimen Type:", {{ value }},
+#                   ifelse({{ value }} == "Samples",
+#                          paste0("<br>Patient ID: ", data$subject_id,
+#                                 "<br>Timepoint: ", data$timepoint),
+#                          ""),
+#                   "<br> Biosample Barcode: ", data$biosample_id_barcode,
+#                   "<br> Specimen Dilution Factor: ", data$specimen_dilution_factor,
+#                   "<br> Feature: ", data$feature
+#     ),
+#     hoverinfo = "text",
+#     marker = list(size = 20, line = list(width = 1, color = "black"), symbol = "circle")
+#   ) %>%
+#     add_trace(
+#       data = empty_df,
+#       x = ~col,
+#       y = ~row_num,
+#       type = "scatter",
+#       mode = "markers",
+#       marker = list(size = 20, color = "white", line = list(width = 1, color = "grey")),
+#       hoverinfo = "text",
+#       text = ~paste("Well:", well, "<br>Empty")
+#     ) %>%
+#     layout(
+#       title = title,
+#       legend = list(title = list(text = "Specimen Type")),
+#       yaxis = list(
+#         title = "", tickvals = seq(1, n_rows), ticktext = rev(LETTERS[1:n_rows]),
+#         showgrid = F
+#         # autorange = "reversed"
+#       ),
+#       xaxis = list(title = "", tickvals = seq(1, n_cols),
+#                    showgrid = F),
+#       showlegend = TRUE,
+#       shapes = list(
+#         list(
+#           type = "rect",
+#           x0 = 0.5, x1 = n_cols + 0.5,
+#           y0 = 0.5, y1 = n_rows + 0.5,
+#           line = list(color = "black", width = 1),
+#           fillcolor = "rgba(0,0,0,0)"
+#         )
+#       )
+#
+#     )
+#
+#   return(p)
+# }
+
+# plate_plot_plotly <- function(data, position, value, plate_size = 96, title = NULL, colour = NULL) {
+#   data_v <<- data
+#   data <- data |>
+#     dplyr::mutate(
+#       row = stringr::str_extract({{ position }}, pattern = "[:upper:]+"),
+#       col = as.numeric(stringr::str_extract({{ position }}, pattern = "\\d+")),
+#       row_num = as.numeric(match(row, LETTERS))
+#     )
+#
+#
+#   # determine number of rows and columns
+#   dims <- switch(
+#     as.character(plate_size),
+#     "6" = c(2, 3),
+#     "12" = c(3, 4),
+#     "24" = c(4, 6),
+#     "48" = c(6, 8),
+#     "96" = c(8, 12),
+#     "384" = c(16, 24),
+#     "1536" = c(32, 48)
+#   )
+#   n_rows <- dims[1]; n_cols <- dims[2]
+#
+#   plate_layout_grid <- expand.grid(
+#     Row = LETTERS[1:n_rows],
+#     Column = 1:n_cols
+#   )
+#   plate_layout_grid$well <- paste(plate_layout_grid$Row, plate_layout_grid$Column, sep = "")
+#   empty_wells <- setdiff(plate_layout_grid$well, data$well)
+#   empty_df <- plate_layout_grid |>
+#     filter(well %in% empty_wells) |>
+#     mutate(
+#       row_num = as.numeric(match(Row, LETTERS)),
+#       col = Column,
+#       value = "Empty Well"
+#     )
+#   # flip y-axis (to match lab plate orientation)
+#   data$row_num <- abs(data$row_num - (n_rows + 1))
+#   empty_df$row_num <- abs(empty_df$row_num - (n_rows + 1))
+#
+#   # for (col in setdiff(names(data), names(empty_df))) {
+#   #   empty_df[[col]] <- NA
+#   # }
+#  p <- plot_ly()
+#
+#   p <- p %>% add_trace(
+#     data = data,
+#     x = ~col,
+#     y = ~row_num,
+#     type = "scatter",
+#     mode = "markers",
+#     color = ~{{ value }},
+#     colors = colour,
+#     text = ~paste("Well:", {{ position }},
+#                   "<br>Specimen Type:", {{ value }},
+#                   ifelse({{ value }} == "Samples",
+#                          paste0("<br>Patient ID: ", data$subject_id,
+#                                 "<br>Timepoint: ", data$timepoint),
+#                          ""),
+#                   "<br> Biosample Barcode: ", data$biosample_id_barcode,
+#                   "<br> Specimen Dilution Factor: ", data$specimen_dilution_factor,
+#                   "<br> Feature: ", data$feature
+#     ),
+#     hoverinfo = "text",
+#     marker = list(size = 20, line = list(width = 1, color = "black"), symbol = "circle")
+#   ) %>%
+#     add_trace(
+#       data = empty_df,
+#       x = ~col,
+#       y = ~row_num,
+#       type = "scatter",
+#       mode = "markers",
+#       marker = list(size = 20, color = "white", line = list(width = 1, color = "grey")),
+#       hoverinfo = "text",
+#       text = ~paste("Well:", well, "<br>Empty")
+#     ) %>%
+#     layout(
+#       title = title,
+#       legend = list(title = list(text = "Specimen Type")),
+#       yaxis = list(
+#         title = "", tickvals = seq(1, n_rows), ticktext = rev(LETTERS[1:n_rows]),
+#         showgrid = F
+#         # autorange = "reversed"
+#       ),
+#       xaxis = list(title = "", tickvals = seq(1, n_cols),
+#                    showgrid = F),
+#       showlegend = TRUE,
+#       shapes = list(
+#         list(
+#           type = "rect",
+#           x0 = 0.5, x1 = n_cols + 0.5,
+#           y0 = 0.5, y1 = n_rows + 0.5,
+#           line = list(color = "black", width = 1),
+#           fillcolor = "rgba(0,0,0,0)"
+#         )
+#       )
+#
+#     )
+#
+#   return(p)
+# }
+
+
+
+# Helper function to combine plate metadata from batch load
+combine_plate_metadata <- function(head_list) {
+  plate_metadata <- do.call(rbind, lapply(names(head_list), function(nm) {
+         df <- head_list[[nm]]
+         df
+    }))
+
+  return(plate_metadata)
+}
+
+
+validate_batch_plate <- function(plate_metadata, plate_data_list, plate_id_data) {
+  # plate_data_list <<- plate_data_list
+  message_list <- c()
+
+  check_uploaded_file_in_layout <- plate_metadata$file_name %in% plate_id_data$plate_filename
+  if (!all(check_uploaded_file_in_layout)) {
+     message_list <- c("Some uploaded plates are misssing in the layout file.")
+  }
+  # validate the required columns
+  required_cols <- c("file_name", "rp1_pmt_volts", "rp1_target", "acquisition_date")
+  missing_cols <- setdiff(required_cols, names(plate_metadata))
+
+  if (length(missing_cols) > 0) {
+    message_list <- c(
+      message_list,
+      paste("The following required plate metadata columns are missing so further parsing cannot be conducted:",
+            paste(missing_cols, collapse = ", "))
+    )
+    # If critical metadata is missing, return early
+    return(list(
+      is_valid = FALSE,
+      messages = message_list
+    ))
+  }
+
+ # plate_metadata <<- plate_metadata
+
+  # check to see if all files passes file Path
+  pass_file_path <- all(looks_like_file_path(plate_metadata$file_name))
+  if (!pass_file_path) {
+    message_list <- c(message_list, "Ensure that alll file paths have foward or backward slashes based on Mac or Windows")
+  }
+
+  pass_rp1_pmt_volts <- all(check_rp1_numeric(plate_metadata$rp1_pmt_volts))
+  is_numeric <- check_rp1_numeric(plate_metadata$rp1_pmt_volts)
+  if (!pass_rp1_pmt_volts) {
+    bad_rp1_pmt_volts <- plate_metadata[!is_numeric, c("plateid", "rp1_pmt_volts")]
+    labeled_vals <- paste(bad_rp1_pmt_volts$plateid, bad_rp1_pmt_volts$rp1_pmt_volts, sep = ":")
+
+    message_list <- c(message_list, paste(
+      "Ensure that all files have an RP1 PMT (Volts) field that is numeric and if it is a decimal only one period is present. Values by plateid:",
+      paste(labeled_vals, collapse = ", "))
+    )
+  }
+  pass_rp1_target <- all(check_rp1_numeric(plate_metadata$rp1_target))
+  is_target_numeric <- check_rp1_numeric(plate_metadata$rp1_target)
+  if (!pass_rp1_target) {
+    invalid_rp1_target <- plate_metadata[!is_target_numeric, c("plateid", "rp1_target")]
+    labeled_bad_rp1_target <- paste(invalid_rp1_target$plateid, invalid_rp1_target$rp1_target, sep = ":")
+    message_list <- c(message_list, paste("Ensure that the RP1 Target is numeric and if it is a decimal only one period is present. Values by plateid:",
+                                          paste(labeled_bad_rp1_target,collapse = ", ")))
+  }
+
+  pass_time_format <- all(check_time_format(capitalize_am_pm(plate_metadata$acquisition_date)))
+  is_time_format <- check_time_format(capitalize_am_pm(plate_metadata$acquisition_date))
+  if (!pass_time_format) {
+    invalid_time_format <- plate_metadata[!is_time_format, c("plateid", "aquisition_date")]
+    labeled_invalid_time_format <- paste(invalid_time_format$plateid, invalid_time_format$aquisition_date)
+    message_list <- c(message_list, paste("Ensure the acquisition date is in the following date time format: DD-MMM-YYYY, HH:MM AM/PM Example: 01-Oct-2025, 12:12 PM  |Current Value by plateid:",
+                                          paste(labeled_invalid_time_format, collapse = ", ")))
+  }
+
+  # validate main data sets
+
+
+  # if no invalid messages then it is good to pass
+  is_valid <- length(message_list) == 0
+
+  if (is_valid)  {
+    return(list(
+      is_valid = is_valid,
+      messages = message_list,
+      updated_plate_data = plate_data
+    ))
+  } else {
+    return(list(
+      is_valid = is_valid,
+      messages = message_list
+    ))
+  }
+}
+
+validate_batch_bead_array <- function(plate_data_list, antigen_list, blank_keyword) {
+  plate_data_list <<- plate_data_list
+  message_list <- list()
+  plate_names <- names(plate_data_list)
+
+  for (name in plate_names) {
+    # Get current dataset
+    df <- plate_data_list[[name]]
+
+    # Replace dots with spaces except for "%.Agg.Beads" and "Sampling.Errors"
+    col_names <- ifelse(names(df) %in% c("Sampling.Errors", "%.Agg.Beads"),
+                        names(df),                 # keep as-is
+                        gsub("\\.", " ", names(df)))  # replace . with space
+
+    # Assign new names
+    names(df) <- col_names
+
+    # Store updated data set
+    plate_data_list[[name]] <- df
+  }
+
+  antigens_check <- unique(antigen_list$antigen_label_on_plate)
+  check_antigens <- lapply(plate_data_list, function(df) {
+    sapply(antigens_check, function(name) name %in% names(df))
+  })
+
+  # check on each plate and then all plates results together
+  all_antigens_present <- all(sapply(check_antigens, function(x) all(x)))
+  if (!all_antigens_present) {
+    check_antigens_with_falses <- check_antigens[sapply(check_antigens, function(x) any(!x))]
+    if (length(check_antigens_with_falses) > 0) {
+      # For each plate with FALSE antigens
+      for (plate_name in names(check_antigens_with_falses)) {
+        missing_antigens <- names(check_antigens_with_falses[[plate_name]])[!check_antigens_with_falses[[plate_name]]]
+        # Create a formatted message
+        msg <- paste0(
+          "Plate ", plate_name,
+          " is missing the following antigens in the layout file: ",
+          paste(missing_antigens, collapse = ", ")
+        )
+        message_list <- c(message_list, msg)
+      }
+    }
+  }
+
+  #pass_agg_bead_check_list <- lapply(plate_list, check_agg_bead_column)
+  pass_agg_bead_check_list <- lapply(plate_data_list, check_batch_agg_bead_column)
+  all_true <- all(sapply(pass_agg_bead_check_list, function(x) x$result))
+  if (!all_true) {
+    failed <- names(pass_agg_bead_check_list)[!sapply(pass_agg_bead_check_list, function(x) x$result)]
+    agg_bead_message <- paste(
+      "The following plates are missing a % Agg Beads column:\n",
+      paste("-", failed, collapse = "\n"),
+      "\nEnsure each plate has a % Agg Beads column after the last antigen."
+    )
+    message_list <- c(message_list, agg_bead_message)
+  } else {
+    pass_bead_count_check_list <- lapply(plate_data_list, check_bead_count)
+
+    # Determine if all passed
+    all_true_bead <- all(sapply(pass_bead_count_check_list, function(x) x[[1]]))
+
+    if (!all_true_bead) {
+      failed_bead <- names(pass_bead_count_check_list)[!sapply(pass_bead_count_check_list, function(x) x[[1]])]
+
+      # Gather all detailed messages for failed plates
+      bead_messages <- sapply(failed_bead, function(plate) {
+        paste0("Plate: ", plate, "\n", pass_bead_count_check_list[[plate]][[2]])
+      }, USE.NAMES = FALSE)
+
+      # Combine into one final message
+      bead_count_message <- paste(
+        "Ensure the bead count is present after all MFI values in parentheses for the following plates:\n",
+        paste(bead_messages, collapse = "\n\n"),
+        sep = ""
+      )
+
+      # Add to message list
+      message_list <- c(message_list, bead_count_message)
+    }
+
+    }
+
+
+   # examine blanks in type column
+  # Loop over all plate data frames
+  for (i in seq_along(plate_data_list)) {
+    plate_data <- plate_data_list[[i]]
+    plate_name <- names(plate_data_list)[i]
+
+    #  Check if blank correction is needed
+    procceed_to_blank_check <- check_blank_in_sample_boolean(plate_data)
+    if (!procceed_to_blank_check) {
+      # Update plate data based on user keyword choice
+      plate_data <- check_blank_in_sample(plate_data, blank_keyword = blank_keyword)
+    }
+
+    # Check blank description format
+    pass_blank_description <- check_blank_description(plate_data)
+    if (!pass_blank_description[[1]]) {
+      message_list <- c(
+        message_list,
+        paste("Plate:", plate_name, "-", pass_blank_description[[2]])
+      )
+    }
+
+    # Update modified plate back into list
+    plate_data_list[[i]] <- plate_data
+  }
+
+  is_valid <- length(message_list) == 0
+
+  if (is_valid)  {
+    return(list(
+      is_valid = is_valid,
+      messages = message_list
+    ))
+  } else {
+    return(list(
+      is_valid = is_valid,
+      messages = message_list
+    ))
+  }
+
+}
+
+  # pass_type_col <- check_type_column(plate_data)
+  #   if (!pass_type_col[[1]]) {
+  #     message_list <- c(message_list, pass_type_col[[2]])
+  #   }
+
+#   # validate main data set
+#
+#   pass_type_col <- check_type_column(plate_data)
+#   if (!pass_type_col[[1]]) {
+#     message_list <- c(message_list, pass_type_col[[2]])
+#   }
+#   pass_description <- check_sample_description(plate_data)
+#   if (!pass_description[[1]]) {
+#     message_list <- c(message_list, pass_description[[2]])
+#   }
+#
+#   pass_standard_description <- check_standard_description(plate_data)
+#   if (!pass_standard_description[[1]]) {
+#     message_list <- c(message_list, pass_standard_description[[2]])
+#   }
+#
+#   pass_agg_bead_check <- check_agg_bead_column(plate_data)
+#   if (!pass_agg_bead_check[[1]]) {
+#     message_list <- c(message_list, pass_agg_bead_check[[2]])
+#   } else {
+#     # check blanks if aggregate column is present
+#     pass_bead_count_check <- check_bead_count(plate_data)
+#     if (!pass_bead_count_check[[1]]) {
+#       message_list <- c(message_list, paste("Ensure the bead count is present after all MFI values in parentheses for: \n", pass_bead_count_check[[2]], sep = ""))
+#     }
+#   }
+#   # examine blanks in type column
+#   procceed_to_blank_check <- check_blank_in_sample_boolean(plate_data)
+#   if (!procceed_to_blank_check) {
+#     # Update Plate Data based on keyword choice
+#     plate_data <- check_blank_in_sample(plate_data, blank_keyword = blank_keyword)
+#   }
+#
+#   # if blanks are processed still check it
+#   pass_blank_description <- check_blank_description(plate_data)
+#   if (!pass_blank_description[[1]]) {
+#     message_list <- c(message_list, pass_blank_description[[2]])
+#   }
+#
+#   # if no invalid messages then it is good to pass
+#   is_valid <- length(message_list) == 0
+#
+#   if (is_valid)  {
+#     return(list(
+#       is_valid = is_valid,
+#       messages = message_list,
+#       updated_plate_data = plate_data
+#     ))
+#   } else {
+#     return(list(
+#       is_valid = is_valid,
+#       messages = message_list
+#     ))
+#   }
+#
+# }
+#
+# plot_plate_layout <- function(plates_map, plate_id_data) {
+#   plates_map_joined <- merge(
+#     plates_map,
+#          plate_id_data[, c("study_name", "experiment_name", "plate_number", "number_of_wells")],
+#         by = c("study_name", "experiment_name", "plate_number"),
+#          all.x = TRUE
+#      )
+#
+#   plate_layout_plots <- list()
+#
+#   for (plate in unique(plates_map_joined$plate_number)) {
+#      plates_map_joined_filtered <- plates_map_joined[plates_map_joined$plate_number == plate, ]
+#      n_wells <- unique(plates_map_joined_filtered$number_of_wells)
+#
+#      plate_layout <- plate_plot(
+#                         data = plates_map_joined_filtered,
+#                         position = well,
+#                         value = specimen_type,
+#                         plate_size = n_wells,
+#                         plate_type = "round")
+#
+#      plate_layout_plots[[plate]] <- plate_layout
+#
+#   }
+#   return(plate_layout_plots)
+# }
+#
+#
+
+create_batch_invalid_message_table <- function(validation_result, bead_array_validation) {
+  combined_messages <- c(validation_result$messages, unlist(bead_array_validation$messages))
+  message_table <- data.frame(
+    "Message Number" = seq_along(combined_messages),
+    "Please correct the formatting errors in the file" = combined_messages,
+    check.names = F,
+    stringsAsFactors = FALSE
+  )
+  return(message_table)
+}
+
+# output$batch_uploded_status <- renderUI({
+#   batch_metadata()
+#   metadata_batch <- batch_metadata()
+#   batch_study_accession <- unique(metadata_batch$study_accession)
+#   plates_to_upload <- unique(metadata_batch$plate_id)
+#
+#   plate_list_sql <- paste0("'", paste(plates_to_upload, collapse = "', '"), "'")
+#   query <- sprintf("
+#     SELECT
+#       xmap_header_id,
+#       study_accession,
+#       experiment_accession,
+#       plate_id,
+#       file_name,
+#       acquisition_date,
+#       reader_serial_number,
+#       rp1_pmt_volts,
+#       rp1_target,
+#       auth0_user,
+#       workspace_id,
+#       plateid,
+#       plate,
+#       sample_dilution_factor,
+#       n_wells
+#     FROM madi_results.xmap_header
+#     WHERE study_accession = '%s'
+#       AND plate_id IN (%s);
+#   ", batch_study_accession, plate_list_sql)
+#
+#   existing_plates <- DBI::dbGetQuery(conn, query)
+#   if (nrow(existing_plates) > 0) {
+#     createUploadedBatchBadge(TRUE)
+#   } else {
+#     createUploadedBatchBadge(FALSE)
+#   }
+#
+# })
+
+
+observeEvent(input$uplaod_batch_button, {
+  batch_plates <- batch_plate_data()
+  metadata_batch <- batch_metadata()
+  timepoint_map_in <- layout_template_sheets()[["timepoint"]]
+  subject_map_in <- layout_template_sheets()[["subject_groups"]]
+  antigen_list_in <- layout_template_sheets()[["antigen_list"]]
+  plates_map_in <-  layout_template_sheets()[["plates_map"]]
+
+  # # get the study accession of the batch and plate ids that will be uploaded
+  batch_study_accession <- unique(metadata_batch$study_accession)
+  batch_experiment_accession <- unique(metadata_batch$experiment_name)
+  plates_to_upload <- unique(metadata_batch$plate_id)
+
+  plate_list_sql <- paste0("'", paste(plates_to_upload, collapse = "', '"), "'")
+  query <- sprintf("
+    SELECT
+      xmap_header_id,
+      study_accession,
+      experiment_accession,
+      plate_id,
+      file_name,
+      acquisition_date,
+      reader_serial_number,
+      rp1_pmt_volts,
+      rp1_target,
+      auth0_user,
+      workspace_id,
+      plateid,
+      plate,
+      sample_dilution_factor,
+      n_wells
+    FROM madi_results.xmap_header
+    WHERE study_accession = '%s'
+      AND plate_id IN (%s);
+  ", batch_study_accession, plate_list_sql)
+
+  existing_plates <- DBI::dbGetQuery(conn, query)
+  if (nrow(existing_plates) > 0) {
+    cat("These plates already exist for the study")
+  } else {
+    cat("These plates do not exist for the study")
+
+    ## Upload header
+    #metadata_batch <<- metadata_batch
+    upload_metadata_df <- prepare_batch_header(metadata_batch)
+    dbAppendTable(conn, Id(schema = "madi_results", table = "xmap_header"),upload_metadata_df)
+
+    ## join in plates (source file)
+    batch_plates_2 <- merge(batch_plates, metadata_batch[, c("source_file", "plate")],
+                          by.x = "source_file",
+                          all.x = T)
+    cat("after join batch ")
+    # obtain samples to upload
+    sample_map <- plates_map_in[plates_map_in$specimen_type == "X",]
+    if (nrow(sample_map) > 0) {
+     samples_to_upload <-  prepare_batch_bead_assay_samples(sample_plate_map = sample_map,
+                                       combined_plate_data = batch_plates_2, batch_metadata = metadata_batch,
+                                       antigen_list = antigen_list_in, subject_map = subject_map_in)
+
+    dbAppendTable(conn, Id(schema = "madi_results", table = "xmap_sample"),samples_to_upload)
+
+      # samples_to_upload <<- prepare_batch_bead_assay_samples(sample_plate_map = sample_map, combined_plate_data = combined_plate_data,
+      #                                                     antigen_list = layout_template_sheets()[["antigen_list"]],
+      #                                                     subject_map = subject_map)
+    }
+
+    standards_map <- plates_map_in[plates_map_in$specimen_type == "S",]
+    if (nrow(standards_map) > 0) {
+      standards_to_upload <- prepare_batch_bead_assay_standards(standard_plate_map = standards_map, combined_plate_data = batch_plates_2,
+                                         antigen_list = antigen_list_in,
+                                         batch_metadata = metadata_batch)
+      dbAppendTable(conn, Id(schema = "madi_results", table = "xmap_standard"),standards_to_upload)
+
+    }
+
+    blanks_map <- plates_map_in[plates_map_in$specimen_type == "B",]
+    if (nrow(blanks_map) > 0) {
+      blanks_to_upload <- prepare_batch_bead_assay_blanks(blanks_plate_map = blanks_map, combined_plate_data = batch_plates_2, antigen_list = antigen_list_in,
+                                      batch_metadata = metadata_batch)
+      dbAppendTable(conn, Id(schema = "madi_results", table = "xmap_buffer"), blanks_to_upload)
+    }
+
+
+    controls_map <- plates_map_in[plates_map_in$specimen_type == "C",]
+    if (nrow(controls_map) > 0) {
+    controls_to_uplaod <- prepare_batch_bead_assay_controls(controls_plate_map = controls_map, combined_plate_data = batch_plates_2, antigen_list =
+                                        antigen_list_in, batch_metadata = metadata_batch)
+    dbAppendTable(conn, Id(schema = "madi_results", table = "xmap_control"),controls_to_uplaod)
+
+    }
+
+    antigen_family_df <- prepare_batch_antigen_family(antigen_list_in)
+
+    existing_antigens <- DBI::dbGetQuery(
+      conn,
+      sprintf(
+        "SELECT study_accession, experiment_accession, antigen FROM madi_results.xmap_antigen_family
+     WHERE study_accession = '%s'
+        AND experiment_accession = '%s'",
+        batch_study_accession,
+         batch_experiment_accession
+
+      )
+    )
+
+    # Anti-join keeping only rows not already in DB
+    antigen_family_to_insert <- dplyr::anti_join(
+      antigen_family_df,
+      existing_antigens,
+      by = c("study_accession", "experiment_accession", "antigen")
+    )
+
+    # Append if new rows exist
+    if (nrow(antigen_family_to_insert) > 0) {
+      DBI::dbAppendTable(
+        conn,
+        DBI::Id(schema = "madi_results", table = "xmap_antigen_family"),
+        antigen_family_to_insert
+      )
+      cat("Inserted new antigen family entries\n")
+    } else {
+      cat("No new antigen family entries to insert\n")
+    }
+
+    # dbAppendTable(conn,
+    #               Id(schema = "madi_results", table = "xmap_antigen_family"),
+    #               antigen_family_df)
+
+    planned_visits_df <- prepare_planned_visits(timepoint_map = timepoint_map_in)
+    existing_visits <- DBI::dbGetQuery(
+      conn,
+      sprintf(
+        "SELECT study_accession, timepoint_name
+     FROM madi_results.xmap_planned_visit
+     WHERE study_accession = '%s'",
+        batch_study_accession
+      )
+    )
+
+    planned_visits_to_insert <- dplyr::anti_join(
+      planned_visits_df,
+      existing_visits,
+      by = c("study_accession", "timepoint_name")
+    )
+
+    if (nrow(planned_visits_to_insert) > 0) {
+      DBI::dbAppendTable(
+        conn,
+        DBI::Id(schema = "madi_results", table = "xmap_planned_visit"),
+        planned_visits_to_insert
+      )
+      cat("Inserted new planned visit rows\n")
+    } else {
+      cat("No new planned visits to insert\n")
+    }
+   }
+
+  showNotification("Batch Uploaded")
+})
+
+
+# observeEvent(input$uplaod_batch_button, {
+# data_list <- batch_data_list()
+# head_list <<- bead_array_header_list()
+# plate_list <<- bead_array_plate_list()
+# plates_map <<- layout_template_sheets()[["plates_map"]]
+# antigen_list <<- layout_template_sheets()[["antigen_list"]]
+# plate_id_data <<- layout_template_sheets()[["plate_id"]]
+# timepoint_map <<- layout_template_sheets()[["timepoint"]]
+# subject_map <<- layout_template_sheets()[["subject_groups"]]
+#
+# batch_header <- construct_batch_upload_metadata(plates_map = layout_template_sheets()[["plates_map"]],
+#                                                 plate_metadata_list = bead_array_header_list(),
+#                                                 workspace_id = userWorkSpaceID(),
+#                                                 currentuser = currentuser())
+# # metadata to store in the header table
+# batch_metadata <- combine_plate_metadata(head_list = batch_header)
+# # store the number of wells
+# batch_metadata <- merge(
+#        batch_metadata,
+#        plate_id_data[, c("plate_filename", "number_of_wells")],
+#        by.x = "file_name", by.y = "plate_filename",
+#        all.x = TRUE
+# )
+# names(batch_metadata)[names(batch_metadata) == "number_of_wells"] <- "n_wells"
+#
+# batch_metadata <<- batch_metadata
+# # get the study accession of the batch and plate ids that will be uploaded
+# batch_study_accession <- unique(batch_metadata$study_accession)
+# plates_to_upload <- unique(batch_metadata$plate_id)
+#
+# plate_list_sql <- paste0("'", paste(plates_to_upload, collapse = "', '"), "'")
+# query <- sprintf("
+#   SELECT
+#     xmap_header_id,
+#     study_accession,
+#     experiment_accession,
+#     plate_id,
+#     file_name,
+#     acquisition_date,
+#     reader_serial_number,
+#     rp1_pmt_volts,
+#     rp1_target,
+#     auth0_user,
+#     workspace_id,
+#     plateid,
+#     plate,
+#     sample_dilution_factor,
+#     n_wells
+#   FROM madi_results.xmap_header
+#   WHERE study_accession = '%s'
+#     AND plate_id IN (%s);
+# ", batch_study_accession, plate_list_sql)
+#
+# existing_plates <- DBI::dbGetQuery(conn, query)
+# if (nrow(existing_plates) > 0) {
+#   cat("These plates already exist for the study")
+# } else {
+#   cat("These plates do not exist for the study")
+#
+#
+#
+# plate_data_list2 <- plate_list
+# # add experiment name and plate to each raw assay data
+# for (i in seq_along(plate_data_list2)) {
+#   plate_data_list2[[i]]$plate <- batch_metadata$plate[i]
+#   plate_data_list2[[i]]$plate_id <- batch_metadata$plate_id[i]
+#   plate_data_list2[[i]]$experiment_name <- batch_metadata$experiment_name[i]
+# }
+#
+# # combine all plates together
+# combined_plate_data <- dplyr::bind_rows(plate_data_list2)
+#
+#
+# # obtain samples to upload
+# sample_map <- plates_map[plates_map$specimen_type == "X",]
+# if (nrow(sample_map) > 0) {
+#   samples_to_upload <<- prepare_batch_bead_assay_samples(sample_plate_map = sample_map, combined_plate_data = combined_plate_data,
+#                                                       antigen_list = layout_template_sheets()[["antigen_list"]],
+#                                                       subject_map = subject_map)
+# }
+#
+#
+# ## Standards
+# standard_map <- plates_map[plates_map$specimen_type == "S",]
+# if (nrow(standard_map) > 0) {
+#   standards_to_upload <<- prepare_batch_bead_assay_standards(standard_plate_map = standard_map, combined_plate_data = combined_plate_data,
+#                                                           antigen_list = layout_template_sheets()[["antigen_list"]])
+# }
+# ## Blanks
+# blanks_map <- plates_map[plates_map$specimen_type == "B",]
+# if (nrow(blanks_map) > 0) {
+#   blanks_to_upload <<- prepare_batch_bead_assay_blanks(blanks_plate_map = blanks_map, combined_plate_data = combined_plate_data,
+#                                                     antigen_list = layout_template_sheets()[["antigen_list"]])
+# }
+# # controls upload
+# controls_map <- plates_map[plates_map$specimen_type == "C",]
+# if (nrow(controls_map) > 0) {
+#   controls_to_upload <<- prepare_batch_bead_assay_controls(controls_plate_map = controls_map, combined_plate_data = combined_plate_data,
+#                                                           antigen_list = layout_template_sheets()[["antigen_list"]])
+# }
+#
+# ## Antigen family information
+# antigen_family_table <<- prepare_batch_antigen_famly(antigen_list = layout_template_sheets()[["antigen_list"]])
+# # existing <- dbGetQuery(conn, "SELECT study_accesssion, antigen FROM antigen_family_table")
+# #
+# # # Filter out rows already present
+# # new_rows <<- dplyr::anti_join(antigen_family_table, existing,
+# #                              by = c("study_accesssion", "antigen"))
+# # for(i in seq_len(nrow(antigen_family_table))) {
+# #   row <- antigen_family_table[i, ]
+# #   sql <- "
+# #     INSERT INTO antigen_family_table (
+# #       study_accesssion,
+# #       antigen,
+# #       antigen_family,
+# #       standard_curve_concentration,
+# #       antigen_name,
+# #       virus_bacterial_strain
+# #     )
+# #     SELECT ?, ?, ?, ?, ?, ?
+# #     WHERE NOT EXISTS (
+# #       SELECT 1 FROM antigen_family_table
+# #       WHERE study_accesssion = ? AND antigen = ?
+# #     );
+# #   "
+# #  query <-  glue::glue_sql(sql, .con = con,
+# #                  row$study_accesssion, row$antigen, row$antigen_family,
+# #                  row$standard_curve_concentration, row$antigen_name,
+# #                  row$virus_bacterial_strain, row$study_accesssion, row$antigen
+# #   )
+# #
+# # }
+#
+#
+#
+# }
+# # plate_data_list2 <- plate_data_list
+# # # names(plate_data_list2) <- batch_metadata$plate_id
+# # names(plate_data_list2) <- head_list$plate_id
+# #
+# # plate_data_list2 <- imap(plate_data_list, ~ {
+# #    plate <- head_list[[.y]]$plate[1]
+# #    dplyr::mutate(.x, plate = plate)
+# #  })
+
+# sample_joined2 <- sample_joined
+# for (i in names(plate_data_list2)) {
+#   current_plate <- plate_data_list2[[i]]
+#
+#  sample_joined2 <- merge(sample_joined2, current_plate,
+#                          by.x = c("plate_number", "well"),
+#                          by.y = c("plate", "Well"),
+#                          all.x = T)
+# }
+
+#df <-do.call(rbind, plate_data_list2)
+
+#})
+
+
+
+
+
+
+
+
+
+
+# output$batch_plate_table <- renderRHandsontable({
+#   req(sample_dilution_plate_df())
+#   rhandsontable(sample_dilution_plate_df(), readOnly = FALSE) %>%
+#     hot_col("plate", readOnly = TRUE) %>%
+#     hot_col("sample_dilution_factor", type = "numeric", format = "0") %>%
+#     hot_cols(
+#       renderer = "
+#         function (instance, td, row, col, prop, value, cellProperties) {
+#           Handsontable.renderers.TextRenderer.apply(this, arguments);
+#
+#           if (prop === 'sample_dilution_factor') {
+#             var num = parseFloat(value);
+#
+#             if (isNaN(num) || value === null || value === '') {
+#               td.style.background = '#f8d7da';   // light red for missing
+#               td.style.color = 'black';
+#               td.title = 'Please enter a value';
+#             } else if (num < 1 || num > 100000) {
+#               td.style.background = '#f5c6cb';   // pink for out of range
+#               td.style.color = 'black';
+#               td.title = 'Value must be between 1 and 100000';
+#             } else {
+#               td.style.background = '#d4edda';   // light green for valid
+#               td.style.color = 'black';
+#               td.title = '';
+#             }
+#           }
+#         }
+#       "
+#     )
+# })
+
+# output$batch_plate_table <- renderRHandsontable({
+#   req(sample_dilution_plate_df())
+#   rhandsontable(sample_dilution_plate_df(), readOnly = FALSE) %>%
+#     hot_col("plate_name", readOnly = TRUE) %>%
+#     hot_col("sample_dilution_factor", type = "numeric") %>% # placeholder = "Enter a number 1–100000") %>%
+#     hot_cols(
+#       renderer = "
+#             function (instance, td, row, col, prop, value, cellProperties) {
+#               Handsontable.renderers.TextRenderer.apply(this, arguments);
+#               if (sample_dilution_factor === null || sample_dilution_factor === '' || sample_dilution_factor === 'NA') {
+#                 td.style.background = 'lightcoral';   // highlight empty cells
+#                 td.innerHTML = 'please fill in';
+#                 td.style.fontStyle = 'italic';
+#               }
+#             }"
+#     )
+# })
+#
+# observeEvent(input$batch_plate_table, {
+#   df <- hot_to_r(input$batch_plate_table)
+#   sample_dilution_plate_df(df)
+# })
+
+
+# ht <-  rhandsontable(df_long, rowHeaders = NULL) %>%
+#   hot_col("variable", readOnly = TRUE) %>%  # Disable editing keys
+#   hot_cols(
+#     renderer = "
+#             function (instance, td, row, col, prop, value, cellProperties) {
+#               Handsontable.renderers.TextRenderer.apply(this, arguments);
+#               if (value === null || value === '' || value === 'NA') {
+#                 td.style.background = 'lightcoral';   // highlight empty cells
+#                 td.innerHTML = 'please fill in';
+#                 td.style.fontStyle = 'italic';
+#               }
+#             }"
+#   )
+#
+# for (i in seq_len(nrow(df_long))) {
+#   if (df_long$variable[i] %in% c("file_name", "study_accession", "experiment_accession", "plate_id", "auth0_user", "workspace_id")) {
+#     ht <- hot_cell(ht, row = i, col = "value", readOnly = TRUE)
+#   }
+# }
+# output$file_summary <- renderPrint({
+#   files <<- batch_data_list()
+#   if (length(files) == 0) {
+#     cat("No files uploaded yet.")
+#   } else {
+#     cat("Uploaded files:\n")
+#     print(names(files))
+#     cat("\nEach is a data frame with these dimensions:\n")
+#     print(sapply(files, dim))
+#   }
+# })
+
+# observe({
+#   print(input$upload_layout_file)
+# })
+
+# output$layout_sheets <- renderPrint({
+#   cat("Loaded sheets:\n")
+#
+#   if (!is.null(layout_template_sheets$plate_id)) {
+#     cat("\n--- plate_id ---\n")
+#     print(dim(layout_template_sheets$plate_id))
+#     print(head(layout_template_sheets$plate_id, 3))
+#   }
+#
+#   if (!is.null(layout_template_sheets$plates_map)) {
+#     cat("\n--- plates_map ---\n")
+#     print(dim(layout_template_sheets$plates_map))
+#     print(head(layout_template_sheets$plates_map, 3))
+#   }
+#
+#   if (!is.null(layout_template_sheets$antigen_list)) {
+#     cat("\n--- antigen_list ---\n")
+#     print(dim(layout_template_sheets$antigen_list))
+#     print(head(layout_template_sheets$antigen_list, 3))
+#   }
+# })
+
+
+
+# observeEvent(all_sheets(), {
+#   plate_id_sheet <- all_sheets()[["plate_id"]]
+#   plates_map_sheet <- all_sheets()[["plates_map"]]
+#   antigen_list_sheet <- all_sheets()[["antigen_list"]]
+#
+#   # # Example: print row counts
+#   # cat("plate_id_sheet:", head(plate_id_sheet), "\n")
+#   # cat("plates_map_sheet:", head(plates_map_sheet), "\n")
+#
+# })
+

@@ -136,6 +136,22 @@ check_blank_description <- function(df) {
   }
 }
 
+# return type differs
+check_blank_description_batch <- function(df) {
+  df <- df[grepl("^B", df$Type) &
+             !grepl("Blank", df$Description) &
+             !grepl("^[A-Za-z0-9]+_\\d+$", df$Description),]
+  if(nrow(df) > 0) {
+    blank_message <- paste("Need to modify the Blank description column to be like [source]_[dilution_factor] e.g. PBS_1: Well",
+                           paste(df$Well, "| Value:", df$Description, collapse = ", ")
+    )
+    return(list(FALSE, blank_message))
+  } else {
+    return(list(TRUE))
+  }
+
+}
+
 
 # blank keyword can either be 'empty_well' or 'use_as_blank'
 check_blank_in_sample <- function(df, blank_keyword) {
@@ -194,10 +210,24 @@ check_agg_bead_column <- function(df) {
   }
 }
 
+check_batch_agg_bead_column <- function(df) {
+  required_cols <- c("% Agg Beads", "X..Agg.Beads", "%.Agg.Beads")
+  result <- any(required_cols %in% names(df))
+
+  if (!result) {
+    message <- "Ensure there is a % Agg Beads column after the last antigen."
+    return(list(result = result, message = message))
+  } else {
+    return(list(result = result, message = NULL))
+  }
+}
+
 check_bead_count <- function(df) {
 
 start_col <- which(names(df) == "Description")
-end_col <- which(names(df) == "X..Agg.Beads")
+possible_end_names <- c("% Agg Beads", "X..Agg.Beads", "%.Agg.Beads")
+end_col <- which(names(df) %in% possible_end_names)
+# end_col <- which(names(df) == "X..Agg.Beads")
 
 # 2. Subset the columns of interest
 subset_df <- df[, (start_col + 1):(end_col-1)]
@@ -236,6 +266,8 @@ if (all(match_matrix)) {
 }
 
 }
+
+
 
 # check_bead_count(plte_data_v)
 #
@@ -393,6 +425,47 @@ createValidateBadge <- function(is_validated) {
       style = "padding: 3px 8px; border-radius: 10px; margin-left: 10px;
                background-color: #6c757d; color: white;",
       tagList(tags$i(class = "fa fa-exclamation-circle"), "Plate Not Validated")
+    )
+  }
+}
+
+createValidateBatchBadge <- function(is_validated) {
+
+  if (is_validated) {
+    # Completed Upload badge (green)
+    span(
+      class = "badge",
+      style = "padding: 3px 8px; border-radius: 10px; margin-left: 10px;
+               background-color: #28a745; color: white;",
+      tagList(tags$i(class = "fa fa-check"), paste("Batch Validated", sep = ""))
+    )
+  } else {
+    # Not Uploaded badge (grey)
+    span(
+      class = "badge",
+      style = "padding: 3px 8px; border-radius: 10px; margin-left: 10px;
+               background-color: #6c757d; color: white;",
+      tagList(tags$i(class = "fa fa-exclamation-circle"), "Batch Not Validated")
+    )
+  }
+}
+createUploadedBatchBadge <- function(is_uploded) {
+
+  if (is_uploded) {
+    # Completed Upload badge (green)
+    span(
+      class = "badge",
+      style = "padding: 3px 8px; border-radius: 10px; margin-left: 10px;
+               background-color: #28a745; color: white;",
+      tagList(tags$i(class = "fa fa-check"), paste("Batch Uploaded", sep = ""))
+    )
+  } else {
+    # Not Uploaded badge (grey)
+    span(
+      class = "badge",
+      style = "padding: 3px 8px; border-radius: 10px; margin-left: 10px;
+               background-color: #6c757d; color: white;",
+      tagList(tags$i(class = "fa fa-exclamation-circle"), "Batch Not Uploaded")
     )
   }
 }

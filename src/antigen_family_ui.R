@@ -27,7 +27,8 @@ fetch_antigen_family_table <- function(study_accession) {
     result_df <- NULL
   } else {
     query <- paste0("
-      SELECT xmap_antigen_family_id, study_accession, antigen, antigen_family, standard_curve_concentration
+      SELECT xmap_antigen_family_id, study_accession, experiment_accession, antigen, antigen_family, standard_curve_concentration,
+      antigen_name, virus_bacterial_strain, antigen_source, catalog_number, l_asy_min_constraint, l_asy_max_constraint, l_asy_constraint_method
       FROM madi_results.xmap_antigen_family
       WHERE study_accession = '", study_accession, "'")
 

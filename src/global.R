@@ -91,6 +91,7 @@ library(urltools)
 
 library(shiny.destroy)
 
+
 # Enable progressr with shiny
 handlers(global = TRUE)
 handlers("shiny")
