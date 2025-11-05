@@ -130,10 +130,42 @@ observeEvent(input$antigen_family_table_cell_edit, {
     }, error = function(e) {
       showNotification(paste("Error updating l_asy_max_constraint:", e$message), type = "error")
     })
-  } else if (col_name == "l_asy_constraint_method") {
+   }
+  #else if (col_name == "l_asy_constraint_method") {
+  #   new_value <- as.character(new_value)
+  #   update_query <- "UPDATE madi_results.xmap_antigen_family
+  #                    SET l_asy_constraint_method = $1 WHERE xmap_antigen_family_id = $2"
+  #
+  #   tryCatch({
+  #     dbExecute(conn, update_query, params = list(new_value, row_id))
+  #     current_data$l_asy_constraint_method[row_num] <- new_value
+  #     antigen_families_rv(current_data)
+  #     showNotification("l_asy_constraint_method updated successfully", type = "message")
+  #   }, error = function(e) {
+  #     showNotification(paste("Error updating l_asy_constraint_method:", e$message), type = "error")
+  #   })
+  # }
+})
+
+observeEvent(input$antigen_family_dropdown_edit, {
+  info <- input$antigen_family_dropdown_edit
+ # info_1 <<- info
+  row_num <- info$row
+  col_num <- info$col
+  new_value <- info$value
+
+  current_data <- antigen_families_rv()
+  #current_data2 <<- current_data
+  col_name <- colnames(current_data)[col_num]
+  row_id <- current_data$xmap_antigen_family_id[row_num]
+  #
+  if (col_name == "l_asy_constraint_method") {
     new_value <- as.character(new_value)
-    update_query <- "UPDATE madi_results.xmap_antigen_family
-                     SET l_asy_constraint_method = $1 WHERE xmap_antigen_family_id = $2"
+    update_query <- "
+      UPDATE madi_results.xmap_antigen_family
+      SET l_asy_constraint_method = $1
+      WHERE xmap_antigen_family_id = $2
+    "
 
     tryCatch({
       dbExecute(conn, update_query, params = list(new_value, row_id))
@@ -143,9 +175,8 @@ observeEvent(input$antigen_family_table_cell_edit, {
     }, error = function(e) {
       showNotification(paste("Error updating l_asy_constraint_method:", e$message), type = "error")
     })
-  }
+   }
 })
-
 # observeEvent(input$antigen_family_table_cell_edit, {
 #   info <- input$antigen_family_table_cell_edit
 #   row_num <- info$row
@@ -463,15 +494,15 @@ render_study_parameters <- reactive({
               selection = 'none',
               class = 'cell-border stripe hover',  # Added styling classes
               callback = JS("
-    $(document).on('change', 'table select', function() {
-      var tbl = $('#antigen_family_table').DataTable();
+    $(document).on('change', '#antigen_family_table table select', function() {
+      var tbl = $('#antigen_family_table table').DataTable();
       var cell = tbl.cell($(this).closest('td'));
       var rowIndex = cell.index().row;
       var colIndex = cell.index().column;
       var value = $(this).val();
       Shiny.setInputValue('antigen_family_dropdown_edit', {
         row: rowIndex + 1,
-        col: colIndex + 1,
+        col: colIndex,
         value: value,
         rand: Math.random()
       });

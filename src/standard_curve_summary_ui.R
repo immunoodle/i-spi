@@ -279,6 +279,15 @@ observeEvent(list(
       standard_data_curve$selected_str <- paste0(standard_data_curve$study_accession, standard_data_curve$experiment_accession)
       standard_data_curve <- standard_data_curve[standard_data_curve$selected_str == paste0(selected_study, selected_experiment), ]
 
+      # filter antigen family table to the selected experiment if experiment_accession is not NA in antigen family table
+      #if (!any(is.na(antigen_families$experiment_accession))) {
+      # ant_family <<- antigen_families
+      # selected_experiment <<- selected_experiment
+      antigen_families$experiment_accession <- trimws(antigen_families$experiment_accession)
+      antigen_families <- antigen_families[antigen_families$experiment_accession == selected_experiment, ]
+      #}
+
+
       # Summarize std curve data data
       cat("View Standard Curve data plateid")
       print(table(standard_data_curve$plateid))
@@ -290,7 +299,7 @@ observeEvent(list(
       std_curve_data$subject_accession <- std_curve_data$patientid
 
       std_curve_data <- calculate_log_dilution(std_curve_data)
-      std_curve_data <- assign_antigen_families(standard_curve_study_data = std_curve_data, antigen_family_lookup = antigen_families )
+      std_curve_data <- assign_antigen_families(standard_curve_study_data = std_curve_data, antigen_family_lookup = antigen_families)
     }
 
     ## Load study configuration for the user

@@ -66,6 +66,82 @@ fetch_antigen_family_table <- function(study_accession) {
   return(result_df)
 }
 
+create_antigen_family_rows <- function(study, experiment) {
+  conn <- get_db_connection()
+
+  # Pull table
+  antigen_families <- DBI::dbGetQuery(conn, "
+    SELECT *
+    FROM madi_results.xmap_antigen_family
+  ")
+
+  # Force character to avoid factor matching issues
+  antigen_families$experiment_accession <- as.character(antigen_families$experiment_accession)
+  antigen_families$study_accession      <- as.character(antigen_families$study_accession)
+
+  # Template rows: study exists but experiment NULL to copy
+  template_rows <- antigen_families[
+    antigen_families$study_accession == study &
+      is.na(antigen_families$experiment_accession),
+  ]
+
+  if (nrow(template_rows) == 0) {
+    message(glue::glue(
+      "No template antigen family rows found for study {study}. Nothing to copy."
+    ))
+    return(invisible(NULL))
+  }
+
+  # check if study and experiment rows already exist
+  study_exp_rows <- antigen_families[
+    antigen_families$study_accession == study &
+      !is.na(antigen_families$experiment_accession) &
+      antigen_families$experiment_accession == experiment,
+  ]
+
+  if (nrow(study_exp_rows) > 0) {
+    message(glue::glue(
+      "Antigen family rows already exist for {study}:{experiment}. No action taken."
+    ))
+    return(invisible(NULL))
+  }
+
+  # Create new experiment rows
+  new_rows <- template_rows
+  new_rows$experiment_accession <- experiment
+
+  new_rows <- new_rows[ , !(names(new_rows) %in% "xmap_antigen_family_id")]
+
+  query <- glue::glue_sql("
+    SELECT *
+    FROM madi_results.xmap_antigen_family
+    WHERE study_accession = {study}
+      AND experiment_accession = {experiment}
+", .con = conn)
+
+  antigen_families_check_study_experiment <- DBI::dbGetQuery(conn, query)
+  if (nrow(antigen_families_check_study_experiment) == 0) {
+      # Insert into DB
+    DBI::dbAppendTable(
+      conn,
+      DBI::Id(schema = "madi_results", table = "xmap_antigen_family"),
+      new_rows
+    )
+
+      message(glue::glue(
+        "Created {nrow(new_rows)} antigen family rows for {study}:{experiment} from template."
+      ))
+
+      invisible(new_rows)
+
+  } else {
+    message(glue::glue(
+      "No antigen family rows for {study}:{experiment} from template."
+    ))
+  }
+}
+
+
 # The main rendering logic wrapped in a reactive expression
 render_antigen_family <- reactive({
   req(input$readxMap_study_accession)
