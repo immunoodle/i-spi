@@ -56,6 +56,93 @@ observeEvent(input$antigen_family_table_cell_edit, {
     }, error = function(e) {
       showNotification(paste("Error updating standard_curve_concentration:", e$message), type = "error")
     })
+  } else if (col_name == "antigen_name") {
+      new_value <- as.character(new_value)
+      update_query <- "UPDATE madi_results.xmap_antigen_family
+                     SET antigen_name = $1 WHERE xmap_antigen_family_id = $2"
+      tryCatch({
+        dbExecute(conn, update_query, params = list(new_value, row_id))
+        current_data$antigen_name[row_num] <- new_value
+        antigen_families_rv(current_data)
+        showNotification("antigen_name updated successfully", type = "message")
+      }, error = function(e) {
+        showNotification(paste("Error updating antigen_name:", e$message), type = "error")
+      })
+  } else if (col_name == "virus_bacterial_strain") {
+    new_value <- as.character(new_value)
+    update_query <- "UPDATE madi_results.xmap_antigen_family
+                     SET virus_bacterial_strain = $1 WHERE xmap_antigen_family_id = $2"
+    tryCatch({
+      dbExecute(conn, update_query, params = list(new_value, row_id))
+      current_data$virus_bacterial_strain[row_num] <- new_value
+      antigen_families_rv(current_data)
+      showNotification("virus_bacterial_strain updated successfully", type = "message")
+    }, error = function(e) {
+      showNotification(paste("Error updating virus_bacterial_strain:", e$message), type = "error")
+    })
+  } else if (col_name == "antigen_source") {
+    new_value <- as.character(new_value)
+    update_query <- "UPDATE madi_results.xmap_antigen_family
+                     SET antigen_source = $1 WHERE xmap_antigen_family_id = $2"
+    tryCatch({
+      dbExecute(conn, update_query, params = list(new_value, row_id))
+      current_data$antigen_source[row_num] <- new_value
+      antigen_families_rv(current_data)
+      showNotification("antigen_source updated successfully", type = "message")
+    }, error = function(e) {
+      showNotification(paste("Error updating antigen_source:", e$message), type = "error")
+    })
+  } else if (col_name == "catalog_number") {
+    new_value <- as.character(new_value)
+    update_query <- "UPDATE madi_results.xmap_antigen_family
+                     SET catalog_number = $1 WHERE xmap_antigen_family_id = $2"
+    tryCatch({
+      dbExecute(conn, update_query, params = list(new_value, row_id))
+      current_data$catalog_number[row_num] <- new_value
+      antigen_families_rv(current_data)
+      showNotification("catalog_number updated successfully", type = "message")
+    }, error = function(e) {
+      showNotification(paste("Error updating catalog_number:", e$message), type = "error")
+    })
+  } else if (col_name == "l_asy_min_constraint") {
+    new_value <- as.numeric(new_value)
+    update_query <- "UPDATE madi_results.xmap_antigen_family
+                     SET l_asy_min_constraint = $1 WHERE xmap_antigen_family_id = $2"
+
+    tryCatch({
+      dbExecute(conn, update_query, params = list(new_value, row_id))
+      current_data$l_asy_min_constraint[row_num] <- new_value
+      antigen_families_rv(current_data)
+      showNotification("l_asy_min_constraint updated successfully", type = "message")
+    }, error = function(e) {
+      showNotification(paste("Error updating l_asy_min_constraint:", e$message), type = "error")
+    })
+  } else if (col_name == "l_asy_max_constraint") {
+    new_value <- as.numeric(new_value)
+    update_query <- "UPDATE madi_results.xmap_antigen_family
+                     SET l_asy_max_constraint = $1 WHERE xmap_antigen_family_id = $2"
+
+    tryCatch({
+      dbExecute(conn, update_query, params = list(new_value, row_id))
+      current_data$l_asy_max_constraint[row_num] <- new_value
+      antigen_families_rv(current_data)
+      showNotification("l_asy_max_constraint updated successfully", type = "message")
+    }, error = function(e) {
+      showNotification(paste("Error updating l_asy_max_constraint:", e$message), type = "error")
+    })
+  } else if (col_name == "l_asy_constraint_method") {
+    new_value <- as.character(new_value)
+    update_query <- "UPDATE madi_results.xmap_antigen_family
+                     SET l_asy_constraint_method = $1 WHERE xmap_antigen_family_id = $2"
+
+    tryCatch({
+      dbExecute(conn, update_query, params = list(new_value, row_id))
+      current_data$l_asy_constraint_method[row_num] <- new_value
+      antigen_families_rv(current_data)
+      showNotification("l_asy_constraint_method updated successfully", type = "message")
+    }, error = function(e) {
+      showNotification(paste("Error updating l_asy_constraint_method:", e$message), type = "error")
+    })
   }
 })
 
@@ -348,15 +435,48 @@ render_study_parameters <- reactive({
                 responsive = TRUE, # Added this
                 order = list(list(0, 'asc')),
                 columnDefs = list(
-                  list(className = 'dt-center', targets = '_all')
+                  list(className = 'dt-center', targets = '_all'),
+                  list(
+                    targets = which(colnames(antigen_families_rv()) == "l_asy_constraint_method"),
+                    render = JS("
+                                  function(data, type, row, meta) {
+                                    var opts = ['unconstrained','user_defined','range_of_blanks', 'geometric_mean_of_blanks'];
+                                    if (type === 'display') {
+                                      var select = '<select>';
+                                      for (var i = 0; i < opts.length; i++) {
+                                        var selected = (data == opts[i]) ? 'selected' : '';
+                                        select += '<option value=\"' + opts[i] + '\" ' + selected + '>' + opts[i] + '</option>';
+                                      }
+                                      select += '</select>';
+                                      return select;
+                                    }
+                                    return data;
+                                  }
+                                ")
+                    )
                 )
               ),
               editable = list(
                 target = 'cell',
-                disable = list(columns = c(0:3))
+                disable = list(columns = c(0:4))
               ),
               selection = 'none',
-              class = 'cell-border stripe hover'  # Added styling classes
+              class = 'cell-border stripe hover',  # Added styling classes
+              callback = JS("
+    $(document).on('change', 'table select', function() {
+      var tbl = $('#antigen_family_table').DataTable();
+      var cell = tbl.cell($(this).closest('td'));
+      var rowIndex = cell.index().row;
+      var colIndex = cell.index().column;
+      var value = $(this).val();
+      Shiny.setInputValue('antigen_family_dropdown_edit', {
+        row: rowIndex + 1,
+        col: colIndex + 1,
+        value: value,
+        rand: Math.random()
+      });
+    });
+  ")
     ) %>%
       formatStyle(columns = 1:ncol(antigen_families_rv()),  # Added column styling
                   backgroundColor = 'white',
