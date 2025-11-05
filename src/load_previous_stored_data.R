@@ -415,6 +415,9 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
       stored_plates_data$stored_samplew <- wide_sample
     }
   }
+  # Update the experiment in antigen family
+  create_antigen_family_rows(input$readxMap_study_accession, input$readxMap_experiment_accession)
+
   remove_modal_progress(session = getDefaultReactiveDomain())
 
   updateTabsetPanel(session, inputId = "inLoadedData", selected = "Data")

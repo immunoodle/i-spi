@@ -559,8 +559,8 @@ output$dynamic_data_ui <- renderUI({
         title = "Plates",
         DT::dataTableOutput("stored_header"),
         downloadButton("download_stored_header"),
-        uiOutput("header_actions"),
-        uiOutput("split_button_ui")
+        uiOutput("header_actions")
+       # uiOutput("split_button_ui")
       ),
       tabPanel(
         title = "Standards",
