@@ -457,6 +457,11 @@ standardCurveFittingServer <- function(id, selected_study, selected_experiment, 
         if (apply_prozone) {
           filtered_data <- correct_prozone(filtered_data, prop_diff = 0.1, dil_scale = 2)
         }
+
+
+        standard_curve_plate <<- filtered_data
+        blank_data_plate <<- buffer_data_sc[buffer_data_sc$plateid == plate_val & buffer_data_sc$antigen == antigen_val,]
+
         ## Take log MFI if selected in configuration
         if (is_log_mfi) {
           filtered_data$mfi <- log10(filtered_data$mfi)
@@ -599,6 +604,13 @@ standardCurveFittingServer <- function(id, selected_study, selected_experiment, 
           return(NULL)
 
         } else {
+          lower_asympote_constraints <- obtain_lower_constraint(dat = filtered_data_val,
+                                  antigen = antigen_val,
+                                  study_accession = selected_study(),
+                                  experiment_accession = selected_experiment(),
+                                  plate = plate_val,
+                                  buffer_data = buffer_data_sc,
+                                  is_log_mfi_axis = is_log_mfi)
          # filtered_data_val_view <<- filtered_data_val
           mod <- tryCatch({
             #set seed for reproducibility
@@ -612,6 +624,7 @@ standardCurveFittingServer <- function(id, selected_study, selected_experiment, 
               source = source_rv(),#input$sourceSelection, was source_rv()
               bkg =  bkg_method,
               is_log_mfi_axis = is_log_mfi,
+              lower_asympote_constraints = lower_asympote_constraints,
               g_value = 0.5
             )
           }, error = function(e){
@@ -720,7 +733,6 @@ standardCurveFittingServer <- function(id, selected_study, selected_experiment, 
         sample_data_filtered_v <- sample_data_filtered
         # sample_data_val_filtered <- sample_data[sample_data$antigen == antigen &
         #                                           sample_data$plateid == plate,]
-
 
 
         sample_data_au <- backsub_true_dilution_sample(fitted_model = model(), sample_data = sample_data_filtered, dat = filtered_data_rv())[[1]]

@@ -575,7 +575,7 @@ d2SSexp <- function(x, scal, xmid, l_asy) {
 
 # Function to compute robust 5 parameter nls model
 # bkg is the blank_method
-compute_nls_5 <- function(dat, g_value, bkg, is_log_mfi_axis){
+compute_nls_5 <- function(dat, g_value, bkg, is_log_mfi_axis, lower_asympote_constraints){
   init1 <- getInitial(mfi ~ SSlogis5(log_dilution, l_asy, r_asy,xmid, scal, g_value),
                       data = dat)
   cat("Init1 Parameters \n")
@@ -594,11 +594,19 @@ compute_nls_5 <- function(dat, g_value, bkg, is_log_mfi_axis){
   )
 
   lower_constraints <- list(
-    l_asy = 0,
+    l_asy = lower_asympote_constraints$l_asy_min_constraint,
     r_asy = 10,
-    xmid = -5,
+    xmid = -7,
     scal = 0.01,
     g = 0.1
+  )
+
+  upper_constraints <- list(
+    l_asy = lower_asympote_constraints$l_asy_max_constraint,
+    r_asy = 2 * max(dat$mfi, na.rm = T),
+    xmid = -0.1,
+    scal = 3,
+    g = 80
   )
 
   print(manual_init)
@@ -632,7 +640,7 @@ compute_nls_5 <- function(dat, g_value, bkg, is_log_mfi_axis){
                   data = dat,
                   #tart = c(init1,g = init_g),  # Do I need starting estimates for each parameter what values make sense?
                   lower = lower_constraints, # scale 0.18
-                  upper = c(Inf, Inf, Inf, Inf, Inf), # largest xmid is 11 in dataset scale 1.58
+                  upper = upper_constraints,#c(Inf, Inf, Inf, Inf, Inf), # largest xmid is 11 in dataset scale 1.58
                   start = manual_init,
                   algorithm = "port",
                   control = nls.control(maxiter = 500, minFactor=1/2048, warnOnly=TRUE)
@@ -667,10 +675,10 @@ compute_nls_5 <- function(dat, g_value, bkg, is_log_mfi_axis){
   #fit <- NULL
   tryCatch({
     print("in catch block 5 parameters")
-    nls_mfi <- max(dat$mfi)
+   # nls_mfi <- max(dat$mfi)
     # original
-    lower_c <- c(10,0,-5, 0.01,0.1)
-    upper_c <- c(2*nls_mfi, nls_mfi, 15, 2, 2)
+    # lower_c <- c(10,0,-5, 0.01,0.1)
+    # upper_c <- c(2*nls_mfi, nls_mfi, 15, 2, 2)
 
     fit <- robustbase::nlrob(mfi ~ r_asy + ((l_asy-r_asy)/(1 + exp((log_dilution-xmid)/scal))^g), # assign global for debug
                              data = dat
@@ -682,7 +690,7 @@ compute_nls_5 <- function(dat, g_value, bkg, is_log_mfi_axis){
                              , doCov = TRUE
                              # , weights = welsch_w
                              ,lower = lower_constraints
-                             ,upper = upper_c
+                             ,upper = upper_constraints
                              # , cntrl = c(nlrob.control("CM", psi = "welsh", tuning.chi = 2.11))
                              , tol = 1e-06
                              , control = nls.control(maxiter = 500,
@@ -981,7 +989,7 @@ compute_nls_5 <- function(dat, g_value, bkg, is_log_mfi_axis){
 
 
 # function to compute robust 4 parameter nls model
-compute_nls_4 <- function(dat, bkg, is_log_mfi_axis) {
+compute_nls_4 <- function(dat, bkg, is_log_mfi_axis, lower_asympote_constraints) {
   cat("starting nls 4 compute")
   init1 <- tryCatch({
     getInitial(mfi ~ SSfpl(log_dilution, l_asy, r_asy, xmid, scal),
@@ -1010,19 +1018,122 @@ compute_nls_4 <- function(dat, bkg, is_log_mfi_axis) {
     xmid = init1["xmid"],
     scal = init1["scal"]
   )
+
   lower_constraints <- list(
-    l_asy = 0,
+    l_asy = lower_asympote_constraints$l_asy_min_constraint,
     r_asy = 10,
     xmid = -5,
     scal = 0.01
   )
+
+  upper_constraints <- list(
+    l_asy = lower_asympote_constraints$l_asy_max_constraint,
+    r_asy = 2 * max(dat$mfi),
+    xmid = 0,
+    scal = 3
+   # c(2 *nls_mfi, 2 * nls_mfi, Inf, Inf)
+  )
+  # lower_constraints <- list(
+  #   l_asy = 0,
+  #   r_asy = 10,
+  #   xmid = -5,
+  #   scal = 0.01
+  # )
   #  c(r_asy = 10,l_asy = 0, xmid = -5, scal =  0.01)
   #
-  cat("Before initfit in compute 4 parameter")
+  ## check to see if the lower_asymptotie is constrained
+  is_l_asy_fixed <- lower_asympote_constraints$l_asy_min_constraint ==  lower_asympote_constraints$l_asy_max_constraint
+  if (is_l_asy_fixed) {
+    fixed_l_asy <- lower_asympote_constraints$l_asy_min_constraint
+    message("Lower asymtote is fixed at", fixed_l_asy)
+    ## fixed initial fit
+    initfit_fixed <- tryCatch({
+        nls(mfi ~ r_asy + ((fixed_l_asy - r_asy) /(1 + exp((log_dilution - xmid)/scal))),
+            data = dat,
+            start = list(
+              r_asy = manual_4_par_init$r_asy,
+              xmid = manual_4_par_init$xmid,
+              scal = manual_4_par_init$scal
+            ),
+            lower = list(
+              r_asy = lower_constraints$r_asy,
+              xmid = lower_constraints$xmid,
+              scal = lower_constraints$scal
+            ),
+            upper = list(
+              r_asy = upper_constraints$r_asy,
+              xmid = upper_constraints$xmid,
+              scal = upper_constraints$scal
+            ),
+            algorithm = "port",
+            control = nls.control(maxiter = 500, minFactor=1/2048, warnOnly=TRUE)
+            )
+    }, error = function(e) {
+      cat("Initfit 4 paramater (fixed lower asymptote):", conditionMessage(e), "\n")
+      NULL
+    })
+
+    if (is.null(initfit_fixed)) {
+      cat("Initial fit failed (fixed lower asymptote), cannot proceed to robust fit.\n")
+      return(NULL)
+    } else {
+      fixed_l_asy <- lower_asympote_constraints$l_asy_min_constraint
+      # clean up coeficient names as a result of port algorithm
+      init_fixed_coefs <- coef(initfit_fixed)
+      names(init_fixed_coefs) <- sub(".*\\.", "", names(init_fixed_coefs))
+      initfit_fixed_vals <- as.list(init_fixed_coefs) #(coef(initfit_fixed))
+
+      # get formula with fixed value
+      form_fixed <- substitute(
+        mfi ~ r_asy + ((fixed_val - r_asy) / (1 + exp((log_dilution - xmid) / scal))),
+        list(fixed_val = fixed_l_asy)
+      )
+
+      fit <- tryCatch({
+            print("Attempting 4-parameter robust fit (fixed_lower_asympote)")
+            robustbase::nlrob(
+              formula = form_fixed,# mfi ~ r_asy + ((I(fixed_l_asy) - r_asy) / (1 + exp((log_dilution - xmid) / scal))),
+              data = dat,
+              method = "M",
+              algorithm = "port",
+              start = initfit_fixed_vals,
+              na.action = na.exclude,
+              maxit = 500,
+              doCov = TRUE,
+              lower = list(
+                r_asy = lower_constraints$r_asy,
+                xmid = lower_constraints$xmid,
+                scal = lower_constraints$scal
+              ),
+              upper = list(
+                r_asy = upper_constraints$r_asy,
+                xmid = upper_constraints$xmid,
+                scal = upper_constraints$scal
+              ),
+              tol = 1e-06,
+              control = nls.control(
+                maxiter = 500,
+                tol = 1e-06,
+                minFactor = 1 / 2048,
+                printEval = FALSE,
+                warnOnly = TRUE,
+                scaleOffset = 0,
+                nDcentral = FALSE
+              )
+            )
+          }, error = function(e) {
+            cat("ERROR Robust fit failed with fixed lower asymptote:", conditionMessage(e), "\n")
+            NULL  # Return NULL if an error occurs
+          })
+    }
+  } else {
+  cat("Before initfit in compute 4 parameter ( lower asymptote, not fixed, but constrained)")
   #fit a 4 parameter model
   initfit <- tryCatch({nls(mfi ~ r_asy + ((l_asy-r_asy)/(1 + exp((log_dilution-xmid)/scal))),
                            data = dat,
                            start = manual_4_par_init,
+                           lower = lower_constraints,
+                           upper = upper_constraints,
                            control = nls.control(maxiter = 500, minFactor=1/2048, warnOnly=TRUE))}
                       ,
                       error = function(e){
@@ -1064,7 +1175,7 @@ compute_nls_4 <- function(dat, bkg, is_log_mfi_axis) {
                     data = dat,
                     #tart = c(init1,g = init_g),  # Do I need starting estimates for each parameter what values make sense?
                     lower = lower_constraints, # scale 0.18
-                    upper = c(2 *nls_mfi, 2 * nls_mfi, Inf, Inf), # largest xmid is 11 in dataset scale 1.58
+                    upper = upper_constraints,#c(2 *nls_mfi, 2 * nls_mfi, Inf, Inf), # largest xmid is 11 in dataset scale 1.58
                     start = manual_4_par_init,
                     algorithm = "port",
                     control = nls.control(maxiter = 500, minFactor=1/2048, warnOnly=TRUE)
@@ -1110,9 +1221,9 @@ compute_nls_4 <- function(dat, bkg, is_log_mfi_axis) {
     fit <- tryCatch({
       print("Attempting 4-parameter fit")
 
-      nls_mfi <- max(dat$mfi)
+    #  nls_mfi <- max(dat$mfi)
       # lower_c_4p <- c(10, 0, -5, 0.01)
-      upper_c_4p <- c(2 *nls_mfi, 2 *nls_mfi, Inf, Inf)
+     # upper_c_4p <- c(2 *nls_mfi, 2 *nls_mfi, Inf, Inf)
 
       # check if initial constraints are violatted
       # if (manual_4_par_init$l_asy < lower_constraints$l_asy || manual_4_par_init$l_asy > upper_c_4p$l_asy ||
@@ -1133,7 +1244,7 @@ compute_nls_4 <- function(dat, bkg, is_log_mfi_axis) {
         maxit = 500,
         doCov = TRUE,
         lower = lower_constraints,
-        upper = upper_c_4p,
+        upper = upper_constraints,
         tol = 1e-06,
         control = nls.control(
           maxiter = 500,
@@ -1172,6 +1283,7 @@ compute_nls_4 <- function(dat, bkg, is_log_mfi_axis) {
     #   )
   }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
 
+  }
   # print(fit)
   # print(summary(fit))
   # print(summary(fit)$coef)
@@ -1192,8 +1304,16 @@ compute_nls_4 <- function(dat, bkg, is_log_mfi_axis) {
   }
 
   r_asy_std_error <- summary_robust[summary_robust$term == "r_asy",]$std.error
-  l_asy_est <- summary_robust[summary_robust$term == "l_asy",]$estimate
+ # l_asy_est <- summary_robust[summary_robust$term == "l_asy",]$estimate
   r_asy_est <- summary_robust[summary_robust$term == "r_asy",]$estimate
+
+  # detect if it is fixed and use appropriate estimate
+  if(is_l_asy_fixed) {
+    l_asy_est <- lower_asympote_constraints$l_asy_min_constraint
+  } else {
+    l_asy_est <- summary_robust[summary_robust$term == "l_asy",]$estimate
+
+  }
   # if (is.na(r_asy_std_error)) {
   #   return(NULL)
   # } else
@@ -1219,8 +1339,35 @@ compute_nls_4 <- function(dat, bkg, is_log_mfi_axis) {
 
     cat("RENAMED Coefficents")
 
+
+
     # Extract parameter estimates
     # set the names of the parameters in
+    if (is_l_asy_fixed) {
+      message("Detected fixed lower asymptote model")
+      params <- fit$m$getPars()
+      l_asy <- c(as.numeric(fixed_l_asy)) # use the fixed constant
+      r_asy <- c(as.numeric(fit$coefficients["r_asy"]))
+      x_mid <- c(as.numeric(fit$coefficients["xmid"]))
+      scale <- c(as.numeric(fit$coefficients["scal"]))
+      sigma <- NA_real_ #g
+
+
+      cat("R_asy beefore limits", r_asy, "\n")
+      cat("l_asy before limits", l_asy, "\n")
+      cat("x_mid before limits", x_mid, "\n")
+      cat("scal before limits", scale, "\n")
+      cat("g before limits", sigma, "\n")
+
+      # Coefficients
+      coef_a <- fixed_l_asy #as.numeric(fit$m$getPars()[1]) # left asymptote
+      cat("coef a", coef_a)
+      coef_d <- as.numeric(fit$m$getPars()[2]) # right asymptote
+      cat("coef_d", coef_d)
+      coef_k <- 4.6805  # ask
+
+    } else {
+
     params <- fit$m$getPars()
     names(params) <- c("l_asy", "r_asy", "xmid", "scal")
     fit$m$setPars(params)
@@ -1243,6 +1390,7 @@ compute_nls_4 <- function(dat, bkg, is_log_mfi_axis) {
     cat("scal before limits", scale, "\n")
     cat("g before limits", sigma, "\n")
 
+
     params <- fit$m$getPars()
     cat("params", params)
     print(class(params))
@@ -1253,6 +1401,7 @@ compute_nls_4 <- function(dat, bkg, is_log_mfi_axis) {
     cat("coef_d", coef_d)
     coef_k <- 4.6805  # ask
 
+    }
     # if (is_log_mfi_axis) {
     #   bendlower <- round(((coef_a - coef_d) / (1 + (1/coef_k))) + coef_d,3)
     #   bendupper <- round(((coef_a - coef_d) / (1 + coef_k)) + coef_d,3)
@@ -1469,6 +1618,23 @@ compute_nls_4 <- function(dat, bkg, is_log_mfi_axis) {
     print(names(fit_tab))
     print("after fit_tab is created")
 
+    if(is_l_asy_fixed) {
+    # fit_tab_fixed <<- fit_tab
+     fit_tab$term <- c("l_asy", fit_tab$term)
+     fit_tab$estimate <- c(lower_asympote_constraints$l_asy_min_constraint, fit_tab$estimate)
+     fit_tab$std_error <- c(0,fit_tab$std_error)
+     fit_tab$p_value <- c(NA, fit_tab$p_value)
+     fit_tab$study_accession <- c(unique(fit_tab$study_accession), fit_tab$study_accession)
+     fit_tab$experiment_accession <- c(unique(fit_tab$experiment_accession), fit_tab$experiment_accession)
+     fit_tab$antigen <- c(unique(fit_tab$antigen), fit_tab$antigen)
+     fit_tab$plateid <- c(unique(fit_tab$plateid), fit_tab$plateid)
+
+     # extend significance vector, preserving the legend
+     fit_tab$signif <- c("-", fit_tab$signif)
+     attr(fit_tab$signif, "legend") <- "0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1"
+
+    }
+
     # names(dat)[names(dat) == "n"] <- "nbeads" # n beads fluorescing antibody_n
     #
     # # dat$plate_id <- fit_tab$plateid # fittab instead of dat BEFORE with no multiple plates.
@@ -1496,7 +1662,11 @@ compute_nls_4 <- function(dat, bkg, is_log_mfi_axis) {
 
 
 ## Function to compute power four parameter function
-compute_power_4 <- function(dat, bkg, is_log_mfi_axis) {
+compute_power_4 <- function(dat, bkg, is_log_mfi_axis, lower_asympote_constraints) {
+  bkg <<- bkg
+  is_log_mfi_axis <<- is_log_mfi_axis
+  dat <<- dat
+  lower_asympote_constraints_in <<- lower_asympote_constraints
 cat("\ncalculating power four param\n")
   # start_vals <<- list(
   #   l_asy = 0,       # lower asymptote
@@ -1520,6 +1690,42 @@ cat("\ncalculating power four param\n")
 
   #start_vals_v <- start_vals
   dat <- dat[, !duplicated(names(dat))]
+
+  is_l_asy_fixed <- lower_asympote_constraints$l_asy_min_constraint == lower_asympote_constraints$l_asy_max_constraint
+  if (is_l_asy_fixed) {
+    fixed_l_asy <- lower_asympote_constraints$l_asy_min_constraint
+    message("Four Parameter Chapman Richards: Fixing l_asy to ", fixed_l_asy)
+    # start_lower_fixed <- start_lower[names(start_lower) != "l_asy"]
+    # start_upper_fixed <- start_upper[names(start_upper) != "l_asy"]
+
+    model_formula_fixed <- substitute(
+      mfi ~ r_asy + ((fixed_value - r_asy) / (1 + (log_dilution / xmid)^scal)),
+      list(fixed_value = fixed_l_asy)
+    )
+
+    fit <<- tryCatch({
+      nls.multstart::nls_multstart(
+        model_formula_fixed, #mfi ~ r_asy + (I(fixed_l_asy) - r_asy) / (1 + (log_dilution / xmid)^scal),
+        data = dat,
+        iter = 10,
+        start_lower = unlist(start_lower[names(start_lower) != "l_asy"]),
+        start_upper = unlist(start_upper[names(start_lower) != "l_asy"]),
+        supp_errors = "Y",
+        convergence_count = FALSE,
+        control = list(maxiter = 1000)
+        # control =  minpack.lm::nls.lm.control(lower = c(l_asy = lower_asympote_constraints$l_asy_min_constraint),
+        #                                       upper = c(l_asy = lower_asympote_constraints$l_asy_max_constraint),
+        #                                       maxiter = 1000)# was list(maxiter = 1000)
+      )
+
+    },
+    error = function(e) {
+      message("Error in fixed-l_asy nls_multstart: ", e$message)
+      NULL  # Return NULL on error
+    })
+
+  } else {
+    message("Four Paramater Power: Unfixed lower asymptote")
   # dat_v <<- dat
   # bkg_v <<- bkg
   # is_log_mfi_axis_v <<- is_log_mfi_axis
@@ -1544,15 +1750,20 @@ cat("\ncalculating power four param\n")
                supp_errors = "Y",
                convergence_count = FALSE,
                control = list(maxiter = 1000)
+               # control =  minpack.lm::nls.lm.control(lower = c(l_asy = lower_asympote_constraints$l_asy_min_constraint),
+               #                          upper = c(l_asy = lower_asympote_constraints$l_asy_max_constraint),
+               #                          maxiter = 1000)# was list(maxiter = 1000)
         )
 
 
 
     },
     error = function(e) {
-      message("Error in nlsLM: ", e$message)
+      message("Error in nls_multstart (l_asy not fixed): ", e$message)
       NULL  # Return NULL on error
     })
+
+  }
 
   # if (!is.null(fit)) {
   #   fit <- minpack.lm::nlsLM(
@@ -1567,8 +1778,18 @@ cat("\ncalculating power four param\n")
   #              control = nls.lm.control(maxiter = 1000))
 #fit_v <<- fit
     if (!is.null(fit)) {
-     glance_fit <-  nlsLM_glance(model = fit, data = dat, bkg = bkg, is_log_mfi_axis = is_log_mfi_axis)
-     fit_tab <- tidy.nlsLM(model = fit, dat = dat)
+      # account for fixed l_asy
+      if (is_l_asy_fixed) {
+        fixed_l_asy <- lower_asympote_constraints$l_asy_min_constraint
+        glance_fit <-  nlsLM_glance(model = fit, data = dat, bkg = bkg, is_log_mfi_axis = is_log_mfi_axis, fixed_l_asy = fixed_l_asy)
+        fit_tab <- tidy.nlsLM(model = fit, dat = dat, fixed_l_asy = fixed_l_asy)
+      } else {
+        glance_fit <-  nlsLM_glance(model = fit, data = dat, bkg = bkg, is_log_mfi_axis = is_log_mfi_axis)
+        fit_tab <- tidy.nlsLM(model = fit, dat = dat)
+
+      }
+    # glance_fit <-  nlsLM_glance(model = fit, data = dat, bkg = bkg, is_log_mfi_axis = is_log_mfi_axis)
+    # fit_tab <- tidy.nlsLM(model = fit, dat = dat)
 
 
     # glance_fit_v <<- glance_fit
@@ -1606,7 +1827,14 @@ cat("\ncalculating power four param\n")
      coef_d <- as.data.frame(summary(fit)$coefficients)["r_asy", "Estimate"]
 
      pred <- nlstools::confint2(fit)
-     llod <- pred["l_asy", "97.5 %"]
+     if (is_l_asy_fixed) {
+       critical_value <- qt(0.975, df = nrow(dat) - 1)
+       margin_of_error <- critical_value * lower_asympote_constraints$std_error_blank
+       llod <- fixed_l_asy + margin_of_error
+     } else {
+       llod <- pred["l_asy", "97.5 %"]
+     }
+
 
      # llod_pred <- predictNLS(fit, newdata = data.frame(log_dilution = min(dat$log_dilution) * 1.1),
      #                         interval = "confidence")
@@ -1634,7 +1862,9 @@ cat("\ncalculating power four param\n")
      #                         interval = "confidence")
      #
      # ulod <- ulod_pred$summary$`Prop.2.5%`
-     ulod <- pred["l_asy", "2.5 %"]
+       ulod <- pred["r_asy", "2.5 %"]
+
+     # ulod <- pred["l_asy", "2.5 %"]
 
      # in summary this occurs
      if (is.nan(ulod)) {
@@ -1675,7 +1905,7 @@ cat("\ncalculating power four param\n")
     }
 }
 
-nlsLM_glance <- function(model, data, bkg, is_log_mfi_axis) {
+nlsLM_glance <- function(model, data, bkg, is_log_mfi_axis, fixed_l_asy = NA) {
 
   s <- summary(model)
 
@@ -1685,7 +1915,10 @@ nlsLM_glance <- function(model, data, bkg, is_log_mfi_axis) {
   # Named vector to data frame row
   coef_df <- as.data.frame(t(coefs[, "Estimate"]))
  # names(coef_df) <- paste0("param_", names(coef_df))
-
+  # if fixed l_asy pass in to coeficients
+  if (!("l_asy" %in% names(coef_df)) && !is.na(fixed_l_asy)) {
+    coef_df$l_asy <- fixed_l_asy
+  }
   # Residual stats
   sigma <- s$sigma
   df_resid <- s$df[2]
@@ -1746,7 +1979,7 @@ nlsLM_glance <- function(model, data, bkg, is_log_mfi_axis) {
  return(glance_df)
 }
 
-tidy.nlsLM <- function(model, dat) {
+tidy.nlsLM <- function(model, dat, fixed_l_asy = NA) {
   s <- summary(model)
   out <- as.data.frame(s$coefficients)
   tidy_df <- tibble::tibble(
@@ -1768,6 +2001,23 @@ tidy.nlsLM <- function(model, dat) {
   # rename standard error column And p-value column
   names(tidy_df)[names(tidy_df) == "std.error"] <- "std_error"
   names(tidy_df)[names(tidy_df) == "p.value"] <- "p_value"
+
+  if ((!("l_asy" %in% rownames(out))) && !is.na(fixed_l_asy)){
+    l_asy_tidy <- tibble::tibble(
+      term = "l_asy",
+      estimate = fixed_l_asy,
+      statistic = NA_real_,
+      std_error = 0,
+      p_value = NA_real_,
+      signif = "-",
+      study_accession = unique(dat$study_accession),
+      experiment_accession = unique(dat$experiment_accession),
+      antigen = unique(dat$antigen),
+      plateid = unique(dat$plateid),
+      source = unique(dat$source)
+    )
+    tidy_df <- rbind(l_asy_tidy, tidy_df)
+  }
 
   return(tidy_df)
 }
@@ -2119,8 +2369,1381 @@ predict_log10_dilution_fraction <- function(log10_mfi_obs, log_dilution_vals, pr
   return(approx_x)
 }
 
-# Compute 5/4 Parameter models
-compute_robust_curves_5_param <- function(dat, antigen, plate = "all", study_accession, experiment_accession, source, bkg, is_log_mfi_axis, g_value = 1){
+# This function returns the lower and upper constraints for an antigen given its method
+# methods are  ['default','user_defined','range_of_blanks', 'geometric_mean_of_blanks']
+### The Standard Curve MFI is already logged transformed but the blanks are not
+obtain_lower_constraint <- function(dat, antigen, study_accession, experiment_accession, plate, buffer_data, is_log_mfi_axis) {
+  dat_v <<- dat
+  #buffer_data_constraint <<- buffer_data
+  #plate <<- plate
+  query <- glue("
+  SELECT
+    xmap_antigen_family_id,
+    study_accession,
+    experiment_accession,
+    antigen,
+    l_asy_min_constraint,
+    l_asy_max_constraint,
+    l_asy_constraint_method,
+    standard_curve_concentration
+  FROM madi_results.xmap_antigen_family
+  WHERE study_accession = '{study_accession}'
+  AND experiment_accession = '{experiment_accession}'
+  AND antigen = '{antigen}';
+")
+  antigen_constraints <- dbGetQuery(conn, query)
+  antigen_constraints$l_asy_constraint_method <- trimws(antigen_constraints$l_asy_constraint_method)
+
+  buffer_data_plate <- buffer_data[buffer_data$plateid == plate & buffer_data$antigen == antigen,]
+  if (is_log_mfi_axis) {
+    se_blank_mfi <- sd(log10(buffer_data_plate$mfi), na.rm = TRUE) / sqrt(sum(!is.na(log10(buffer_data_plate$mfi))))
+  } else {
+    se_blank_mfi <- sd(buffer_data_plate$mfi, na.rm = TRUE) / sqrt(sum(!is.na(buffer_data_plate$mfi)))
+  }
+
+  if (antigen_constraints$l_asy_constraint_method == 'user_defined') {
+       l_asy_constraints <- list(
+        l_asy_min_constraint = antigen_constraints$l_asy_min_constraint,
+        l_asy_max_constraint = antigen_constraints$l_asy_max_constraint,
+        l_asy_constraint_method = antigen_constraints$l_asy_constraint_method,
+        std_error_blank = se_blank_mfi,
+        standard_curve_concentration =  antigen_constraints$standard_curve_concentration
+      )
+  } else if (!(antigen_constraints$l_asy_constraint_method %in% c('default','user_defined'))) {
+    # buffer_data <<- fetch_db_buffer(study_accession, experiment_accession)
+    #buffer_data_plate <- buffer_data[buffer_data$plateid == plate & buffer_data$antigen == antigen,]
+      if (antigen_constraints$l_asy_constraint_method == 'range_of_blanks') {
+        l_asy_constraints <- list(
+          antigen = antigen,
+          l_asy_min_constraint = min(buffer_data_plate$mfi),
+          l_asy_max_constraint = max(buffer_data_plate$mfi),
+          l_asy_constraint_method = antigen_constraints$l_asy_constraint_method,
+          std_error_blank =  se_blank_mfi,
+          standard_curve_concentration =  antigen_constraints$standard_curve_concentration
+        )
+      } else if (antigen_constraints$l_asy_constraint_method == 'geometric_mean_of_blanks') {
+        if (is_log_mfi_axis) {
+          geometric_mean <- mean(log10(buffer_data_plate$mfi), na.rm = TRUE)
+        } else {
+          geometric_mean <- exp(mean(log(buffer_data_plate$mfi), na.rm = TRUE))
+        }
+        #geometric_mean <- exp(mean(log(buffer_data_plate$mfi), na.rm = TRUE))
+        l_asy_constraints <- list(
+          antigen = antigen,
+          l_asy_min_constraint = geometric_mean,
+          l_asy_max_constraint = geometric_mean,
+          l_asy_constraint_method = antigen_constraints$l_asy_constraint_method,
+          std_error_blank = se_blank_mfi,
+          standard_curve_concentration =  antigen_constraints$standard_curve_concentration
+        )
+      }
+  } else if (antigen_constraints$l_asy_constraint_method == "default") {
+    # if (is_log_mfi_axis) {
+    #   dat$mfi <- log10(dat$mfi)
+    #   l_asy_max_constraint_dat <- log10(max(dat$mfi, na.rm = TRUE))
+    # } else {
+    #   l_asy_max_constraint_dat <- max(dat$mfi, na.rm = TRUE)
+    # }
+
+    l_asy_constraints <- list(
+      antigen = antigen,
+      l_asy_min_constraint = 0, # lower bound is set to 0
+      l_asy_max_constraint = max(dat$mfi, na.rm = T),
+      l_asy_constraint_method = antigen_constraints$l_asy_constraint_method,
+      std_error_blank = se_blank_mfi,
+      standard_curve_concentration =  antigen_constraints$standard_curve_concentration
+    )
+  }
+
+  return(l_asy_constraints)
+
+}
+
+
+# a is r_asy
+# d is l_asy (This can be fixed)
+# b scal
+# c xmid
+# g is g
+# concentration is the predictor on x-axis replacing log-dilution
+# read in constraints and if the lower asymptote (d) is fixed, fix the value in the model
+# select_model_formulas <- function(l_asy_constraints) {
+#   if (l_asy_constraints$l_asy_min_constraint == l_asy_constraints$l_asy_max_constraint) {
+#     message("Lower asymptote is fixed at ", l_asy_constraints$l_asy_min_constraint)
+#     fixed_value <- l_asy_constraints$l_asy_min_constraint
+#
+#     standard_curve_formulas <- list(
+#       Y5 = bquote(mfi ~ a + ((.(fixed_value)) - a) / ((1 + exp((concentration - c) / b))^g)),
+#       Yd5 = bquote(mfi ~ a + ((.(fixed_value)) - a) * ((1 + g * exp(-b * (concentration - c)))^(-1 / g))),
+#       Y4 = bquote(mfi ~ a + (((.(fixed_value)) - a) / (1 + exp((concentration - c) / b)))),
+#       Yd4 = bquote(mfi ~ a + ((.(fixed_value)) - a) / (1 + (concentration / c)^b)),
+#       Ygomp4 = bquote(mfi ~ (.(fixed_value)) + (a - (.(fixed_value))) * exp(-exp(-b * (concentration - c)))),
+#       nls_exp = bquote(mfi ~ (.(fixed_value)) + (b - (.(fixed_value))) * exp(c * concentration))
+#     )
+#   } else {
+#     standard_curve_formulas <- list(
+#       Y5 = quote(mfi ~ a + (d - a) / ((1 + exp((concentration - c) / b))^g)),
+#       Yd5 = quote(mfi ~ a + (d - a) * ((1 + g * exp(-b * (concentration - c)))^(-1 / g))),
+#       Y4 = quote(mfi ~ a + (d - a) / (1 + exp((concentration - c) / b))),
+#       Yd4 = quote(mfi ~ a + (d - a) / (1 + (concentration / c)^b)),
+#       Ygomp4 = quote(mfi ~ d + (a - d) * exp(-exp(-b * (concentration - c)))),
+#       nls_exp = quote(mfi ~ d + (b - d) * exp(c * concentration))
+#     )
+#   }
+#
+#   # Convert all expressions to proper formulas with correct environment
+#   for (nm in names(standard_curve_formulas)) {
+#     standard_curve_formulas[[nm]] <- as.formula(standard_curve_formulas[[nm]], env = parent.frame())
+#   }
+#
+#   return(standard_curve_formulas)
+# }
+
+select_model_formulas <- function(l_asy_constraints) {
+  if (l_asy_constraints$l_asy_min_constraint == l_asy_constraints$l_asy_max_constraint) {
+      message("Lower asymptote is fixed at", l_asy_constraints$l_asy_min_constraint )
+      fixed_value <- l_asy_constraints$l_asy_min_constraint
+      standard_curve_formulas <- list(
+        # #mfi ~ r_asy + (((fixed_value) - r_asy)/(1 + exp((log_dilution-xmid)/scal))^g),
+        #nls_5
+        # Y5 = substitute(mfi ~ a + (((fixed_d)-a)/(1 + exp((concentration-c)/b))^g),
+        #                     list(fixed_d = fixed_value)),
+        Y5 = as.formula(substitute(
+          mfi ~ a + ((fixed_d) - a) / I((1 + exp((concentration - c) / b))^g),
+          list(fixed_d = fixed_value)
+        ),
+        env = parent.frame()),
+
+        #mfi ~ r_asy + (l_asy - r_asy) * (1 + g * exp(-scal * (log_dilution - xmid)))^(-1/g),
+        # Yd5 = substitute(mfi ~ a + ((fixed_d) - a) * (1 + g * exp(-b * (concentration - c)))^(-1 / g),
+        #                  list(fixed_d = fixed_value)),
+        Yd5 = as.formula(substitute(
+          mfi ~ a + ((fixed_d) - a) * I((1 + g * exp(-b * (concentration - c)))^(-1 / g)),
+          list(fixed_d = fixed_value)
+        ),
+        env = parent.frame()
+        ),
+
+        #mfi ~ r_asy + (((fixed_value) - r_asy) / (1 + exp((log_dilution - xmid) / scal))),
+        #nls_4
+        # Y4 = substitute(mfi ~ a + (((fixed_d)-a) / (1 + exp((concentration - c)/b))),
+        #                     list(fixed_d = fixed_value)),
+        #
+
+        Y4 = as.formula(substitute(mfi ~ a + (((fixed_d)-a) / I((1 + exp((concentration - c)/b)))),
+                                        list(fixed_d = fixed_value)
+        ),
+        env = parent.frame()
+        ),
+
+
+        # mfi ~ r_asy + ((fixed_value) - r_asy) / (1 + (log_dilution / xmid)^scal),
+        # nlslm_4
+        # Yd4  = substitute(
+        #   mfi ~ a + ((fixed_d) -a) / (1 + (concentration / c)^b),
+        #   list(fixed_d = fixed_value)),
+        Yd4  = as.formula(substitute(
+          mfi ~ a + ((fixed_d) -a) / I((1 + (concentration / c)^b)),
+          list(fixed_d = fixed_value)
+        ),
+        env = parent.frame()),
+
+        # Ygomp4 = substitute(
+        #   mfi ~ (fixed_d) + (a - (fixed_d)) * exp(-exp(-b * (concentration - c))),
+        #                    list(fixed_d = fixed_value)),
+        Ygomp4 = as.formula(substitute(
+          mfi ~ (fixed_d) + (a - (fixed_d)) * I(exp(-exp(-b * (concentration - c)))),
+          list(fixed_d = fixed_value)),
+          env = parent.frame()
+        ),
+
+        #mfi ~ (fixed_value) + (scal - (fixed_value)) * exp(xmid * log_dilution),
+        # nls_exp = substitute(
+        #   mfi ~ (fixed_d) + (b - (fixed_d)) * exp(c * concentration),
+        #   list(fixed_d = fixed_value))
+        nls_exp = as.formula(
+          substitute(
+            mfi ~ (fixed_d) + (b - (fixed_d)) *I(exp(c * concentration)),
+            list(fixed_d = fixed_value)),
+          env = parent.frame())
+
+
+      )
+
+  } else {
+    standard_curve_formulas <- list(
+
+      # five parameter logistic
+      #nls_5 = mfi ~ r_asy + ((l_asy-r_asy)/(1 + exp((log_dilution-xmid)/scal))^g),
+      #Y5 = mfi ~ a + ((d-a)/(1 + exp((concentration-c)/b))^g), #Y5
+      Y5 = mfi ~ a + (d - a)/(I((1 + exp((concentration - c)/b))^g)),
+
+      # d = drda 5 parameter function
+      #Yd5 =  mfi ~ r_asy + (l_asy - r_asy) * (1 + g * exp(-scal * (log_dilution - xmid)))^(-1/g),
+      #Yd5 =  mfi ~ a + (d - a) * (1 + g * exp(-b * (concentration - c)))^(-1 / g),
+      Yd5 = mfi ~ a + (d - a) * I((1 + g * exp(-b * (concentration - c)))^(-1 / g)),
+
+
+      # 4 parameter logistic
+      #nls_4 = mfi ~ r_asy + ((l_asy - r_asy) / (1 + exp((log_dilution - xmid) / scal))),
+     # Y4 = mfi ~ a + ((d-a) / (1 + exp((concentration - c)/b))), # Y4
+       Y4  = mfi ~ a + (d - a) / I(1 + exp((concentration - c) / b)),
+
+     # nlslm_4 = mfi ~ r_asy + (l_asy - r_asy) / (1 + (log_dilution / xmid)^scal),
+      #Yd4 = mfi ~ a + (d -a) / (1 + (concentration / c)^b), # Yd4
+      Yd4 = mfi ~ a + (d - a) / I(1 + (concentration / c)^b),
+
+
+      #Ygomp4 = mfi ~ d + (a - d) * exp(-exp(-b * (concentration - c))),
+      Ygomp4 = mfi ~ d + (a - d) * I(exp(-exp(-b * (concentration - c)))),
+
+
+     # nls_exp = mfi ~ l_asy + (scal - l_asy) * exp(xmid * log_dilution)
+      #nls_exp = mfi ~ d + (b - d) * exp(c * concentration)
+      nls_exp = mfi ~ d + (b - d) * I(exp(c * concentration))
+
+
+    )
+  }
+
+  # for (nm in names(standard_curve_formulas)) {
+  #   environment(standard_curve_formulas[[nm]]) <- .GlobalEnv
+  # }
+
+  return(standard_curve_formulas)
+}
+
+# y_max is the maximum response of the data for 5 parameter NLS
+# conc_max is the maxinum concentration (log dilution of 0)
+Y5_safe_start <- function(y_min = 1, y_max, conc_max = 10000, Y5_formula) {
+  .eps <- 1e-5        # small positive floor for concentrations and lower-asymptotes
+  .slope_max <- 1.1   # max absolute slope (b) allowed
+  .slope_min <- 0.05   # min absolute slope (b) allowed
+  .g_min <- 0.25      # minimal absolute g to avoid division by zero
+  .g_max <- 2.5       # max shape parameter
+  .a_d_margin <- 1e-5 # small margin to ensure strict inequalities
+
+  if (missing(y_max)) stop("y_max required")
+
+  formula_vars <- all.vars(Y5_formula)
+
+
+  # sensible mids and spans
+  mid_y <- (y_min + y_max) / 2
+  span_y <- max(y_max - y_min, .eps)
+  # a and d (asymptotes) start: around ymin and ymax but allow variation
+  a_lower <- max(.eps, y_min - 0.2 * span_y)
+  a_upper <- max(.eps, 0.2 * span_y)                    # lower-asymptote candidates
+  if ("d" %in% formula_vars) {
+    d_lower <- min(y_max, mid_y)                   # upper-asymptote candidates
+    d_upper <- y_max + 0.2 * span_y
+  }
+  # slope b: prefer center near conc_max/10..conc_max/2 for c, and moderate slopes
+  b_lower <- - .slope_max/2
+  b_upper <- - .slope_min
+  # c (inflection location) around geometric center of conc range
+  c_lower <- max(.eps, conc_max * 0.05)
+  c_upper <- max(.eps, conc_max)
+  # g shape
+  g_lower <- .g_min
+  g_upper <- .g_max
+
+  if ("d" %in% formula_vars) {
+    lower <- c(a = a_lower, b = b_lower, c = c_lower, d = d_lower, g = g_lower)
+    upper <- c(a = a_upper, b = b_upper, c = c_upper, d = d_upper, g = g_upper)
+  } else {
+    lower <- c(a = a_lower, b = b_lower, c = c_lower, g = g_lower)
+    upper <- c(a = a_upper, b = b_upper, c = c_upper, g = g_upper)
+  }
+  # lower <- c(a = a_lower, b = b_lower, c = c_lower, d = d_lower, g = g_lower)
+  # upper <- c(a = a_upper, b = b_upper, c = c_upper, d = d_upper, g = g_upper)
+  return(list(lower = lower, upper = upper))
+}
+
+
+Yd5_safe_start <- function(y_min = 1, y_max, conc_max = 10000, Yd5_formula) {
+  .eps <- 1e-5        # small positive floor for concentrations and lower-asymptotes
+  .slope_max <- 1.1   # max absolute slope (b) allowed
+  .slope_min <- 0.05   # min absolute slope (b) allowed
+  .g_min <- 0.25      # minimal absolute g to avoid division by zero
+  .g_max <- 2.5       # max shape parameter
+  .a_d_margin <- 1e-5 # small margin to ensure strict inequalities
+
+  if (missing(y_max)) stop("y_max required")
+  formula_vars <- all.vars(Yd5_formula)
+
+  mid_y <- (y_min + y_max) / 2
+  span_y <- max(y_max - y_min, .eps)
+  # a,d similar to Y4 with slack
+  a_lower <- max(.eps, y_min - 0.5 * span_y)
+  a_upper <- max(.eps, mid_y)
+  if ("d" %in% formula_vars) {
+    d_lower <- min(y_max, mid_y)
+    d_upper <- y_max + 0.5 * span_y
+  }
+  b_lower <- - .slope_max/2
+  b_upper <-   .slope_max/2
+  c_lower <- max(.eps, conc_max * 0.001)
+  c_upper <- max(.eps, conc_max)
+  # g avoid zero, use same g bounds as constraints
+  g_lower <- .g_min
+  g_upper <- .g_max
+
+  if ("d" %in% formula_vars) {
+    lower <- c(a = a_lower, b = b_lower, c = c_lower, d = d_lower, g = g_lower)
+    upper <- c(a = a_upper, b = b_upper, c = c_upper, d = d_upper, g = g_upper)
+  } else {
+    lower <- c(a = a_lower, b = b_lower, c = c_lower, g = g_lower)
+    upper <- c(a = a_upper, b = b_upper, c = c_upper, g = g_upper)
+  }
+  # lower <- c(a = a_lower, b = b_lower, c = c_lower, d = d_lower, g = g_lower)
+  # upper <- c(a = a_upper, b = b_upper, c = c_upper, d = d_upper, g = g_upper)
+  return(list(lower = lower, upper = upper))
+}
+
+#nls_4/Y4
+Y4_safe_start <- function(y_min = 1, y_max, conc_max = 10000, Y4_formula) {
+  .eps <- 1e-5        # small positive floor for concentrations and lower-asymptotes
+  .slope_max <- 1.1   # max absolute slope (b) allowed
+  .slope_min <- 0.05   # min absolute slope (b) allowed
+  .g_min <- 0.25      # minimal absolute g to avoid division by zero
+  .g_max <- 2.5       # max shape parameter
+  .a_d_margin <- 1e-5 # small margin to ensure strict inequalities
+  if (missing(y_max)) stop("y_max required")
+  formula_vars <- all.vars(Y4_formula)
+
+  mid_y <- (y_min + y_max) / 2
+  span_y <- max(y_max - y_min, .eps)
+  # a,d bounds around lower and upper signal with some slack
+  a_lower <- max(.eps, y_min - 0.5 * span_y)
+  a_upper <- max(.eps, mid_y)
+  if ("d" %in% formula_vars) {
+    d_lower <- min(y_max, mid_y)
+    d_upper <- y_max + 0.5 * span_y
+  }
+  b_lower <- - .slope_max/2
+  b_upper <-   .slope_max/2
+  c_lower <- max(.eps, conc_max * 0.001)
+  c_upper <- max(.eps, conc_max)
+  if ("d" %in% formula_vars) {
+    lower <- c(a = a_lower, b = b_lower, c = c_lower, d = d_lower)
+    upper <- c(a = a_upper, b = b_upper, c = c_upper, d = d_upper)
+  } else {
+    lower <- c(a = a_lower, b = b_lower, c = c_lower)
+    upper <- c(a = a_upper, b = b_upper, c = c_upper)
+  }
+  return(list(lower = lower, upper = upper))
+}
+
+#nlslm_4
+Yd4_safe_start <- function(y_min = 1, y_max, conc_max = 10000, Yd4_formula) {
+
+  .eps <- 1e-5        # small positive floor for concentrations and lower-asymptotes
+  .slope_max <- 1.1   # max absolute slope (b) allowed
+  .slope_min <- 0.05   # min absolute slope (b) allowed
+  .g_min <- 0.25      # minimal absolute g to avoid division by zero
+  .g_max <- 2.5       # max shape parameter
+  .a_d_margin <- 1e-5 # small margin to ensure strict inequalities
+
+  if (missing(y_max)) stop("y_max required")
+  formula_vars <- all.vars(Yd4_formula)
+  mid_y <- (y_min + y_max) / 2
+  span_y <- max(y_max - y_min, .eps)
+  a_lower <- max(.eps, y_min - 0.5 * span_y)
+  a_upper <- max(.eps, mid_y)
+  if ("d" %in% formula_vars) {
+    d_lower <- min(y_max, mid_y)
+    d_upper <- y_max + 0.5 * span_y
+  }
+  b_lower <- - .slope_max/2
+  b_upper <-   .slope_max/2
+  c_lower <- max(.eps, conc_max * 0.001)
+  c_upper <- max(.eps, conc_max)
+
+  if ("d" %in% formula_vars) {
+    lower <- c(a = a_lower, b = b_lower, c = c_lower, d = d_lower)
+    upper <- c(a = a_upper, b = b_upper, c = c_upper, d = d_upper)
+  } else {
+    lower <- c(a = a_lower, b = b_lower, c = c_lower)
+    upper <- c(a = a_upper, b = b_upper, c = c_upper)
+  }
+  # lower <- c(a = a_lower, b = b_lower, c = c_lower, d = d_lower)
+  # upper <- c(a = a_upper, b = b_upper, c = c_upper, d = d_upper)
+
+  return(list(lower = lower, upper = upper))
+}
+
+Ygomp4_safe_start <- function(y_min = 1, y_max, conc_max = 10000, Ygomp4_formula) {
+  .eps <- 1e-5        # small positive floor for concentrations and lower-asymptotes
+  .slope_max <- 1.1   # max absolute slope (b) allowed
+  .slope_min <- 0.05   # min absolute slope (b) allowed
+  .g_min <- 0.25      # minimal absolute g to avoid division by zero
+  .g_max <- 2.5       # max shape parameter
+  .a_d_margin <- 1e-5 # small margin to ensure strict inequalities
+
+  if (missing(y_max)) stop("y_max required")
+  formula_vars <- all.vars(Ygomp4_formula)
+
+  mid_y <- (y_min + y_max) / 2
+  span_y <- max(y_max - y_min, .eps)
+  # d (lower) and a (upper) such that inflection ~ d + (a - d)/e ~ mid_y
+  # pick d around lower signal and allow a around upper signal with slack
+  if ("d" %in% formula_vars) {
+    d_lower <- max(.eps, y_min - 0.3 * span_y)
+    d_upper <- mid_y + 0.5 * span_y
+  }
+  a_lower <- mid_y - 0.5 * span_y
+  if (a_lower < .eps) a_lower <- .eps
+  a_upper <- y_max + 0.5 * span_y
+  b_lower <- - .slope_max/2
+  b_upper <-   .slope_max/2
+  c_lower <- max(.eps, conc_max * 0.001)
+  c_upper <- max(.eps, conc_max)
+  if ("d" %in% formula_vars) {
+    lower <- c(a = a_lower, b = b_lower, c = c_lower, d = d_lower)
+    upper <- c(a = a_upper, b = b_upper, c = c_upper, d = d_upper)
+  } else {
+    lower <- c(a = a_lower, b = b_lower, c = c_lower)
+    upper <- c(a = a_upper, b = b_upper, c = c_upper)
+  }
+
+  return(list(lower = lower, upper = upper))
+}
+
+
+obtain_starting_parameters <- function(data, formulas) {
+  max_mfi <- max(data$mfi, na.rm = T)
+  max_conc <- max(data$concentration)#lower_asympote_constraints$standard_curve_concentration
+  # nls 5
+  Y5_nls_start <- Y5_safe_start(y_min = 1, y_max = max_mfi, conc_max = max_conc, Y5_formula = formulas$Y5)
+  # drda_5
+  Y5_drda_start <- Yd5_safe_start(y_min = 1, y_max = max_mfi, conc_max = max_conc, Yd5_formula = formulas$Yd5)
+  # nls_4
+  Y4_nls_start <- Y4_safe_start(y_min = 1, y_max = max_mfi, conc_max = max_conc, Y4_formula = formulas$Y4)
+  #nlslm_4
+  Y4_nlslm_start <- Yd4_safe_start(y_min = 1, y_max = max_mfi, conc_max = max_conc, Yd4_formula = formulas$Yd4)
+  #Ygomp4
+  Ygomp4_start <- Ygomp4_safe_start(y_min = 1, y_max = max_mfi, conc_max = max_conc, Ygomp4_formula = formulas$Ygomp4)
+
+
+  start_models <- list(
+    Y5 = Y5_nls_start,
+    Yd5 = Y5_drda_start,
+    Y4 = Y4_nls_start,
+    Yd4 = Y4_nlslm_start,
+    Ygomp4 = Ygomp4_start
+  )
+
+  return(start_models)
+
+
+
+# if (names(formulas) == "nls_exp") {
+#   scal_initial <- max(data$mfi, na.rm = T)
+#   xmid_initial <- 0.1
+#   l_asy_initial <- min(data$mfi, na.rm = T)
+#   if (l_asy_initial < 0) {
+#     l_asy_initial <- 0
+#   }
+# }
+
+
+}
+#prop_diff = 0.1, dil_scale = 2
+correct_prozone <- function(stdframe = NULL, prop_diff = NULL, dil_scale = NULL, mfi_var = "mfi", log_dilution_var = "concentration") {
+  ## stdframe must contain the columns labelled mfi and log_dilution for one set of standard curve data i.e. one dilution series
+  ##
+  ### correct for prozone effect by correcting the values past the peak by raising them to a neutral asymptote based on an assumed measured C90.
+  ## ACS Meas. Sci. Au 2024, 4, 4, 452–458
+  ## https://pubs.acs.org/doi/10.1021/acsmeasuresciau.4c00010
+  ## The hook effect, also known as the prozone effect, is a phenomenon that commonly occurs in
+  ## antibody-based sandwich immunoassay biosensors. (1,2) In a typical immunoassay, the binding
+  ## of antibodies to the analyte leads to the formation of a visible signal, such as a color
+  ## change or a fluorescent signal where the intensity of this signal is directly proportional
+  ## to the concentration of the analyte in the sample being tested. (3,4) However, the prozone
+  ## effect happens when the concentration of the analyte becomes so high that it exceeds the
+  ## capacity of the antibodies in the assay. (5) In this situation, the excess analyte can
+  ## saturate or overwhelm the binding sites on the antibodies, and as a result, the sensor
+  ## response is inhibited, leading to a false-low or even false-negative test result. (6)
+  ##
+  ## 1 Chen, W.; Shan, S.; Peng, J.; Liu, D.; Xia, J.; Shao, B.; Lai, W. Sensitive and hook effect-free lateral flow assay integrated with cascade signal transduction system. Sens. Actuators, B 2020, 321, 128465,  DOI: 10.1016/j.snb.2020.128465
+  ## 2 Selby, C. Interference in immunoassay. Ann. Clin. Biochem. 1999, 36, 704– 721,  DOI: 10.1177/000456329903600603
+  ## 3 Hessick, E. R.; Dannemiller, K.; Gouma, P. Development of a Novel Lateral Flow Immunoassay for Detection of Harmful Allergens Found in Dust. Meet. Abstr. 2022, 241, 2333,  DOI: 10.1149/ma2022-01552333mtgabs
+  ## 4 Poudineh, M.; Maikawa, C. L.; Ma, E. Y.; Pan, J.; Mamerow, D.; Hang, Y.; Baker, S. W.; Beirami, A.; Yoshikawa, A.; Eisenstein, M. A fluorescence sandwich immunoassay for the real-time continuous detection of glucose and insulin in live animals. Nat. Biomed. Eng. 2020, 5, 53– 63,  DOI: 10.1038/s41551-020-00661-1
+  ## 5 Bravin, C.; Amendola, V. Wide range detection of C-Reactive protein with a homogeneous immunofluorimetric assay based on cooperative fluorescence quenching assisted by gold nanoparticles. Biosens. Bioelectron. 2020, 169, 112591,  DOI: 10.1016/j.bios.2020.112591
+  ## 6 Raverot, V.; Perrin, P.; Chanson, P.; Jouanneau, E.; Brue, T.; Raverot, G. Prolactin immunoassay: does the high-dose hook effect still exist?. Pituitary 2022, 25, 653– 657,  DOI: 10.1007/s11102-022-01246-8
+  ##
+
+  ## following modelling of prozone effects in:
+  ## Development of an experimental method to overcome the hook effect in sandwich-type lateral flow immunoassays guided by computational modelling
+  ## Sensors and Actuators B: Chemical Volume 324, 1 December 2020, 128756
+  ## and
+  ## Hook effect detection and detection-range-controllable one-step immunosensor for inflammation monitoring
+  ## Sensors and Actuators B: Chemical Volume 304, 1 February 2020, 127408
+
+  # 0. Filter out NA mfi and log dilution
+  stdframe <- stdframe[!is.na(stdframe[[mfi_var]]) & !is.na(stdframe[[log_dilution_var]]),]
+
+
+  # 1. identify the highest mfi and corresponding log_dilution in stdframe
+  max_mfi <- max(stdframe[[mfi_var]])
+  logd_at_max_mfi <- max(stdframe[stdframe[[mfi_var]]==max_mfi, ][[log_dilution_var]])
+  # 2. identify the mfis lower than the max_mfi at higher concentrations and dampen the delta mfis to compensate for
+  stdframe[stdframe[[log_dilution_var]] > logd_at_max_mfi, ][[mfi_var]] <- max_mfi +
+    (
+      (max_mfi - stdframe[stdframe[[log_dilution_var]] > logd_at_max_mfi, ][[mfi_var]]) * prop_diff /
+        ((stdframe[stdframe[[log_dilution_var]] > logd_at_max_mfi, ][[log_dilution_var]]-logd_at_max_mfi) * dil_scale)
+    )
+  return(stdframe)
+  ### end correct for prozone effect
+}
+
+## Functions for upper and lower bounds in fitting
+
+# produce lower and upper bound list
+.make_bounds <- function(param_names, lower_vals, upper_vals) {
+  if (length(param_names) != length(lower_vals) || length(param_names) != length(upper_vals)) {
+    stop("Lengths must match")
+  }
+  lower <- setNames(as.numeric(lower_vals), param_names)
+  upper <- setNames(as.numeric(upper_vals), param_names)
+  list(lower = lower, upper = upper)
+}
+
+#Utility to compute middle-90% bounds of y
+.y_mid_bounds <- function(ymin, ymax) {
+  span <- ymax - ymin
+  low <- ymin + 0.05 * span
+  high <- ymin + 0.95 * span
+  c(low = low, high = high)
+}
+
+#Y5_safe: form used in your function: d + (a - d)/(1 + exp((x-c)/b))^g  (nls_5)
+# For standard 4/5-PL the inflection y (for symmetric logistic when g=1) is midpoint (a+d)/2.
+# For 5PL with exponent g, the inflection y still lies between a and d and often near midpoint;
+# to be safe we constrain midpoint to be within middle90.
+Y5_safe_constraint <- function(y_min = 1, y_max, conc_max = 10000, Y5_formula, Y5_free_vars) {
+
+  .eps <- 1e-5
+  .slope_max <- 1.1
+  .g_min <- 0.25
+  .g_max <- 2.5
+
+  # extract parameter names from formula
+  formula_vars <- all.vars(Y5_formula)
+
+  # middle range of y
+  mid_bounds <- .y_mid_bounds(y_min, y_max)
+  mid_low <- mid_bounds["low"]
+  mid_high <- mid_bounds["high"]
+
+  ## a (upper asymptote)
+  a_lower <- max(y_max * 0.5, y_min)
+  a_upper <- y_max * 1.5
+
+  ## slope b cannot be 0; allow negative or positive slopes. We bound absolute value.
+  b_lower <- - .slope_max
+  b_upper <-   .slope_max
+
+  ##  c (inflection)  must be within (0, conc_max]
+  c_lower <- .eps
+  c_upper <- conc_max
+
+  ##  g (asymmetry) g > 0 required (g <= 0 penalized)
+  g_lower <- .g_min
+  g_upper <- .g_max
+
+  ## optional d (lower asymptote)
+  if ("d" %in% formula_vars) {
+    d_lower <- .eps
+    d_upper <- min(y_min * 1.5, y_max * 0.75)
+    lower <- c(a = a_lower, b = b_lower, c = c_lower, d = d_lower, g = g_lower)
+    upper <- c(a = a_upper, b = b_upper, c = c_upper, d = d_upper, g = g_upper)
+  } else {
+    lower <- c(a = a_lower, b = b_lower, c = c_lower, g = g_lower)
+    upper <- c(a = a_upper, b = b_upper, c = c_upper, g = g_upper)
+  }
+
+  # Additional attempt to bias midpoint into middle90: tighten ranges so that mid possible:
+  # force at least one feasible combination: require (min upper + min upper)/2 >= mid_low and (max lower + max lower)/2 <= mid_high
+  # We set:
+  if ("d" %in% formula_vars) {
+    lower["a"] <- max(lower["a"], mid_low - upper["d"]) # may be negative -> no effect
+  }
+  upper["a"] <- min(upper["a"], 2 * mid_high)
+
+  return(.make_bounds(Y5_free_vars, lower_vals = lower, upper_vals = upper))
+ # list(lower = lower, upper = upper)
+}
+
+# Yd5_safe: shaped Richards form: a + (d-a)*(1 + g*exp(-b*(x-c)))^(-1/g) drda_5
+# Here inflection y for Richards depends on g, but midpoint (a+d)/2 is generally a reasonable target.
+Yd5_safe_constraint <- function(y_min=1, y_max, conc_max = 10000, Yd5_formula, Yd5_free_vars) {
+
+  .eps <- 1e-5
+  .slope_max <- 1.1
+  .g_min <- 0.25
+  .g_max <- 2.5
+
+  mid_bounds <- .y_mid_bounds(y_min, y_max)
+  mid_low <- mid_bounds["low"]
+  mid_high <- mid_bounds["high"]
+
+  formula_vars <- all.vars(Yd5_formula)
+  # a and d bounds similar to Y4
+  a_lower <- .eps
+  a_upper <- 2 * mid_high
+
+  if ("d" %in% formula_vars) {
+    d_lower <- 2 * mid_low - a_upper
+    if (d_lower < .eps) d_lower <- .eps
+    d_upper <- y_max * 2
+  }
+
+  b_lower <- - .slope_max
+  b_upper <-   .slope_max
+
+  c_lower <- .eps
+  c_upper <- conc_max
+
+  # g must be != 0; avoid very small or negative values that make base <= 0 for negative g
+  g_lower <- .g_min
+  g_upper <- .g_max
+
+  if ("d" %in% formula_vars) {
+    lower <- c(a = a_lower, b = b_lower, c = c_lower, d = d_lower, g = g_lower)
+    upper <- c(a = a_upper, b = b_upper, c = c_upper, d = d_upper, g = g_upper)
+  } else {
+    lower <- c(a = a_lower, b = b_lower, c = c_lower, g = g_lower)
+    upper <- c(a = a_upper, b = b_upper, c = c_upper, g = g_upper)
+  }
+
+  return(.make_bounds(Yd5_free_vars, lower, upper))
+  #list(lower = lower, upper = upper)
+}
+
+Y4_safe_constraint <- function(y_min=1, y_max, conc_max = 10000, Y4_formula, Y4_free_vars) {
+  .eps <- 1e-5
+  .slope_max <- 1.1
+  .g_min <- 0.25
+  .g_max <- 2.5
+
+   mid_bounds <- .y_mid_bounds(y_min, y_max)
+   mid_low <- mid_bounds["low"]
+   mid_high <- mid_bounds["high"]
+
+  formula_vars <- all.vars(Y4_formula)
+
+  # Constrain midpoint (a + d)/2 to middle90 by bounding a and d so midpoint can lie there.
+  # We'll choose ranges so that a in [eps, 2*mid_high] and d in [2*mid_low - a_upper, y_max*2]
+  a_lower <- .eps
+  a_upper <- 2 * mid_high
+
+  if ("d" %in% formula_vars) {
+    d_lower <- 2 * mid_low - a_upper
+    if (d_lower < .eps) d_lower <- .eps
+    d_upper <- y_max * 2
+  }
+
+  b_lower <- - .slope_max
+  b_upper <-   .slope_max
+
+  c_lower <- .eps
+  c_upper <- conc_max
+  if ("d" %in% formula_vars) {
+    lower <- c(a = a_lower, b = b_lower, c = c_lower, d = d_lower)
+    upper <- c(a = a_upper, b = b_upper, c = c_upper, d = d_upper)
+  } else {
+    lower <- c(a = a_lower, b = b_lower, c = c_lower)
+    upper <- c(a = a_upper, b = b_upper, c = c_upper)
+  }
+
+  return(.make_bounds(Y4_free_vars, lower_vals = lower, upper_vals = upper))
+}
+
+Yd4_safe_constraint <- function(y_min=1, y_max, conc_max = 10000, Yd4_formula, Yd4_free_vars) {
+  .eps <- 1e-5
+  .slope_max <- 1.1
+  .g_min <- 0.25
+  .g_max <- 2.5
+
+  mid_bounds <- .y_mid_bounds(y_min, y_max)
+  mid_low <- mid_bounds["low"]
+  mid_high <- mid_bounds["high"]
+
+  formula_vars <- all.vars(Yd4_formula)
+
+
+  a_lower <- .eps
+  a_upper <- 2 * mid_high
+  d_lower <- 2 * mid_low - a_upper
+  if ("d" %in% formula_vars) {
+    if (d_lower < .eps) d_lower <- .eps
+    d_upper <- y_max * 2
+  }
+
+  b_lower <- - .slope_max
+  b_upper <-   .slope_max
+  c_lower <- .eps
+  c_upper <- conc_max
+  if ("d" %in% formula_vars) {
+    lower <- c(a = a_lower, b = b_lower, c = c_lower, d = d_lower)
+    upper <- c(a = a_upper, b = b_upper, c = c_upper, d = d_upper)
+  } else {
+    lower <- c(a = a_lower, b = b_lower, c = c_lower)
+    upper <- c(a = a_upper, b = b_upper, c = c_upper)
+  }
+
+  return(.make_bounds(Yd4_free_vars, lower_vals = lower, upper_vals = upper))
+}
+
+# Ygomp4_safe: d + (a - d) * exp(-exp(-b*(x-c)))
+# Inflection of Gompertz occurs at y_inf = d + (a - d)/e
+# Constrain that to middle90: d + (a - d)/e in [mid_low, mid_high]
+Ygomp4_safe_constraint <- function(y_min=1, y_max, conc_max = 10000, Ygomp4_formula, Ygomp4_free_vars) {
+
+  .eps <- 1e-5
+  .slope_max <- 1.1
+  .g_min <- 0.25
+  .g_max <- 2.5
+
+  mid_bounds <- .y_mid_bounds(y_min, y_max)
+  mid_low <- mid_bounds["low"]
+  mid_high <- mid_bounds["high"]
+
+  formula_vars <- all.vars(Ygomp4_formula)
+  # Solve for relationship between a and d:
+  # y_inf = d + (a - d)/e
+  # => (a - d)/e ∈ [mid_low - d, mid_high - d]
+  # Rearranged not directly usable as box constraints; instead bound a and d so that midpoint-like value lies in range.
+  # We'll bound d in [eps, y_max*1.5] and a in [d + e*(mid_low - d), d + e*(mid_high - d)] for feasible pairs.
+  # To express as box constraints, we choose conservative ranges:
+  if ("d" %in% formula_vars) {
+    d_lower <- .eps
+    d_upper <- y_max * 2
+  }
+  # For a, allow it from eps to ymax*2 but bias so that (d + (a-d)/e) can be in middle90:
+  a_lower <- .eps
+  a_upper <- y_max * 2
+
+  b_lower <- - .slope_max
+  b_upper <-   .slope_max
+
+  c_lower <- .eps
+  c_upper <- conc_max
+
+  if ("d" %in% formula_vars) {
+    lower <- c(a = a_lower, b = b_lower, c = c_lower, d = d_lower)
+    upper <- c(a = a_upper, b = b_upper, c = c_upper, d = d_upper)
+
+    # As an additional attempt to help ensure inflection in middle90, we narrow a such that
+    # there exists d in its range giving y_inf in middle90. Pick representative d_mid and constrain a around it:
+    d_rep <- max(d_lower, min(d_upper, (y_min + y_max)/10 + .eps))
+    # required a for y_inf = mid_low is a_req_low = d_rep + e*(mid_low - d_rep)
+    a_req_low <- d_rep + exp(1L) * (mid_low - d_rep)
+    a_req_high <- d_rep + exp(1L) * (mid_high - d_rep)
+    # ensure overall a range includes that
+    lower["a"] <- min(lower["a"], a_req_low)
+    upper["a"] <- max(upper["a"], a_req_high)
+
+  } else {
+    lower <- c(a = a_lower, b = b_lower, c = c_lower)
+    upper <- c(a = a_upper, b = b_upper, c = c_upper)
+  }
+
+  return(.make_bounds(Ygomp4_free_vars, lower_vals = lower, upper_vals = upper))
+}
+
+# obtain the free parameters names in each model
+# dependent variable is mfi, independent variable is concentration
+# free variables are returned in alphabetical order
+obtain_free_variables <- function(formulas, dep = "mfi", indep = "concentration") {
+  lapply(formulas, function(f) {
+    vars <- all.vars(f)
+    sort(setdiff(vars, c(dep, indep)))
+  })
+}
+
+#obtain the response variable name for all the models.
+# all formulas should have the same response variable
+obtain_response_variable <- function(formulas) {
+   response_vars <- sapply(formulas, function(f) {
+                              vars <- all.vars(f)
+                              # response_idx <- attr(stats::terms(f), "response")
+                              # vars[response_idx]
+                              as.character(f[[2]])
+                              },
+                     USE.NAMES = TRUE)
+
+   response_variable <- unique(response_vars)
+   return(response_variable)
+}
+
+
+# response variable based on formula, researcher provides independent variable for obtain_free_variables called internally
+obtain_model_constraintes <- function(data, formulas, independent_variable) {
+
+  formulas_in <<- formulas
+  response_variable <- obtain_response_variable(formulas)
+  max_mfi <- max(data[[response_variable]], na.rm = TRUE)
+ # max_mfi <- max(data$mfi, na.rm = T)
+  max_conc <- max(data$concentration)#lower_asympote_constraints$standard_curve_concentration
+  free_variables <- obtain_free_variables(formulas = formulas, dep = response_variable , indep = independent_variable)
+  # nls 5
+  Y5_nls_constraint <- Y5_safe_constraint(y_min = 1, y_max = max_mfi, conc_max = max_conc, Y5_formula = formulas$Y5,
+                                         Y5_free_vars = free_variables$Y5)
+  # drda_5
+  Y5_drda_constraint <- Yd5_safe_constraint(y_min = 1, y_max = max_mfi, conc_max = max_conc, Yd5_formula = formulas$Yd5,
+                                            Yd5_free_vars = free_variables$Yd5)
+  # nls_4
+  Y4_nls_constraint <- Y4_safe_constraint(y_min = 1, y_max = max_mfi, conc_max = max_conc, Y4_formula = formulas$Y4,
+                                          Y4_free_vars = free_variables$Y4)
+  #nlslm_4
+  Y4_nlslm_constraint <- Yd4_safe_constraint(y_min = 1, y_max = max_mfi, conc_max = max_conc, Yd4_formula = formulas$Yd4,
+                                             Yd4_free_vars = free_variables$Yd4)
+  #Ygomp4
+  Ygomp4_constraint <- Ygomp4_safe_constraint(y_min = 1, y_max = max_mfi, conc_max = max_conc, Ygomp4_formula = formulas$Ygomp4,
+                                              Ygomp4_free_vars = free_variables$Ygomp4)
+
+  constraint_models <- list(
+    Y5 = Y5_nls_constraint,
+    Yd5 = Y5_drda_constraint,
+    Y4 = Y4_nls_constraint,
+    Yd4 = Y4_nlslm_constraint,
+    Ygomp4 = Ygomp4_constraint
+  )
+
+  return(constraint_models)
+}
+
+
+## Model Fitting Function for a singlular fit
+
+robust_nlsLM_multstart <- function(formula, data, start_lower, start_upper, iter = 10,
+                                   lower = -Inf, upper = Inf, verbose = TRUE) {
+  library(nls.multstart)
+  library(minpack.lm)
+
+  if (verbose) message("Running multi-start nonlinear fit using nlsLM ...")
+
+   if (verbose) {
+    message("Parameters in formula: ", paste(all.vars(formula), collapse = ", "))
+    message("Start lower names: ", paste(names(start_lower), collapse = ", "))
+    message("Start upper names: ", paste(names(start_upper), collapse = ", "))
+  }
+  formuula_in <<- formula
+  start_lower <<- start_lower
+  start_upper <<- start_upper
+
+  fit <<- tryCatch({
+    nls_multstart(
+      formula = formula,
+      data = data,
+      start_lower = start_lower,
+      start_upper = start_upper,
+      iter = iter,
+      #supp_errors = "Y",
+      lower = lower,
+      upper = upper,
+      control = nls.lm.control(maxiter = 200)
+    )
+  }, error = function(e) {
+    if (verbose) message(" nls_multstart failed: ", conditionMessage(e))
+    NULL
+  })
+
+  if (!is.null(fit) && verbose) message("Fit successful.")
+  return(fit)
+}
+
+
+# compute concentration column  with an option to log10 the concentration
+# the independent variable is given to be a string (which is usually concentration)
+compute_concentration <- function(data, lower_asympote_constraints, independent_variable, is_log_concentration = TRUE) {
+
+  data[[independent_variable]] <- (1 / data$dilution) * lower_asympote_constraints$standard_curve_concentration
+
+  if (is_log_concentration) {
+    data[[independent_variable]] <- log10(data[[independent_variable]])
+  }
+
+  return(data)
+}
+
+# compute_log_response logs the response variable for fitting if flag is set to true
+# the response variable is set to be a given string such as mfi
+# is log response is a boolean flag to decide to take log response if true or not if false.
+compute_log_response <- function(data, response_variable, is_log_response = TRUE) {
+  if (is_log_response) {
+    data[[response_variable]] <- log10(data[[response_variable]])
+  }
+
+  return(data)
+}
+
+
+geom_mean <- function (x, na.rm = TRUE) {
+  ans <- exp(mean(log(x), na.rm = TRUE))
+  ans
+}
+# Include Blanks as an extra point in the standard curve data
+# Estimation of the standard curve takes into account the mean of the background
+# of the values as another point of the standard curve. The median fluorescence intensity and the
+# expected concentration for this new point by analyte is estimated as follows:
+# MFI: geometric mean value of the blank controls.
+# EC: the minimum expected concentration value of the standard points divided by 2.
+# On the log dilution scale we subtract log10(2) which is equivalent to dividing by 2.
+
+include_blanks_conc <- function(blank_data, data, response_variable, is_log_response, independent_variable = "concentration") {
+  data <- data[, !(names(data) %in% c("dilution_factor", "log_dilution"))]
+
+                                #plateid, antigen, response_variable, independent_variable = "concentration") {
+  # # filter the plate and antigen from the buffer and standard curve data
+  # buffer_data_filtered <- buffer_data[buffer_data$plateid == plateid & buffer_data$antigen == antigen, ]
+  # std_curve_data_filtered <- std_curve_data[std_curve_data$plateid == plateid & std_curve_data$antigen == antigen,]
+  #
+  # calculate the geometric mean of the buffer/blanks by analyte
+  if (is_log_response) {
+    response_blank <- log10(geom_mean(blank_data[[response_variable]]))
+  } else {
+    response_blank <- geom_mean(blank_data[[response_variable]])
+  }
+
+  # calculate the log dilution of the buffer (Dr Lumi uses (1/(min(dilution_factor))/2)
+  # cat("\nIn include blanks\n")
+  # print(head(std_curve_data_filtered))
+ # the minimum expected concentration value of the standard points divided by 2.
+  min_concentration <- min(data[[independent_variable]], na.rm = T)
+  conc_blank <- min_concentration - log10(2)
+
+  #conc_blank <- min_concentration / 2
+  #
+  # min_log_dilution <- min(std_curve_data_filtered$log_dilution)
+  # log_dilution_buffer <- min_log_dilution - log10(2)
+  # min_dilution_factor <- min(std_curve_data_filtered$dilution)
+  #
+  #data$antibody_mfi <- data$mfi
+
+  # Create new blank/mean point
+  new_point <- data.frame(
+    plateid = unique(data$plateid),
+    antigen = unique(data$antigen),
+    mfi = response_blank,
+    study_accession = unique(data$study_accession),
+    experiment_accession = unique(data$experiment_accession),
+    well = "geometric_mean_buffer",
+    stype = unique(blank_data$stype),
+    sampleid = "buffer_mean",
+    source = unique(data$source),
+    dilution = NA_real_,
+    pctaggbeads = NA_real_,
+    samplingerrors = NA_character_,
+    n = NA_integer_,
+    feature = unique(data$feature),
+    predicted_mfi = response_blank,
+    selected_str = unique(data$selected_str),
+    concentration = conc_blank
+  )
+
+
+  # cat("\nnames of standard curve filtered\n")
+  # print(names(std_curve_data_filtered))
+  # cat("\n names of  new point\n")
+  # print(names(new_point))
+  #
+  data_with_blank <- rbind(data, new_point)
+  return(data_with_blank)
+
+}
+
+
+# The geometric mean or a multiple of the geometric mean of the blank controls is subtracted from all the standard points if that options are selected.
+# pass in the buffer data, standards  as data
+# blank_option: ignored,included,subtracted,subtracted_3x,subtracted_10x
+
+preform_blank_operation <- function(blank_data, data, response_variable, is_log_response, independent_variable, blank_option = "ignored", verbose = TRUE) {
+  if (verbose) {
+    message("Blank Option Used: ", blank_option)
+  }
+  valid_options <- c("ignored","included","subtracted","subtracted_3x","subtracted_10x")
+
+  if (!(blank_option %in% valid_options)) {
+    message("Invalid value for blank_option. Must be one of: 'ignored', 'included', 'subtracted', 'subtracted_3x', or 'subtracted_10x'.")
+    return(data)
+  }
+
+  if (blank_option != "ignored" && (is.null(blank_data) || nrow(blank_data) == 0)) {
+    message("Blank data must be supplied when blank_option is not 'ignored'.")
+    return(data)
+  }
+  if (blank_option == "included") {
+    data <- include_blanks_conc(blank_data = blank_data, data = data, response_variable = response_variable,
+                                is_log_response = is_log_response, independent_variable = independent_variable)
+
+    if (verbose) message("Geometric mean of blanks included as an extra point in the standard curve.")
+
+  }
+  if (blank_option %in% c("subtracted", "subtracted_3x", "subtracted_10x")) {
+
+    factor <- switch(blank_option,
+                    "subtracted" = 1,
+                    "subtracted_3x" = 3,
+                    "subtracted_10x" = 10)
+
+      if (is_log_response) {
+        data_linear <- 10^(data[[response_variable]])
+        blank_linear <- geom_mean(blank_data[[response_variable]])
+
+        adjusted_lin <- data_linear - factor * blank_linear
+
+        smallest_pos <- min(data_linear[data_linear > 0], na.rm = TRUE)
+        floor_val <- smallest_pos * 0.1   # e.g. 10% of smallest positive observed
+
+        adjusted_lin[adjusted_lin <= 0] <- floor_val
+        # if (any(adjusted_lin <= 0, na.rm = TRUE)) {
+        #   message("Setting values <= 0 after subtraction to a small positive number before log-transforming.")
+        #   adjusted_lin[adjusted_lin <= 0] <- min(adjusted_lin[adjusted_lin > 0], na.rm = TRUE) * 1e-3
+        # }
+       # adjusted_lin[adjusted_lin < 0] <- 0  # prevent negatives
+
+        # re-log after subtraction
+        data[[response_variable]] <- log10(adjusted_lin)
+        if (verbose) {
+          message("Performed blank subtraction (×", factor, ") in linear space, then log-transformed back.")
+        }
+      } else {
+        # Direct subtraction in linear space
+        blank_mean <- geom_mean(blank_data[[response_variable]])
+        data[[response_variable]] <- data[[response_variable]] - factor * blank_mean
+        data[data[[response_variable]] < 0, response_variable] <- 0
+        if (verbose) {
+          message("Performed blank subtraction (×", factor, ") in linear space.")
+        }
+      }
+
+      # if (is_log_response) {
+      #   blank_mean <- log10(geom_mean(blank_data[[response_variable]]))
+      # } else {
+      #   blank_mean <- geom_mean(blank_data[[response_variable]])
+      # }
+      #
+      #
+      # factor <- switch(blank_option,
+      #                  "subtracted" = 1,
+      #                  "subtracted_3x" = 3,
+      #                  "subtracted_10x" = 10)
+      # if (verbose) {
+      #   message("Subtracting ", factor, "× blank geometric mean (",
+      #           round(blank_mean, 3), ") from response variable.")
+      # }
+      #
+      # data[[response_variable]] <- data[[response_variable]] - (factor * blank_mean)
+      # if (any(data[[response_variable]] < 0, na.rm = TRUE)) {
+      #   message( "Setting negative response values after subtraction to 0.")
+      #   data[data[[response_variable]] < 0, response_variable] <- 0
+      # }
+
+  }
+  return(data)
+}
+
+# For a plate fit standard curves
+compute_robust_curves <- function(data, lower_asympote_constraints, response_variable, independent_variable, is_log_response, blank_data = NULL, blank_option = "ignored", is_log_concentration = TRUE, iter = 10, verbose = TRUE) {
+
+  #  if (!(blank_option %in% c("ignored","included","subtracted","subtracted_3x","subtracted_10x"))) {
+  #   message("Invalid value for blank_option. Must be one of: 'ignored', 'included', 'subtracted', 'subtracted_3x', or 'subtracted_10x'.")
+  #   return(NULL)
+  # }  else if (blank_option != "ignored" && is.null(blank_data)) {
+  #    message("Blank data must be supplied when blank_option is not 'ignored'.")
+  #   return(NULL)
+  # } else {
+  # Transform the response and concentration to log units for fitting if chosen
+  data <- compute_log_response(data = data, response_variable = response_variable, is_log_response = is_log_response)
+  data <- compute_concentration(data = data, lower_asympote_constraints, independent_variable, is_log_concentration = is_log_concentration)
+
+  data <- preform_blank_operation(
+    blank_data = blank_data,
+    data = data,
+    response_variable = response_variable,
+    is_log_response = is_log_response,
+    independent_variable = independent_variable,
+    blank_option = blank_option,
+    verbose = verbose
+  )
+  dat_view <<- data
+
+  formulas <- select_model_formulas(l_asy_constraints = lower_asympote_constraints)
+  print(sapply(formulas, class))
+  print(formulas)
+  start_parameters <- obtain_starting_parameters(data = data, formulas = formulas)
+  model_constraints <- obtain_model_constraintes(data = data, formulas = formulas, independent_variable = independent_variable)
+  for (name in names(formulas)[names(formulas) != "nls_exp"]) {
+    if (verbose) message("\n Trying model: ", name)
+
+     formula <- formulas[[name]]
+     start_lower_params <- start_parameters[[name]]$lower
+     start_upper_params <- start_parameters[[name]]$upper
+
+     lower_model_constraints <- model_constraints[[name]]$lower
+     upper_model_constraints <- model_constraints[[name]]$upper
+
+     fit <- robust_nlsLM_multstart(
+       formula = formula,
+       data = data,
+       start_lower = start_lower_params,
+       start_upper = start_upper_params,
+       lower = lower_model_constraints,
+       upper = upper_model_constraints,#upper,
+       iter = iter,
+       verbose = verbose
+     )
+
+     if (!is.null(fit)) {
+       if (verbose) message("Successfully fit model: ", name)
+       attr(fit, "model_name") <- name
+       return(fit)
+     } else {
+       if (verbose) message(" Failed model: ", name)
+     }
+  }
+
+  if (verbose) message("All fits failed.")
+  return(NULL)
+
+}
+
+
+# sc_data_ <- preform_blank_operation(blank_data = blank_data_plate, data = standard_curve_plate,
+#                         response_variable = "mfi",
+#                         is_log_response = T,
+#                         independent_variable = "concentration",
+#                         blank_option = "ignored", verbose = TRUE)
+
+fit_c <- compute_robust_curves(data = standard_curve_plate, lower_asympote_constraints = lower_asympote_constraints,
+                      response_variable = "mfi", independent_variable = "concentration",
+                      is_log_response = T,
+                      is_log_concentration = T,
+                      blank_data = blank_data_plate,
+                      blank_option = "included")
+#
+#
+x_seq <- seq(min(dat_view$concentration), max(dat_view$concentration), length.out = 200)
+
+# Predict fitted values
+y_pred <- predict(fit_c, newdata = data.frame(concentration = x_seq))
+plot(
+  dat_view$concentration,
+  10^(dat_view$mfi),  # convert log10(MFI) data to linear
+  pch = 19,
+  main = "Concentration vs MFI",
+  xlab = "log10(Concentration)",
+  ylab = "MFI (linear)",
+  col = as.factor(dat_view$stype),
+
+)
+
+lines(x_seq, 10^(y_pred), col = "blue", lwd = 2)
+
+
+
+y_pred <- predict(fit_c, newdata = data.frame(concentration = x_seq))
+
+plot(
+  dat_view$concentration,
+  dat_view$mfi,   # already log10(MFI)
+  pch = 19,
+  main = "Concentration vs MFI (log10 MFI)",
+  xlab = "log10(Concentration)",
+  ylab = "log10(MFI)"
+)
+
+lines(x_seq, y_pred, col = "red", lwd = 2)
+
+
+
+
+
+
+
+plot(
+  dat_view$concentration,
+  dat_view$mfi,
+  main = "Concentration vs MFI",
+  xlab = "log10(Concentration)",
+  ylab = "log10(MFI)",
+  col = as.factor(dat_view$stype),
+)
+
+x_seq <- seq(min(dat_view$concentration), max(dat_view$concentration), length.out = 200)
+
+# Predict fitted values
+y_pred <- predict(fit_c, newdata = data.frame(concentration = x_seq))
+lines(x_seq, y_pred, col = "red", lwd = 2)
+
+# raw concentration vs raw MFI
+#plot(10^(dat_view$concentration), 10^(dat_view$mfi), pch=19, xlab="Concentration (linear)", ylab="MFI (linear)")
+# log concentration vs raw MFI
+plot(dat_view$concentration, 10^(dat_view$mfi), pch=19, xlab="log10(Concentration)", ylab="MFI (linear)")
+y_pred <- predict(fit_c, newdata = data.frame(concentration = x_seq))
+lines(x_seq, y_pred, col = "red", lwd = 2)
+
+plot(
+  dat_view$concentration,
+  10^(dat_view$mfi),  # convert log10(MFI) data to linear
+  pch = 19,
+  xlab = "log10(Concentration)",
+  ylab = "MFI (linear)"
+)
+
+lines(x_seq, 10^(y_pred), col = "red", lwd = 2)
+
+
+
+# log concentration vs log MFI
+plot(dat_view$concentration, dat_view$mfi, pch=19, xlab="log10(Concentration)", ylab="log10(MFI)")
+
+# fit <- compute_robust_curves(data = conc_data, lower_asympote_constraints = lower_asympote_constraints, response_variable = "mfi", independent_variable = "concentration")
+#
+#
+# plot(
+#   conc_data$concentration,
+#   conc_data$mfi,
+#   main = "Concentration vs MFI",
+#   xlab = "Concentration",
+#   ylab = "MFI"
+# )
+#
+# x_seq <- seq(min(conc_data$concentration), max(conc_data$concentration), length.out = 200)
+#
+# # Predict fitted values
+# y_pred <- predict(fit, newdata = data.frame(concentration = x_seq))
+# lines(x_seq, y_pred, col = "red", lwd = 2)
+#
+
+#TT
+# data_conc <- compute_concentration(data = dat_v, lower_asympote_constraints = lower_asympote_constraints, independent_variable = "concentration", is_log_concentration = T)
+# plot(
+#   data_conc$concentration,
+#   data_conc$mfi,
+#   main = "Concentration vs MFI",
+#   xlab = "log10(Concentration)",
+#   ylab = "MFI"
+# )
+# fit_tt <- compute_robust_curves(data = data_conc, lower_asympote_constraints = lower_asympote_constraints, response_variable = "mfi", independent_variable = "concentration")
+#
+# x_seq <- seq(min(data_conc$concentration), max(data_conc$concentration), length.out = 200)
+#
+# # Predict fitted values
+# y_pred <- predict(fit_tt, newdata = data.frame(concentration = x_seq))
+# lines(x_seq, y_pred, col = "red", lwd = 2)
+#
+#
+#
+#
+# data_conc <- compute_concentration(data = standard_curve_plate, lower_asympote_constraints = lower_asympote_constraints, independent_variable = "concentration", is_log_concentration = T)
+# plot(
+#   data_conc$concentration,
+#   data_conc$mfi,
+#   main = "Concentration vs MFI",
+#   xlab = "log10(Concentration)",
+#   ylab = "MFI"
+# )
+# fit_tt <- compute_robust_curves(data = data_conc, lower_asympote_constraints = lower_asympote_constraints, response_variable = "mfi", independent_variable = "concentration")
+#
+# x_seq <- seq(min(data_conc$concentration), max(data_conc$concentration), length.out = 200)
+#
+# # Predict fitted values
+# y_pred <- predict(fit_tt, newdata = data.frame(concentration = x_seq))
+# lines(x_seq, y_pred, col = "red", lwd = 2)
+#
+
+
+# standard <- fetch_db_standards(study_accession = 'Gambia123', experiment_accession = 'IgG_total')
+# tt_standard <- standard[standard$antigen == "TT" & standard$source == "SD",]
+# blanks <- fetch_db_buffer(study_accession = 'Gambia123', experiment_accession = 'IgG_total')
+# tt_blanks <- blanks[blanks$antigen == "TT",]
+#
+# tt_standard_by_plate <- split(tt_standard, tt_standard$plate)
+# tt_blanks_by_plate <- split(tt_blanks, tt_blanks$plate)
+#
+# #ompute_concentration(data = act_standard_by_plate[[1]], )
+# tt_blanks_by_plate[[2]]
+#
+#
+# with_blanks <- include_blanks_conc(blank_data = tt_blanks_by_plate[[2]], data = data_conc, response_variable = "mfi")
+
+
+
+
+
+
+
+compute_robust_curves3 <- function(data, formulas, start_lower, start_upper,
+                              lower = -Inf, upper = Inf, iter = 10,
+                               verbose = TRUE) {
+
+
+  for (name in names(formulas)) {
+    if (verbose) message("\n Trying model: ", name)
+
+    formula <- formulas[[name]]
+
+    # --- Identify parameter names in the formula
+    vars_in_formula <- all.vars(formula)
+    # Remove non-parameter variables (columns in data)
+    vars_in_formula <- setdiff(vars_in_formula, names(data))
+
+    # --- Remove any fixed parameters
+    # detect fixed d
+    if (!("d" %in% all.vars(formula))) {
+      fixed <- "d"
+    } else {
+      fixed <- ""
+    }
+
+    free_params <- setdiff(vars_in_formula, fixed)
+
+    # --- Filter start vectors for only free parameters
+    start_lower_sub <- start_lower[names(start_lower) %in% free_params]
+    start_upper_sub <- start_upper[names(start_upper) %in% free_params]
+
+    if (verbose) {
+      message("Free parameters: ", paste(free_params, collapse = ", "))
+      if (length(fixed) > 0)
+        message("Fixed parameters: ", paste(names(fixed), "=", unlist(fixed), collapse = ", "))
+    }
+
+    fit <- robust_nlsLM_multistart(
+      formula = formula,
+      data = data,
+      start_lower = start_lower_sub,
+      start_upper = start_upper_sub,
+      lower = lower,
+      upper = upper,
+      iter = iter,
+      verbose = verbose
+    )
+
+    if (!is.null(fit)) {
+      if (verbose) message("Successfully fit model: ", name)
+      attr(fit, "model_name") <- name
+      return(fit)
+    } else {
+      if (verbose) message("⚠️ Failed model: ", name)
+    }
+  }
+
+  if (verbose) message("All fits failed.")
+  return(NULL)
+}
+
+
+
+# Compute 5/4/3 Parameter models
+compute_robust_curves_5_param <- function(dat, antigen, plate = "all", study_accession, experiment_accession, source, bkg, is_log_mfi_axis,
+                                          lower_asympote_constraints, g_value = 1){
+
+  lower_asympote_constraints <<- lower_asympote_constraints
   #dat_view <<- dat
   ## Deal with buffer noise
   # remove any NA mfi after subtracting in bkg method
@@ -2215,7 +3838,7 @@ compute_robust_curves_5_param <- function(dat, antigen, plate = "all", study_acc
     cat("SOURCE = ", source)
 
     # fit the 5 Parameter model
-    mod_nls_5 <- compute_nls_5(dat, g_value, bkg, is_log_mfi_axis)
+    mod_nls_5 <- compute_nls_5(dat, g_value, bkg, is_log_mfi_axis, lower_asympote_constraints)
 
     # Fit alternate 5 parameter model with drda.
     #if (any(abs(rounded_g_cor) >= 0.999)) {
@@ -2223,22 +3846,22 @@ compute_robust_curves_5_param <- function(dat, antigen, plate = "all", study_acc
       return(mod_nls_5)
     } else {
       cat("Fitting 5 Parameter Model DRDA")
-      fit_l5 <- compute_drda_5_param(dat, bkg, is_log_mfi_axis)
+      fit_l5 <- compute_drda_5_param(dat, bkg, is_log_mfi_axis, lower_asympote_constraints)
       if (!is.null(fit_l5)) {
         return(fit_l5)
       } else {
         cat("Fitting 4 Parameter NLS")
-        mod_nls_4 <- compute_nls_4(dat, bkg, is_log_mfi_axis)
+        mod_nls_4 <- compute_nls_4(dat, bkg, is_log_mfi_axis, lower_asympote_constraints)
         if (!is.null(mod_nls_4)) {
           return(mod_nls_4)
         } else {
           cat("Fitting 4 paramater power function")
-          mod_power_4 <- compute_power_4(dat, bkg, is_log_mfi_axis)
+          mod_power_4 <- compute_power_4(dat, bkg, is_log_mfi_axis, lower_asympote_constraints)
           if (!is.null(mod_power_4)) {
             return(mod_power_4)
           } else {
           cat("Fitting nls exponential")
-          mod_exponential <- compute_exponential_fit(dat, bkg, is_log_mfi_axis)
+          mod_exponential <- compute_exponential_fit(dat, bkg, is_log_mfi_axis, lower_asympote_constraints)
           if (!is.null(mod_exponential)) {
             return(mod_exponential)
           }  else {
@@ -2252,7 +3875,7 @@ compute_robust_curves_5_param <- function(dat, antigen, plate = "all", study_acc
 }
 
 # compute exponential fit and returns model or NULL
-compute_exp_3 <- function(data) {
+compute_exp_3 <- function(data, lower_asympote_constraints) {
   mod_exponential <- tryCatch({
     scal_initial <- max(data$mfi, na.rm = T)
     xmid_initial <- 0.1
@@ -2264,7 +3887,8 @@ compute_exp_3 <- function(data) {
     minpack.lm::nlsLM(mfi ~ l_asy + (scal - l_asy) * exp(xmid * log_dilution),
                       data = data,
                       start = list(scal = scal_initial, xmid = xmid_initial, l_asy = l_asy_initial),
-                      lower = c(-Inf, -Inf, 0),  # Set lower bound for l_asy to 0
+                      lower = c(-Inf, -Inf, lower_asympote_constraints$l_asy_min_constraint),#c(-Inf, -Inf, 0),  # Set lower bound for l_asy to 0
+                      upper = c(-Inf, -Inf, lower_asympote_constraints$l_asy_max_constraint),
                       control = minpack.lm::nls.lm.control(maxiter = 500, ftol = 1e-9, ptol = 1e-6))
   }, error = function(e) {
     print(paste("Exponential Model Failed:", e))
@@ -2275,8 +3899,8 @@ compute_exp_3 <- function(data) {
 }
 
 # Produce fit table from exponential model. Uses compute_exp_3
-compute_exponential_fit <- function(data, bkg, is_log_mfi_axis) {
-  mod_exponential <- compute_exp_3(data)
+compute_exponential_fit <- function(data, bkg, is_log_mfi_axis, lower_asympote_constraints) {
+  mod_exponential <- compute_exp_3(data, lower_asympote_constraints)
 
   if(!is.null(mod_exponential)) {
     # Extract coefficients from the fitted model
@@ -2525,15 +4149,17 @@ calculate_ulod_drda <- function(model, is_log_mfi_axis, data_plot){
 #   return(bend_lines)
 # }
 
-# Computes DRDA model with constraints of lower bound l_asy = 0 and returns tables of fit
-compute_drda_5_param <- function(data, bkg, is_log_mfi_axis ) {
+# Computes DRDA model with constraints of lower bound l_asy = 0 and max_mfi and returns tables of fit
+compute_drda_5_param <- function(data, bkg, is_log_mfi_axis, lower_asympote_constraints) {
+
+#  max_mfi <- max(data$mfi, na.rm = TRUE)
   fit_l5 <- tryCatch({
     # Constrain the model alpha/l_asy by 0 min
-    lb <- c(0, -Inf, -Inf, -Inf, -Inf)
-    ub <- c(Inf, Inf, Inf,  Inf, Inf)
+    lower_constraint<- c(lower_asympote_constraints$l_asy_min_constraint, -Inf, -Inf, -Inf, -Inf)
+    upper_constraint  <- c(lower_asympote_constraints$l_asy_max_constraint, Inf, Inf,  Inf, Inf)
     drda::drda(mfi ~ log_dilution, data = data, mean_function = "logistic5",
-               lower_bound = lb,
-               upper_bound = ub)
+               lower_bound = lower_constraint,
+               upper_bound = upper_constraint)
   }, error = function(e){
     print("DRDA 5 Parameter failed. Returning NULL")
     return(NULL)
@@ -3737,6 +5363,11 @@ obtain_standard_curve_concentration <- function(study_accession, antigen) {
 
 # Preform backsubsitution to find true dilution, append to sample_data
 backsub_true_dilution_sample <- function(fitted_model, sample_data, dat){
+   # fitted_model <<- fitted_model
+   # sample_data <<- sample_data
+   # dat_sc <<- dat
+
+
   cat("\nnames in backsub true dilution sample\n")
   print(names(sample_data))
   cat("\nnames in backsub true dilution dat\n")
@@ -3755,13 +5386,13 @@ backsub_true_dilution_sample <- function(fitted_model, sample_data, dat){
     parameter_table <- as.data.frame(summary(fitted_model[[3]])$coefficients)
     parameter_table$term <- rownames(parameter_table) # 4
     parameter_table <- parameter_table[, c("term", "Estimate")]
-    n_terms <- nrow(parameter_table)
+    n_terms <-  4 #nrow(parameter_table)
   } else if (fitted_model[[2]]$crit == "nls_exp") { # 3
     cat("In expnls parameter table")
     parameter_table <- fitted_model[[1]]
     parameter_table <- as.data.frame(parameter_table)
     parameter_table <- parameter_table[, c("term", "estimate")]
-    n_terms <- nrow(parameter_table)
+    n_terms <- 3 #nrow(parameter_table)
   } else if (fitted_model[[2]]$crit == "drda_5") {
     cat("in drda_5")
     parameter_table <- fitted_model[[1]]
@@ -3773,7 +5404,7 @@ backsub_true_dilution_sample <- function(fitted_model, sample_data, dat){
     parameter_table <- as.data.frame(summary(fitted_model[[3]])$coefficients)
     parameter_table$term <- rownames(parameter_table)
     parameter_table <- parameter_table[, c("term", "Estimate")] # 5 rows (g)
-    n_terms <- nrow(parameter_table)
+    n_terms <- 5 # nrow(parameter_table)
   } else {
     parameter_table <- NULL
   }
@@ -3799,6 +5430,10 @@ backsub_true_dilution_sample <- function(fitted_model, sample_data, dat){
     # max_log_dilution <<- max_log_dilution
 
     l_asy_est <- parameter_table$Estimate[parameter_table$term == "l_asy"]
+    # detect if the l_asy is fixed
+    if (length(l_asy_est) == 0) {
+      l_asy_est <- fitted_model[[2]]$l_asy
+    }
     r_asy_est <- parameter_table$Estimate[parameter_table$term == "r_asy"]
     xmid_est <- parameter_table$Estimate[parameter_table$term == "xmid"]
     scal_est <- parameter_table$Estimate[parameter_table$term == "scal"]
@@ -3822,6 +5457,10 @@ backsub_true_dilution_sample <- function(fitted_model, sample_data, dat){
     cat("3 terms")
     scal_est <- parameter_table$estimate[parameter_table$term == "scal"]
     l_asy_est <- parameter_table$estimate[parameter_table$term == "l_asy"]
+    # detect if the l_asy is fixed
+    if (length(l_asy_est) == 0) {
+      l_asy_est <- fitted_model[[2]]$l_asy
+    }
     xmid_est <-  parameter_table$estimate[parameter_table$term == "xmid"]
 
     log_dilution <- exponential_fit_log_dilution(sample_data, l_asy = l_asy_est, xmid = xmid_est, scal = scal_est, min_log_dilution, "sample")
@@ -3832,6 +5471,10 @@ backsub_true_dilution_sample <- function(fitted_model, sample_data, dat){
     cat("NLS 5 terms ")
     print(parameter_table)
     l_asy_est <- parameter_table$Estimate[parameter_table$term == "l_asy"]
+    # detect if the l_asy is fixed
+    if (length(l_asy_est) == 0) {
+      l_asy_est <- fitted_model[[2]]$l_asy
+    }
     r_asy_est <- parameter_table$Estimate[parameter_table$term == "r_asy"]
     xmid_est <- parameter_table$Estimate[parameter_table$term == "xmid"]
     scal_est <- parameter_table$Estimate[parameter_table$term == "scal"]
@@ -3850,6 +5493,9 @@ backsub_true_dilution_sample <- function(fitted_model, sample_data, dat){
   } else {
     cat("DRDA 5 terms")
     alpha_est <- parameter_table$estimate[parameter_table$term == "alpha"]
+    if (length(alpha_est) == 0) {
+      alpha_est <- fitted_model[[2]]$l_asy
+    }
     delta_est <- parameter_table$estimate[parameter_table$term == "delta"]
     eta_est <- parameter_table$estimate[parameter_table$term == "eta"]
     phi_est <-  parameter_table$estimate[parameter_table$term == "phi"]
