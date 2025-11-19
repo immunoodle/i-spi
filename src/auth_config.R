@@ -8,6 +8,7 @@ DEX_ISSUER <- Sys.getenv("DEX_ISSUER")
 DEX_CLIENT_ID <- Sys.getenv("DEX_CLIENT_ID")
 DEX_CLIENT_SECRET <- Sys.getenv("DEX_CLIENT_SECRET")
 APP_REDIRECT_URI <- Sys.getenv("APP_REDIRECT_URI")
+DEX_INTERNAL_URL <- Sys.getenv("DEX_INTERNAL_URL")
 
 
 # --- Fetch OIDC Discovery Information ---
@@ -24,12 +25,26 @@ get_oidc_discovery <- function(issuer_url) {
   })
 }
 
-oidc_config <- get_oidc_discovery(DEX_ISSUER)
+# Use internal URL for discovery if available (to avoid hairpinning issues), otherwise use public issuer
+discovery_url_base <- if (nzchar(DEX_INTERNAL_URL)) DEX_INTERNAL_URL else DEX_ISSUER
+if (nzchar(DEX_INTERNAL_URL)) message(paste("Using DEX_INTERNAL_URL for discovery:", DEX_INTERNAL_URL))
+
+oidc_config <- get_oidc_discovery(discovery_url_base)
 
 # Extract endpoints
+# Auth endpoint is for the browser, so it must use the public DEX_ISSUER (or what's in discovery which should be public)
 DEX_AUTH_ENDPOINT <- oidc_config$authorization_endpoint %||% paste0(DEX_ISSUER, "/auth")
-DEX_TOKEN_ENDPOINT <- oidc_config$token_endpoint %||% paste0(DEX_ISSUER, "/token")
-DEX_JWKS_ENDPOINT <- oidc_config$jwks_uri %||% paste0(DEX_ISSUER, "/keys")
+
+# For server-side communication (Token & JWKS), prefer internal URL if set
+if (nzchar(DEX_INTERNAL_URL)) {
+  message("Using DEX_INTERNAL_URL for Token and JWKS endpoints.")
+  DEX_TOKEN_ENDPOINT <- paste0(DEX_INTERNAL_URL, "/token")
+  DEX_JWKS_ENDPOINT <- paste0(DEX_INTERNAL_URL, "/keys")
+} else {
+  DEX_TOKEN_ENDPOINT <- oidc_config$token_endpoint %||% paste0(DEX_ISSUER, "/token")
+  DEX_JWKS_ENDPOINT <- oidc_config$jwks_uri %||% paste0(DEX_ISSUER, "/keys")
+}
+
 DEX_USERINFO_ENDPOINT <- oidc_config$userinfo_endpoint
 DEX_LOGOUT_ENDPOINT <- oidc_config$end_session_endpoint
 
