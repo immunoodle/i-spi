@@ -1,11 +1,13 @@
 # ==============================================================
 # 1. SETUP & LIBRARIES (MERGED)
 # ==============================================================
+options(warn = -1)
+
 source("global.R", local = TRUE)
 
 
 #Set to 1 for local and do not push in prod
-#Sys.setenv(LOCAL_DEV = "1")
+Sys.setenv(LOCAL_DEV = "1")
 
 
 # Source authentication configuration (Step 1)
@@ -903,8 +905,19 @@ server <- function(input, output, session) {
       source("blank_control_ui.R", local = TRUE)
       source('propagate_functions.R', local = TRUE)
       source("standard_curve_functions.R", local = TRUE)
+
+      source("std_curver_ui.R", local = TRUE)
+      source("std_curve_functions.R", local = TRUE)
+      source("db_functions.R", local = TRUE)
+      source("model_functions.R", local = TRUE)
+      source("plot_functions.R", local = TRUE)
+      source("batch_fit_functions.R", local = TRUE)
+
       source("standardcurveui.R", local = TRUE)
       source("standard_curve_summary_ui.R", local = TRUE)
+
+
+
       source("outliers.R", local = TRUE)
       source("outlier_ui1.R", local = TRUE)
       source("dilution_analysis_ui.R", local = TRUE)

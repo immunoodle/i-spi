@@ -84,7 +84,7 @@ generate_layout_template <- function(all_plates, study_accession, experiment_acc
     antigen_label_on_plate = antigen_names,
     antigen_abbreviation = NA_character_,
     standard_curve_max_concentration = 100000,
-    l_asy_constraint_method = "unconstrained",
+    l_asy_constraint_method = "default",
     l_asy_min_constraint = 0,
     l_asy_max_constraint = 0,
     antigen_family = NA_character_,
@@ -131,7 +131,7 @@ generate_layout_template <- function(all_plates, study_accession, experiment_acc
   cell_valid_table <- tibble(
     tibble(
       l_asy_constraint_method = c(
-        "unconstrained",
+        "default",
         "user_defined",
         "range_of_blanks",
         "geometric_mean_of_blanks"
@@ -222,7 +222,7 @@ generate_layout_template <- function(all_plates, study_accession, experiment_acc
       } else if (nm == "antigen_list") {
         writeData(wb, nm, "user defined constraint", startRow = 1, startCol = 7)
 
-        ex_antigen_list <- c("Vietnam342","IgG_total", "FHA (27)","FHA", 100000, "unconstrained", 1, 10, "Pertussis", "Filamentous hemagglutinin adhesin ", "Bordetella pertussis strain Tohama I",
+        ex_antigen_list <- c("Vietnam342","IgG_total", "FHA (27)","FHA", 100000, "default", 1, 10, "Pertussis", "Filamentous hemagglutinin adhesin ", "Bordetella pertussis strain Tohama I",
                             "SinoBiological",	"FHA123456789")
         writeData(wb, nm, t(ex_antigen_list),
                   startRow = 2, startCol = 1, colNames = FALSE)
