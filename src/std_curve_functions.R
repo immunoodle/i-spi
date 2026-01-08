@@ -1797,6 +1797,9 @@ predict_and_propagate_error <- function(best_fit,
   pcov_sample_data <- pcov_sample_list$data[, c("predicted_concentration","pcov")]
   names(pcov_sample_data)[which(names(pcov_sample_data) == "predicted_concentration")] <- "x"
   sample_se <- merge(sample_se, pcov_sample_data, by.x = "predicted_concentration", by.y = "x", all.x = TRUE)
+  sample_se$source <- unique(best_fit$best_data$source)
+  # remove plate_id
+  sample_se <- sample_se[, !names(sample_se) %in% "plate_id"]
   best_fit$sample_se <- sample_se
 
   if (verbose) {

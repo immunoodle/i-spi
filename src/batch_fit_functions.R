@@ -148,6 +148,7 @@ fit_experiment_plate_batch <- function(prepped_data_list_res, antigen_plate_list
   candidate_best_fit_list <- list()
   best_fit_list <- list()
   for(prep_dat_name in names(prepped_data_list)) {
+    showNotification(id = "batch_sc_fit_notify", paste("processing", prep_dat_name), duration = NULL)
     if (verbose) print(prep_dat_name)
     plate_prepped_data <- prepped_data_list[[prep_dat_name]]
     formulas <- formula_list[[prep_dat_name]]
@@ -243,7 +244,7 @@ fit_experiment_plate_batch <- function(prepped_data_list_res, antigen_plate_list
 
 
 
-create_batch_fit_outputs <- function(batch_fit_res) {
+create_batch_fit_outputs <- function(batch_fit_res, antigen_plate_list_res) {
 
   best_tidy_all <- do.call(
     rbind,
@@ -288,7 +289,59 @@ create_batch_fit_outputs <- function(batch_fit_res) {
     best_pred_all     = best_pred_all,
     best_sample_se_all = best_sample_se_all,
     best_standard_all = best_standard_all,
-    best_plate_all    = best_plate_all
-  ))
+    best_plate_all    = best_plate_all,
+    antigen_plate_list = antigen_plate_list_res
+    )
+    )
+}
+
+
+# add unique identifiers and rename the response variable to be generic for saving
+process_batch_outputs <- function(batch_outputs, response_var) {
+
+  # batch_outputs$best_pred_all <- batch_outputs$best_pred_all %>%
+  #   dplyr::group_by(study_accession,
+  #                   experiment_accession,
+  #                   plateid,
+  #                   antigen,
+  #                   source) %>%
+  #   dplyr::mutate(id_match = dplyr::row_number()) %>%
+  #   dplyr::ungroup()
+  batch_outputs$best_pred_all <- batch_outputs$best_pred_all %>%
+    dplyr::group_by(
+      study_accession,
+      experiment_accession,
+      plateid,
+      plate,
+      sample_dilution_factor,
+      source,
+      antigen
+    ) %>%
+    dplyr::mutate(id_match = dplyr::row_number()) %>%
+    dplyr::ungroup()
+
+
+  batch_outputs$best_sample_se_all <- batch_outputs$best_sample_se_all %>%
+    dplyr::rename(assay_response = all_of(response_var)) %>%
+    dplyr::group_by(
+      study_accession, experiment_accession,
+      plateid, plate, sample_dilution_factor, source, antigen,
+      patientid, timeperiod, sampleid, dilution
+    ) %>%
+    dplyr::mutate(uid = dplyr::row_number()) %>%
+    dplyr::ungroup()
+
+  # batch_outputs$best_sample_se_all <- batch_outputs$best_sample_se_all %>%
+  #   dplyr::group_by(study_accession, experiment_accession,
+  #                          plateid, plate, sample_dilution_factor, source, antigen,
+  #                         patientid, timeperiod, sampleid, dilution) %>%
+  #   dplyr::rename(assay_response = all_of(response_var)) %>%
+  #   dplyr::mutate(uid = dplyr::row_number()) %>%
+  #   dplyr::ungroup()
+
+  batch_outputs$best_standard_all <- batch_outputs$best_standard_all %>%
+    dplyr::rename(assay_response = all_of(response_var))
+
+  return(batch_outputs)
 }
 

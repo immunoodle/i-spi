@@ -132,52 +132,255 @@ pull_data <- function(study_accession, experiment_accession, conn = conn) {
   )
 }
 
-save_best_fit_glances <- function(batch_outputs) {
-  batch_outputs1 <- batch_outputs
-  names(batch_outputs$best_glance_all)[names(batch_outputs$best_glance_all) == "is_log_response"] <- "is_log_mfi_axis"
-  names(batch_outputs$best_glance_all)[names(batch_outputs$best_glance_all) == "a"] <- "l_asy"
-  names(batch_outputs$best_glance_all)[names(batch_outputs$best_glance_all) == "d"] <- "r_asy"
-  names(batch_outputs$best_glance_all)[names(batch_outputs$best_glance_all) == "c"] <- "x_mid"
-  names(batch_outputs$best_glance_all)[names(batch_outputs$best_glance_all) == "b"] <- "scale"
-  names(batch_outputs$best_glance_all)[names(batch_outputs$best_glance_all) == "lloq_y"] <- "bendlower"
-  names(batch_outputs$best_glance_all)[names(batch_outputs$best_glance_all) == "uloq_y"] <- "bendupper"
-  names(batch_outputs$best_glance_all)[names(batch_outputs$best_glance_all) == "inflect_x"] <- "x_inflection"
-  names(batch_outputs$best_glance_all)[names(batch_outputs$best_glance_all) == "inflect_y"] <- "y_inflection"
+# shiny_notify <- function(session = shiny::getDefaultReactiveDomain()) {
+#   function(msg, type = c("message","warning","error")) {
+#     type <- match.arg(type)
+#     shiny::showNotification(msg,
+#                             type = switch(type, message = "message", warning = "warning", error = "error"),
+#                             session = session
+#     )
+#   }
+# }
 
+shiny_notify <- function(session = shiny::getDefaultReactiveDomain()) {
+  function(msg) {
+    shiny::showNotification(
+      msg,
+      type = "message",
+      session = session
+    )
+  }
 }
 
+upsert_best_curve <- function(conn,
+                              df,
+                              schema = "madi_results",
+                              table  = "best_plate_all",
+                              notify = NULL,
+                              quiet  = FALSE) {
 
-save_best_fit_tidys <- function(batch_outputs) {
-  names(batch_outputs$best_tidy_all)
-}
+  ## ----------------------------
+  ## Notifier
+  ## ----------------------------
+  if (is.null(notify)) {
+    notify <- function(msg) {
+      if (!quiet) message(as.character(msg))
+    }
+  }
 
-save_best_fit_samples <- function(batch_outputs) {
-  names(batch_outputs$best_sample_se_all)[names(batch_outputs$best_sample_se_all) == "gate_class_pcov"] <- "gate_class_linear_region"
-  names(batch_outputs$best_sample_se_all)[names(batch_outputs$best_sample_se_all) == "pcov"] <- "quality_score"
-  names(batch_outputs$best_sample_se_all)[names(batch_outputs$best_sample_se_all) == "gate_class_lod"] <- "gate_class"
-  names(batch_outputs$best_sample_se_all)[names(batch_outputs$best_sample_se_all) == "se_x"] <- "antibody_au_se"
+  bail <- function(msg) {
+    notify(msg)
+    invisible(FALSE)
+  }
 
-  batch_outputs$best_sample_se_all$predicted_concentration[is.nan(batch_outputs$best_sample_se_all$predicted_concentration)] <- NA_real_
-  batch_outputs$best_sample_se_all$antibody_au_se[is.nan(batch_outputs$best_sample_se_all$antibody_au_se)] <- NA_real_
-  batch_outputs$best_sample_se_all$au[is.nan(batch_outputs$best_sample_se_all$au)] <- NA_real_
-  cols <- c(
-    "gate_class_loq",
-    "gate_class",
-    "gate_class_linear_region"
+  ## ----------------------------
+  ## Basic checks
+  ## ----------------------------
+  if (!DBI::dbIsValid(conn)) {
+    return(bail("Database connection is not valid."))
+  }
+
+  if (!is.data.frame(df) || nrow(df) == 0) {
+    return(bail("No data provided for upsert."))
+  }
+
+  cols <- names(df)
+
+  ## ----------------------------
+  ## Natural keys by table
+  ## ----------------------------
+  nk <- get_natural_keys(table)
+
+  if (is.null(nk)) {
+    stop("Unknown table: ", table)
+  }
+
+  ## ----------------------------
+  ## Validate natural keys
+  ## ----------------------------
+  missing_keys <- setdiff(nk, cols)
+  if (length(missing_keys) > 0) {
+    stop("Missing natural-key columns for ", table, ": ",
+         paste(missing_keys, collapse = ", "))
+  }
+
+  if (anyNA(df[, nk, drop = FALSE])) {
+    bad <- which(!complete.cases(df[, nk, drop = FALSE]))
+    print(df[bad, nk, drop = FALSE])
+    return(bail("Natural-key columns contain NA; cannot upsert."))
+  }
+
+  ## ----------------------------
+  ## Optional: verify UNIQUE index exists
+  ## ----------------------------
+  idx_check_sql <- glue::glue_sql(
+    "SELECT 1
+     FROM pg_index i
+     JOIN pg_class t ON t.oid = i.indrelid
+     JOIN pg_namespace n ON n.oid = t.relnamespace
+     WHERE n.nspname = {schema}
+       AND t.relname = {table}
+       AND i.indisunique
+     LIMIT 1",
+    .con = conn
   )
 
-  batch_outputs$best_sample_se_all[cols] <-
-    lapply(batch_outputs$best_sample_se_all[cols],
-           function(x) ifelse(is.na(x), "Not Evaluated", x))
+  if (nrow(DBI::dbGetQuery(conn, idx_check_sql)) == 0) {
+    return(bail(paste0("No UNIQUE index found for ", schema, ".", table,
+                       ". Run schema migrations first.")))
+  }
 
-  batch_outputs$best_sample_se_all <- batch_outputs$best_sample_se_all[,!(names(batch_outputs$best_sample_se_all) %in% c("y_new"))]
+  ## ----------------------------
+  ## Transaction
+  ## ----------------------------
+  ok <- tryCatch({
 
+    DBI::dbWithTransaction(conn, {
+
+      tmp_name <- paste0("tmp_upsert_", table, "_", sample.int(1e9, 1))
+
+      ## Create temp table using glue_sql
+      ## Note: Use DBI::SQL() for identifiers that need special handling
+      schema_id <- DBI::dbQuoteIdentifier(conn, schema)
+      table_id <- DBI::dbQuoteIdentifier(conn, table)
+      tmp_id <- DBI::dbQuoteIdentifier(conn, tmp_name)
+
+      create_temp_sql <- glue::glue_sql(
+        "CREATE TEMP TABLE {DBI::SQL(tmp_id)}
+         (LIKE {DBI::SQL(schema_id)}.{DBI::SQL(table_id)} INCLUDING DEFAULTS)
+         ON COMMIT DROP",
+        .con = conn
+      )
+
+      DBI::dbExecute(conn, create_temp_sql)
+
+      ## Bulk write to temp table
+      DBI::dbWriteTable(
+        conn,
+        name = tmp_name,
+        value = df,
+        append = TRUE,
+        row.names = FALSE
+      )
+
+      ## Build and execute UPSERT statement
+      upsert_sql <- build_upsert_sql_glue(
+        conn = conn,
+        schema = schema,
+        table = table,
+        tmp_name = tmp_name,
+        cols = cols,
+        nk = nk
+      )
+
+      DBI::dbExecute(conn, upsert_sql)
+    })
+
+    TRUE
+
+  }, error = function(e) {
+    notify(paste0(table, " upsert failed: ", conditionMessage(e)))
+    FALSE
+  })
+
+  if (ok) {
+    notify(paste0(table, " upsert completed (", nrow(df), " rows)."))
+    invisible(TRUE)
+  } else {
+    invisible(FALSE)
+  }
 }
 
-save_best_preds <- function(batch_outputs) {
-  names(batch_outputs$best_pred_all)[names(batch_outputs$best_pred_all) == "yhat"] <- "fitted"
-  batch_outputs$best_pred_all <- batch_outputs$best_pred_all[,!(names(batch_outputs$best_pred_all) %in% c("x"))]
+## ----------------------------
+## Helper: Get natural keys for table
+## ----------------------------
+get_natural_keys <- function(table) {
+  keys <- list(
+    best_plate_all = c(
+      "study_accession", "experiment_accession",
+      "plateid", "plate", "sample_dilution_factor", "source"
+    ),
+    best_glance_all = c(
+      "study_accession", "experiment_accession",
+      "plateid", "plate", "sample_dilution_factor", "source", "antigen"
+    ),
+    best_tidy_all = c(
+      "study_accession", "experiment_accession",
+      "plateid", "plate", "sample_dilution_factor", "source", "antigen", "term"
+    ),
+    best_sample_se_all = c(
+      "study_accession", "experiment_accession",
+      "plateid", "plate", "sample_dilution_factor", "source", "antigen",
+      "patientid", "timeperiod", "sampleid", "dilution",
+       "uid"
+    ),
+    best_standard_all = c(
+      "study_accession", "experiment_accession",
+      "plateid", "plate", "sample_dilution_factor", "source", "antigen", "feature", "well"
+    ), # dilution not included as it can be NA when geometric mean is used
+    best_pred_all = c(
+      "study_accession", "experiment_accession",
+      "plateid", "plate", "sample_dilution_factor", "source", "antigen",
+       "id_match"
+    )
+  )
+
+  keys[[table]]
 }
+
+## ----------------------------
+## Helper: Build UPSERT SQL using glue_sql
+## ----------------------------
+build_upsert_sql_glue <- function(conn, schema, table, tmp_name, cols, nk) {
+
+  ## Pre-quote identifiers to avoid glue_sql conflicts
+  schema_id <- DBI::dbQuoteIdentifier(conn, schema)
+  table_id <- DBI::dbQuoteIdentifier(conn, table)
+  tmp_id <- DBI::dbQuoteIdentifier(conn, tmp_name)
+
+  ## Quote column names
+  cols_quoted <- vapply(cols, function(x) {
+    as.character(DBI::dbQuoteIdentifier(conn, x))
+  }, character(1), USE.NAMES = FALSE)
+
+  nk_quoted <- vapply(nk, function(x) {
+    as.character(DBI::dbQuoteIdentifier(conn, x))
+  }, character(1), USE.NAMES = FALSE)
+
+  ## Build column list strings
+
+  cols_list <- paste(cols_quoted, collapse = ", ")
+  nk_list <- paste(nk_quoted, collapse = ", ")
+
+  ## Build SET clause for non-key columns
+  update_cols <- setdiff(cols, nk)
+
+  if (length(update_cols) > 0) {
+    update_quoted <- vapply(update_cols, function(x) {
+      as.character(DBI::dbQuoteIdentifier(conn, x))
+    }, character(1), USE.NAMES = FALSE)
+
+    set_parts <- vapply(update_quoted, function(col) {
+      paste0(col, " = EXCLUDED.", col)
+    }, character(1), USE.NAMES = FALSE)
+
+    set_clause <- paste(set_parts, collapse = ", ")
+    conflict_action <- paste("DO UPDATE SET", set_clause)
+  } else {
+    conflict_action <- "DO NOTHING"
+  }
+
+  ## Build final SQL using glue_sql with DBI::SQL for pre-quoted parts
+  glue::glue_sql(
+    "INSERT INTO {DBI::SQL(schema_id)}.{DBI::SQL(table_id)} ({DBI::SQL(cols_list)})
+     SELECT {DBI::SQL(cols_list)}
+     FROM {DBI::SQL(tmp_id)}
+     ON CONFLICT ({DBI::SQL(nk_list)})
+     {DBI::SQL(conflict_action)}",
+    .con = conn
+  )
+}
+
 
 
 
@@ -229,4 +432,52 @@ select_antigen_plate <- function(loaded_data,
 }
 
 
+#### Fetch saved results from std_curver
+fetch_best_plate_all <- function(study_accession, conn) {
+  query <- glue("
+SELECT best_plate_all_id, study_accession, experiment_accession, feature, source, plateid, plate, sample_dilution_factor, assay_response_variable, assay_independent_variable
+	FROM madi_results.best_plate_all
+	WHERE study_accession = '{study_accession}';
+")
+  best_plate_all <- dbGetQuery(conn, query)
+  return(best_plate_all)
+}
 
+fetch_best_tidy_all <- function(study_accession, conn) {
+  query <- glue("SELECT best_tidy_all_id, study_accession, experiment_accession, term, lower, upper, estimate, std_error, statistic, p_value, sample_dilution_factor, antigen, plateid, plate, source
+	FROM madi_results.best_tidy_all
+	WHERE study_accession = '{study_accession}'")
+  best_tidy_all <- dbGetQuery(conn, query)
+  return(best_tidy_all)
+}
+fetch_best_pred_all <- function(study_accession, conn) {
+  query <- glue("SELECT best_pred_all_id, x, model, yhat, overall_se, predicted_concentration, se_x, pcov, study_accession, experiment_accession, sample_dilution_factor, plateid, plate, antigen, source, id_match
+	FROM madi_results.best_pred_all
+	WHERE study_accession = '{study_accession}';")
+  best_pred_all <- dbGetQuery(conn, query)
+  return(best_pred_all)
+}
+
+fetch_best_standard_all <- function(study_accession, conn) {
+  query <- glue("SELECT best_standard_all_id, study_accession, experiment_accession, feature, source, plateid, plate, stype, sample_dilution_factor, sampleid, well, dilution, antigen, assay_response, assay_response_variable, assay_independent_variable, concentration, g
+	FROM madi_results.best_standard_all
+	WHERE study_accession = '{study_accession}';")
+  best_standard_all <- dbGetQuery(conn, query)
+  return(best_standard_all)
+}
+
+fetch_best_glance_all <- function(study_accession, conn) {
+  query <- glue("SELECT best_glance_all_id, study_accession, experiment_accession, plateid, plate, sample_dilution_factor, antigen, iter, status, crit, a, b, c, d, lloq, uloq, lloq_y, uloq_y, llod, ulod, inflect_x, inflect_y, std_error_blank, dydx_inflect, dfresidual, nobs, rsquare_fit, aic, bic, loglik, mse, cv, source, bkg_method, is_log_response, is_log_x, apply_prozone, formula, g
+	FROM madi_results.best_glance_all
+	WHERE study_accession = '{study_accession}';")
+  best_glance_all <- dbGetQuery(conn, query)
+  return(best_glance_all)
+}
+
+
+attach_antigen_familes <- function(best_pred_all, antigen_families) {
+  pred_with_antigen_familes <- merge(best_pred_all, antigen_families[, c("study_accession", "antigen", "antigen_family")],
+                                     by = c("study_accession", "antigen"), all.x = T)
+  return(pred_with_antigen_familes)
+
+}

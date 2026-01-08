@@ -506,8 +506,9 @@ observeEvent(list(
 
     observeEvent(input$run_batch_fit, {
       showNotification(id = "batch_sc_fit_notify", "Fitting standard curves for all experiments.", duration = NULL)
+      response_var <- loaded_data$response_var
       headers <- fetch_db_header_experiments(study_accession = input$readxMap_study_accession, conn = conn)
-      exp_list <- unique(headers$experiment_accession)
+      exp_list <- unique(headers$experiment_accession) #[1]
 
       loaded_data_list <- list()
       for(exp in exp_list) {
@@ -531,8 +532,102 @@ observeEvent(list(
                                                   model_names = model_names, study_params = study_params, verbose = verbose)
 
       # cat(paste("after antigen_list_res", exp))
-      batch_outputs <<- create_batch_fit_outputs(batch_fit_res = batch_fit_res)
-      # cat(paste("after batch_outputs", exp))
+      batch_outputs <- create_batch_fit_outputs(batch_fit_res = batch_fit_res, antigen_plate_list_res)
+
+      # add unique identifiers and rename the response variable to be generic for saving
+     batch_outputs_proccessed <-  process_batch_outputs(batch_outputs = batch_outputs, response_var = response_var)
+
+
+     # cat("AFTER PROCES sample_se  ", "uid" %in% names(batch_outputs$best_sample_se_all), "\n")
+     #
+     # cat("AFTER PROCES pred  ", "id_match" %in% names(batch_outputs$best_pred_all), "\n")
+
+      # batch_outputs$best_pred_all <- batch_outputs$best_pred_all %>%
+      #   dplyr::group_by(study_accession,
+      #                   experiment_accession,
+      #                   plateid,
+      #                   antigen,
+      #                   source) %>%
+      #   dplyr::mutate(id_match = dplyr::row_number()) %>%
+      #   dplyr::ungroup()
+      #
+      #
+      # batch_outputs$best_sample_se_all <- batch_outputs$best_sample_se_all |>
+      #   dplyr::rename(assay_response = all_of(response_var)) |>
+      #   dplyr::mutate(uid = seq_len(n()))
+      #
+      # batch_outputs$best_standard_all <- batch_outputs$best_standard_all |>
+      #   dplyr::rename(assay_response = all_of(response_var))
+      #
+      # batch_outputs <<- batch_outputs
+
+      upsert_best_curve(
+        conn   = conn,
+        df     = batch_outputs_proccessed$best_plate_all,
+        schema = "madi_results",
+        table  = "best_plate_all",
+        notify = shiny_notify(session)
+      )
+
+      showNotification(id = "batch_sc_fit_notify","Best Plates saved", duration = NULL)
+
+      upsert_best_curve(
+        conn   = conn,
+        df     = batch_outputs_proccessed$best_tidy_all,
+        schema = "madi_results",
+        table  = "best_tidy_all",
+        notify = shiny_notify(session)
+      )
+      showNotification(id = "batch_sc_fit_notify","Best parameter estimates saved", duration = NULL)
+
+      upsert_best_curve(
+        conn   = conn,
+        df     = batch_outputs_proccessed$best_glance_all,
+        schema = "madi_results",
+        table  = "best_glance_all",
+        notify = shiny_notify(session)
+      )
+      showNotification(id = "batch_sc_fit_notify","Best Fit Statistics saved", duration = NULL)
+
+     # batch_outputs$best_pred_all$id_match <- match(batch_outputs$best_pred_all$x, unique(batch_outputs$best_pred_all$x))
+
+
+
+      upsert_best_curve(
+        conn   = conn,
+        df     = batch_outputs_proccessed$best_pred_all,
+        schema = "madi_results",
+        table  = "best_pred_all",
+        notify = shiny_notify(session)
+      )
+
+      showNotification(id = "batch_sc_fit_notify","Best Predicted standards saved", duration = NULL)
+
+
+      upsert_best_curve(
+      conn   = conn,
+      df     = batch_outputs_proccessed$best_sample_se_all,
+      schema = "madi_results",
+      table  = "best_sample_se_all",
+      notify = shiny_notify(session)
+    )
+
+      showNotification(id = "batch_sc_fit_notify","Best Predicted Samples saved", duration = NULL)
+
+
+      upsert_best_curve(
+        conn   = conn,
+        df     = batch_outputs_proccessed$best_standard_all,
+        schema = "madi_results",
+        table  = "best_standard_all",
+        notify = shiny_notify(session)
+
+
+      )
+
+    showNotification(id = "batch_sc_fit_notify","Best Standards saved", duration = NULL)
+
+
 
       showNotification(id = "batch_sc_fit_notify","Standard Curves Calculated for all Experiments", duration = NULL)
       removeNotification("batch_sc_fit_notify")
@@ -540,7 +635,7 @@ observeEvent(list(
     })
 
 
-}
+} # end if
 
 }) # end in the tab
 

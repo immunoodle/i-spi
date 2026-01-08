@@ -466,7 +466,8 @@ output$view_stored_experiments_ui <- renderUI({
                           radioGroupButtons(
                             inputId = "qc_component",
                             label = "",
-                            choices = c("Bead Count", "Standard Curve", "Standard Curver", "Standard Curve Summary"),
+                            choices = c("Bead Count", "Standard Curve", "Standard Curver", "Standard Curve Summary",
+                                        "Standard Curver Summary"),
                             selected = character(0)
                           ),
                           conditionalPanel(
@@ -485,6 +486,10 @@ output$view_stored_experiments_ui <- renderUI({
                           conditionalPanel(
                             condition = "input.qc_component == 'Standard Curve Summary'",
                             uiOutput("standardCurveSummaryUI")
+                          ),
+                          conditionalPanel(
+                            condition = "input.qc_component == 'Standard Curver Summary'",
+                            uiOutput("std_curver_summary_ui")
                           )
                         ),
 

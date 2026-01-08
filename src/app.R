@@ -911,6 +911,9 @@ server <- function(input, output, session) {
       source("plot_functions.R", local = TRUE)
       source("batch_fit_functions.R", local = TRUE)
 
+      source("std_curver_summary_ui.R", local = TRUE)
+      source("std_curver_summary_functions.R", local = TRUE)
+
       source("standardcurveui.R", local = TRUE)
       source("standard_curve_summary_ui.R", local = TRUE)
 

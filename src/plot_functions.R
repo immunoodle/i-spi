@@ -590,6 +590,7 @@ glance_plot_data <- function(best_glance_all,
   return(datf)
 }
 
+
 make_feature_plot <- function(datf, feature_name) {
 
   df <- datf %>%
