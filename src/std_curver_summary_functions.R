@@ -215,10 +215,13 @@ aggregate_standard_curves <- function(best_pred_all,
 summarize_sc_fits_plotly <- function(best_pred_all, cv_df, best_plate_all, study_params, experiment_accession,
                                      aggregated_fit, antigen, source) {
 
+
   best_plates_exp_source <-  best_plate_all[
     best_plate_all$experiment_accession == experiment_accession &
       best_plate_all$source == source,
   ]
+  message("rows in best plate all")
+  print(nrow(best_plates_exp_source))
   assay_response_variable <- unique(best_plates_exp_source$assay_response_variable)[1]
   assay_independent_variable <- unique(best_plates_exp_source$assay_independent_variable)[1]
   if (study_params$is_log_response) {
@@ -250,6 +253,7 @@ summarize_sc_fits_plotly <- function(best_pred_all, cv_df, best_plate_all, study
 
   cv_df_antigen <- cv_df[cv_df$antigen == antigen & cv_df$experiment_accession == experiment_accession & cv_df$source == source,]
 
+
   if (nrow(antigen_source_exp_fits) == 0) {
     stop("No data found for this experiment / antigen / source")
   }
@@ -267,6 +271,13 @@ summarize_sc_fits_plotly <- function(best_pred_all, cv_df, best_plate_all, study
     order(antigen_source_exp_fits$group_id,
           antigen_source_exp_fits$predicted_concentration),
   ]
+
+
+  n_plates <- length(unique(antigen_source_exp_fits$group_id))
+  n_extra  <- 2  # Aggregated Fit + CV
+  n_items  <- n_plates + n_extra
+  items_per_row <- ceiling(sqrt(n_items))
+
 
   p <- plot_ly()
 
@@ -292,7 +303,7 @@ summarize_sc_fits_plotly <- function(best_pred_all, cv_df, best_plate_all, study
     )
   }
 
-
+  # aggregated_fit <<- aggregated_fit
   agg_dash_type  <- model_linetype[as.character(aggregated_fit$mod_class[1])]
   p <- add_lines(
     p,
@@ -312,7 +323,7 @@ summarize_sc_fits_plotly <- function(best_pred_all, cv_df, best_plate_all, study
     ),
     showlegend = TRUE
   )
-
+  # cv_df_antigen <<- cv_df_antigen
   p <- p %>%
     add_trace(
       data = cv_df_antigen,
@@ -386,7 +397,9 @@ summarize_sc_fits_plotly <- function(best_pred_all, cv_df, best_plate_all, study
       side = "right",
       showgrid = FALSE,
       zeroline = FALSE,
-      tickfont = list(color = "#8C70FF")
+      tickfont = list(color = "#8C70FF"),
+      title_standoff = 30,
+      automargin = TRUE
     ),
     title = list(
       text = paste("Standard Curves for", antigen, "by Plate and Model Class"),
@@ -395,9 +408,16 @@ summarize_sc_fits_plotly <- function(best_pred_all, cv_df, best_plate_all, study
       x = 0.5
       # xanchor = "center"
     ),
-    legend = list(title = list(text = "Plate", x = 1.2, y = 1)),
+    legend = list(
+      title = list(text = "Plate:"),
+      orientation = "h",
+      y = -0.5,
+      itemwidth = items_per_row
+    ),
+    # legend = list(title = list(text = "Plate", x = 1.2,
+    #                            y = 1)),
     font = list(size = 12),
-    margin = list(t = 150, b = 80),
+    margin = list(t = 150, b = 80, r = 90),
     autosize = T
   )
 

@@ -433,43 +433,48 @@ select_antigen_plate <- function(loaded_data,
 
 
 #### Fetch saved results from std_curver
-fetch_best_plate_all <- function(study_accession, conn) {
+fetch_best_plate_all <- function(study_accession, experiment_accession, conn) {
   query <- glue("
 SELECT best_plate_all_id, study_accession, experiment_accession, feature, source, plateid, plate, sample_dilution_factor, assay_response_variable, assay_independent_variable
 	FROM madi_results.best_plate_all
-	WHERE study_accession = '{study_accession}';
+	WHERE study_accession = '{study_accession}'
+	AND experiment_accession = '{experiment_accession}';
 ")
   best_plate_all <- dbGetQuery(conn, query)
   return(best_plate_all)
 }
 
-fetch_best_tidy_all <- function(study_accession, conn) {
+fetch_best_tidy_all <- function(study_accession,experiment_accession, conn) {
   query <- glue("SELECT best_tidy_all_id, study_accession, experiment_accession, term, lower, upper, estimate, std_error, statistic, p_value, sample_dilution_factor, antigen, plateid, plate, source
 	FROM madi_results.best_tidy_all
-	WHERE study_accession = '{study_accession}'")
+	WHERE study_accession = '{study_accession}'
+  AND experiment_accession = '{experiment_accession}'")
   best_tidy_all <- dbGetQuery(conn, query)
   return(best_tidy_all)
 }
-fetch_best_pred_all <- function(study_accession, conn) {
+fetch_best_pred_all <- function(study_accession, experiment_accession, conn) {
   query <- glue("SELECT best_pred_all_id, x, model, yhat, overall_se, predicted_concentration, se_x, pcov, study_accession, experiment_accession, sample_dilution_factor, plateid, plate, antigen, source, id_match
 	FROM madi_results.best_pred_all
-	WHERE study_accession = '{study_accession}';")
+	WHERE study_accession = '{study_accession}'
+  AND experiment_accession = '{experiment_accession}';")
   best_pred_all <- dbGetQuery(conn, query)
   return(best_pred_all)
 }
 
-fetch_best_standard_all <- function(study_accession, conn) {
+fetch_best_standard_all <- function(study_accession,experiment_accession, conn) {
   query <- glue("SELECT best_standard_all_id, study_accession, experiment_accession, feature, source, plateid, plate, stype, sample_dilution_factor, sampleid, well, dilution, antigen, assay_response, assay_response_variable, assay_independent_variable, concentration, g
 	FROM madi_results.best_standard_all
-	WHERE study_accession = '{study_accession}';")
+	WHERE study_accession = '{study_accession}'
+  AND experiment_accession = '{experiment_accession}';")
   best_standard_all <- dbGetQuery(conn, query)
   return(best_standard_all)
 }
 
-fetch_best_glance_all <- function(study_accession, conn) {
+fetch_best_glance_all <- function(study_accession,experiment_accession, conn) {
   query <- glue("SELECT best_glance_all_id, study_accession, experiment_accession, plateid, plate, sample_dilution_factor, antigen, iter, status, crit, a, b, c, d, lloq, uloq, lloq_y, uloq_y, llod, ulod, inflect_x, inflect_y, std_error_blank, dydx_inflect, dfresidual, nobs, rsquare_fit, aic, bic, loglik, mse, cv, source, bkg_method, is_log_response, is_log_x, apply_prozone, formula, g
 	FROM madi_results.best_glance_all
-	WHERE study_accession = '{study_accession}';")
+	WHERE study_accession = '{study_accession}'
+  AND experiment_accession = '{experiment_accession}';")
   best_glance_all <- dbGetQuery(conn, query)
   return(best_glance_all)
 }

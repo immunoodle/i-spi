@@ -24,14 +24,17 @@ observeEvent(list(
                                               param_group =param_group, conn = conn)
 
       best_plate_all <- fetch_best_plate_all(study_accession = selected_study,
+                                             experiment_accession = selected_experiment,
                                              conn = conn)
 
       best_standard_all <- fetch_best_standard_all(study_accession = selected_study,
+                                                   experiment_accession = selected_experiment,
                                                    conn = conn)
 
 
 
       best_pred_all <- fetch_best_pred_all(study_accession = selected_study,
+                                           experiment_accession = selected_experiment,
                                            conn = conn)
 
 
@@ -41,7 +44,8 @@ observeEvent(list(
       best_pred_all <- attach_antigen_familes(best_pred_all = best_pred_all,
                                               antigen_families = antigen_families)
 
-      best_glance_all <<- fetch_best_glance_all(study_accession = selected_study,
+      best_glance_all <- fetch_best_glance_all(study_accession = selected_study,
+                                               experiment_accession = selected_experiment,
                                                 conn = conn)
 
 
@@ -61,10 +65,13 @@ observeEvent(list(
 
       output$std_curver_summary_ui <- renderUI({
         tagList(
-          uiOutput("best_std_antigen_family_ui"),
-          uiOutput("best_std_antigen_ui"),
-          uiOutput("best_std_antigen_source_ui"),
-          plotOutput("std_curve_summary_plot")
+          fluidRow(
+            column(4, uiOutput("best_std_antigen_family_ui")),
+            column(4, uiOutput("best_std_antigen_ui")),
+            column(4, uiOutput("best_std_antigen_source_ui"))
+          ),
+          plotlyOutput("std_curve_summary_plot")
+
         ) # end tagList
       })
 
@@ -105,15 +112,10 @@ observeEvent(list(
 
         # req(nrow(best_std_source) > 0)
 
-        # selected_source <- unique(best_pred_all[best_pred_all$experiment_accession == selected_experiment &
-        #                                          best_pred_all$antigen_family == input$best_std_antigen_family  &
-        #                                          best_pred_all$antigen ==  input$best_std_antigen,]$source)
+        selected_source <- unique(best_pred_all[best_pred_all$experiment_accession == selected_experiment &
+                                                 best_pred_all$antigen_family == input$best_std_antigen_family  &
+                                                 best_pred_all$antigen ==  input$best_std_antigen,]$source)
 
-        selected_source <- unique(best_standard_all[
-          best_standard_all$experiment_accession == selected_experiment &
-            best_standard_all$antigen_family == input$best_std_antigen_family &
-            best_standard_all$antigen == input$best_std_antigen,
-        ]$source)
 
         req(length(selected_source) > 0)
 
