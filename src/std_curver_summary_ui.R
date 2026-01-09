@@ -44,9 +44,15 @@ observeEvent(list(
       best_pred_all <- attach_antigen_familes(best_pred_all = best_pred_all,
                                               antigen_families = antigen_families)
 
+      best_pred_all_2 <- best_pred_all
+
       best_glance_all <- fetch_best_glance_all(study_accession = selected_study,
                                                experiment_accession = selected_experiment,
                                                 conn = conn)
+
+      best_sample_se_all <- fetch_best_sample_se_all(study_accession = selected_study,
+                                                 experiment_accession = selected_experiment,
+                                                 conn = conn)
 
 
       antigen_settings <- fetch_antigen_parameters(
@@ -70,7 +76,8 @@ observeEvent(list(
             column(4, uiOutput("best_std_antigen_ui")),
             column(4, uiOutput("best_std_antigen_source_ui"))
           ),
-          plotlyOutput("std_curve_summary_plot")
+          plotlyOutput("std_curve_summary_plot"),
+          actionButton("save_norm_assay_response", "Save Normalized Assay Response")
 
         ) # end tagList
       })
@@ -145,6 +152,8 @@ observeEvent(list(
 
       output$std_curve_summary_plot <- renderPlotly({
         selected_experiment <- input$readxMap_experiment_accession
+        aggregated_fit<- aggregated_fit()
+        #aggregated_fit_v <<- aggregated_fit
         summarize_sc_fits_plotly(best_pred_all = best_pred_all, cv_df = cv_df, aggregated_fit = aggregated_fit(),
                                   best_plate_all = best_plate_all,
                                   study_params = study_params, experiment_accession = selected_experiment,
@@ -154,26 +163,44 @@ observeEvent(list(
 
 
 
-      # utput$antigenSelectionUI2 <- renderUI({
-      #   req(fitted_curve_parameters)
-      #   req(input$readxMap_study_accession, input$readxMap_experiment_accession)
-      #   req(fitted_curve_parameters$study_accession, fitted_curve_parameters$experiment_accession)
-      #   # require the antigen family
-      #   req(input$antigenFamilySelection)
-      #
-      #   updateSelectInput(session, "antigenSelection2", selected = NULL)
-      #
-      #   dat_antigen <- fitted_curve_parameters[fitted_curve_parameters$study_accession %in% input$readxMap_study_accession &
-      #                                            fitted_curve_parameters$experiment_accession %in% input$readxMap_experiment_accession &
-      #                                            fitted_curve_parameters$antigen_family %in% input$antigenFamilySelection, ]
-      #   req(nrow(dat_antigen) > 0)
-      #
-      #   my_label <- paste0("Select a Single Antigen in ", input$antigenFamilySelection," for plotting Standard Curves")
-      #   selectInput("antigenSelection2",
-      #               label = my_label,
-      #               choices = unique(dat_antigen$antigen)) #unique(dat_antigen$antigen)
-      #   #}
-      # })
+      observeEvent(input$save_norm_assay_response, {
+        cat("pressed save norm_assay_response")
+
+        showNotification(id = "save_norm_assay_response_progress", "Saving Normalized Assay Response for all Antigens.",
+                         duration = NULL)
+
+        req(best_pred_all, best_glance_all, best_sample_se_all)
+
+
+      agg_curves_all_antigens <- compute_aggregated_curves(
+            best_pred_all = best_pred_all,
+            best_glance_all = best_glance_all,
+            experiment_accession = input$readxMap_experiment_accession,
+            antigen_settings = antigen_settings
+          )
+
+
+      norm_best_sample <- conduct_linear_interpolation_batch(
+        best_sample_se_all = best_sample_se_all,
+        aggregated_fit_v   = agg_curves_all_antigens
+      )
+
+      # Upsert the normalized assay response
+      upsert_best_curve(
+        conn   = conn,
+        df     = norm_best_sample,
+        schema = "madi_results",
+        table  = "best_sample_se_all",
+        notify = shiny_notify(session)
+      )
+      cat("after normalization")
+
+      removeNotification(id = "save_norm_assay_response_progress")
+
+      showNotification("Normalized Assay Response Saved for all Antigens.")
+      })
+
+
 
 
 

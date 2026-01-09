@@ -215,6 +215,9 @@ aggregate_standard_curves <- function(best_pred_all,
 summarize_sc_fits_plotly <- function(best_pred_all, cv_df, best_plate_all, study_params, experiment_accession,
                                      aggregated_fit, antigen, source) {
 
+  microviz_kelly_pallete <-  c("#f3c300","#875692","#f38400","#a1caf1","#be0032","#c2b280","#848482",
+                               "#008856","#e68fac","#0067a5","#f99379","#604e97", "#f6a600",  "#b3446c" ,
+                               "#dcd300","#882d17","#8db600", "#654522", "#e25822","#2b3d26","lightgrey")
 
   best_plates_exp_source <-  best_plate_all[
     best_plate_all$experiment_accession == experiment_accession &
@@ -281,8 +284,8 @@ summarize_sc_fits_plotly <- function(best_pred_all, cv_df, best_plate_all, study
 
   p <- plot_ly()
 
-  for (grp in unique(antigen_source_exp_fits$group_id)) {
-
+  for (i in seq_along(unique(antigen_source_exp_fits$group_id))) {
+    grp <- unique(antigen_source_exp_fits$group_id)[i]
     df <- antigen_source_exp_fits[antigen_source_exp_fits$group_id == grp, ]
 
     dash_type  <- model_linetype[as.character(df$model[1])]
@@ -293,7 +296,8 @@ summarize_sc_fits_plotly <- function(best_pred_all, cv_df, best_plate_all, study
       x = ~predicted_concentration,
       y = ~yhat,
       name = as.character(grp),
-      line = list(dash = dash_type),
+      line = list(dash = dash_type,
+                  color = microviz_kelly_pallete[i]),
       hoverinfo = "text",
       text = ~paste(
         "Plate:", plateid,
@@ -427,3 +431,89 @@ summarize_sc_fits_plotly <- function(best_pred_all, cv_df, best_plate_all, study
 
   return(p)
 }
+
+
+
+# adds normalized assay_response to the samples
+conduct_linear_interpolation <- function(best_sample_se_all, aggregated_fit_v) {
+
+  selected_antigen <- unique(aggregated_fit_v$antigen)
+  best_sample_se_antigen <- best_sample_se_all[best_sample_se_all$antigen == selected_antigen, ]
+  interprolated_assay_response_df <- approx(
+    x = aggregated_fit_v$predicted_concentration,
+    y = aggregated_fit_v$yhat,
+    xout = best_sample_se_antigen$predicted_concentration,
+    method = "linear"
+  )
+  best_sample_se_antigen$norm_assay_response <- interprolated_assay_response_df$y
+
+  return(best_sample_se_antigen)
+}
+
+compute_aggregated_curves <- function(best_pred_all,
+                                      best_glance_all,
+                                      experiment_accession,
+                                      antigen_settings) {
+
+  df <- best_pred_all |>
+    dplyr::filter(experiment_accession == experiment_accession)
+
+  grid <- df |> dplyr::select(antigen, source) |> dplyr::distinct()
+
+  out_list <- purrr::pmap(grid, function(antigen, source) {
+    res <- aggregate_standard_curves(
+      best_pred_all = best_pred_all,
+      best_glance_all = best_glance_all,
+      experiment_accession = experiment_accession,
+      antigen = antigen,
+      source = source,
+      indep_var = "concentration",
+      response_var = "mfi",
+      antigen_settings = antigen_settings
+    )
+    if (is.null(res) || nrow(res) == 0) return(NULL)
+    dplyr::mutate(res, antigen = antigen, source = source)
+  })
+
+  dplyr::bind_rows(purrr::compact(out_list))
+}
+
+conduct_linear_interpolation_batch <- function(best_sample_se_all, aggregated_fit_v) {
+
+  # identify unique antigen-source pairs
+  grid <- aggregated_fit_v |>
+    dplyr::select(antigen, source) |>
+    dplyr::distinct()
+
+  out <- purrr::pmap(grid, function(antigen, source) {
+
+    fit_sub <- aggregated_fit_v[
+      aggregated_fit_v$antigen == antigen &
+        aggregated_fit_v$source  == source, ]
+
+    sample_sub <- best_sample_se_all[
+      best_sample_se_all$antigen == antigen &
+        best_sample_se_all$source  == source, ]
+
+    if (nrow(fit_sub) == 0 || nrow(sample_sub) == 0)
+      return(NULL)
+
+    # optional sorting (helps approx() avoid warnings)
+    fit_sub <- fit_sub[order(fit_sub$predicted_concentration), ]
+
+    inter <- approx(
+      x = fit_sub$predicted_concentration,
+      y = fit_sub$yhat,
+      xout = sample_sub$predicted_concentration,
+      method = "linear"
+    )
+
+    sample_sub$norm_assay_response <- inter$y
+    sample_sub
+  })
+
+  dplyr::bind_rows(purrr::compact(out))
+}
+
+
+# norm_response <-conduct_linear_interpolation(best_sample_se_all = best_sample_se_all, aggregated_fit_v = aggregated_fit_v)

@@ -479,6 +479,17 @@ fetch_best_glance_all <- function(study_accession,experiment_accession, conn) {
   return(best_glance_all)
 }
 
+fetch_best_sample_se_all <- function(study_accession, experiment_accession, conn) {
+  query <- glue("
+SELECT best_sample_se_all_id, predicted_concentration, study_accession, experiment_accession, timeperiod, patientid, well, stype, sampleid, agroup, pctaggbeads, samplingerrors, antigen,
+antibody_n, plateid, plate, sample_dilution_factor, assay_response_variable, assay_independent_variable, y_new, dilution, overall_se, assay_response, se_x, au, pcov, source, gate_class_loq, gate_class_lod, gate_class_pcov, uid
+	FROM madi_results.best_sample_se_all
+	WHERE study_accession = '{study_accession}'
+	AND experiment_accession = '{experiment_accession}';")
+  best_sample_se_all <- dbGetQuery(conn, query)
+  return(best_sample_se_all)
+}
+
 
 attach_antigen_familes <- function(best_pred_all, antigen_families) {
   pred_with_antigen_familes <- merge(best_pred_all, antigen_families[, c("study_accession", "antigen", "antigen_family")],
