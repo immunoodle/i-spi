@@ -7,13 +7,13 @@ observeEvent(list(
   input$main_tabs), {
 
 
-    req(input$qc_component == "Standard Curver Summary",
+    req(input$qc_component == "Standard Curve Summary",
         input$readxMap_study_accession != "Click here",
         input$readxMap_experiment_accession != "Click here",
         input$study_level_tabs == "Experiments",
         input$main_tabs == "view_files_tab")
 
-    if (input$qc_component == "Standard Curver Summary") {
+    if (input$qc_component == "Standard Curve Summary") {
       message("Std Curver Summary")
       selected_study <- input$readxMap_study_accession
       selected_experiment <- input$readxMap_experiment_accession
@@ -77,6 +77,7 @@ observeEvent(list(
             column(4, uiOutput("best_std_antigen_source_ui"))
           ),
           plotlyOutput("std_curve_summary_plot"),
+          uiOutput("download_standard_curve_fits_data_button_ui"),
           actionButton("save_norm_assay_response", "Save Normalized Assay Response")
 
         ) # end tagList
@@ -200,6 +201,32 @@ observeEvent(list(
       showNotification("Normalized Assay Response Saved for all Antigens.")
       })
 
+
+
+
+      output$download_standard_curve_fits_data_button_ui <- renderUI({
+        req(best_glance_all)
+        req(input$readxMap_study_accession, input$readxMap_experiment_accession)
+        button_label <-  paste0("Download Standard Curve Fits Data for ", input$readxMap_experiment_accession, " in ", input$readxMap_study_accession)
+
+        downloadButton("download_standard_curve_fits_data", button_label)
+      })
+
+
+      output$download_standard_curve_fits_data <-  downloadHandler(
+        filename = function() {
+          paste(input$readxMap_study_accession, input$readxMap_experiment_accession, "_fits_data", ".csv", sep = "_")
+        },
+        content = function(file) {
+          req(best_glance_all)
+          req(input$readxMap_study_accession, input$readxMap_experiment_accession)
+
+          download_df <- best_glance_all[best_glance_all$experiment_accession == input$readxMap_experiment_accession,]
+
+          # download data component (data frame)
+          write.csv(download_df, file, row.names = FALSE)
+        }
+      )
 
 
 

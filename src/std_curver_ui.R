@@ -13,14 +13,22 @@ observeEvent(list(
 
 
     if (input$qc_component == "Standard Curver") {
+      cat("In standard curver")
       selected_study <- input$readxMap_study_accession
       selected_experiment <- input$readxMap_experiment_accession
 
       verbose = FALSE
-      model_names <<- c("Y5", "Yd5", "Y4", "Yd4", "Ygomp4")
+      model_names <- c("Y5", "Yd5", "Y4", "Yd4", "Ygomp4")
       param_group = "standard_curve_options"
 
+      # cat("conn exists? ", exists("conn"), "\n")
+      # str(conn)
+
+
       loaded_data <- pull_data(study_accession = selected_study, experiment_accession = selected_experiment, conn = conn)
+
+      # cat("after loaded data")
+      # print(str(loaded_data))
       response_var <- loaded_data$response_var
       indep_var <-  loaded_data$indep_var
 
@@ -28,9 +36,12 @@ observeEvent(list(
                                   dilution_col = "dilution",
                                   response_col = response_var)
 
-      study_params <<- fetch_study_parameters(study_accession = selected_study,
+      study_params <- fetch_study_parameters(study_accession = selected_study,
                                              param_user = currentuser(),
                                              param_group =param_group, conn = conn)
+
+      # cat("study_params")
+      # print(str(study_params))
 
 
 
@@ -210,7 +221,7 @@ observeEvent(list(
 
       req(plate, pdata, f, response_var, indep_var)
 
-      pdata_v <<- pdata
+      #pdata_v <<- pdata
 
       obtain_model_constraints(
         data = pdata$data,
