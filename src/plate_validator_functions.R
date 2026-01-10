@@ -6,9 +6,6 @@ looks_like_file_path <- function(x) {
   (grepl("[/\\\\]", x) | grepl("^[A-Za-z]:[\\\\/]", x)) ##&& grepl("\\.[A-Za-z0-9]+$", x)
 }
 
-#looks_like_file_path(meta_df_view$file_name)
-# looks_like_file_path("Untitled")
-
 # Validate the RP1 Volts and RP1 Target
 # Only one decimal point is allowed
 check_rp1_numeric <- function(x) {
@@ -27,24 +24,7 @@ capitalize_am_pm <- function(text) {
   regmatches(text, matches) <- lapply(regmatches(text, matches), toupper)
   return(text)
 }
-## Validate the required variables present in metadata
-# validate_metadata_variables <- function(df) {
-#   required_vars <- c(
-#     "file_name", "acquisition_date", "plateid", "plate_id", "plate"
-#   )
-#
-#   missing_vars <- setdiff(required_vars, names(df))
-#
-#   if (length(missing_vars) > 0) {
-#     message <- paste("The following required variables are missing from the plate metadata:",
-#                paste(missing_vars, collapse = ", "))
-#    return(list(FALSE, message))
-#   } else {
-#     return(list(TRUE))
-#   }
-# }
 
-## Primary dataset
 # Type column must be in correct format
 check_type_column <- function(df) {
 bad_rows <- df[!grepl("^[BXCS][0-9]*$", df$Type), ]
@@ -62,9 +42,6 @@ if (nrow(bad_rows) > 0) {
 
 }
 
-#check_type_column(plte_data_v)
-
-
 # if false procceed
 check_blank_in_sample_boolean <- function(df) {
 bad_rows <- which(
@@ -78,8 +55,6 @@ if (length(bad_rows) > 0) {
   return(TRUE)
 }
 }
-
-#check_blank_in_sample_boolean(plte_data_v)
 
 # check general description pattern for datatypes
 check_sample_description <- function(df) {
@@ -116,10 +91,435 @@ check_standard_description <- function(df) {
   }
 }
 
-# check description of the controls
-# check_control_description <- function(df){
-#   df <- df[grepl("^C", df$Type) & !grepl("", df$Description).]
-# }
+validate_batch_plate <- function(plate_metadata, plate_data_list, plate_id_data) {
+  # plate_data_list <<- plate_data_list
+  message_list <- c()
+
+  check_uploaded_file_in_layout <- plate_metadata$file_name %in% plate_id_data$plate_filename
+  if (!all(check_uploaded_file_in_layout)) {
+    message_list <- c("Some uploaded plates are missing in the layout file. plate.")
+  }
+  # validate the required columns
+  required_cols <- c("file_name", "rp1_pmt_volts", "rp1_target", "acquisition_date")
+  missing_cols <- setdiff(required_cols, names(plate_metadata))
+
+  if (length(missing_cols) > 0) {
+    message_list <- c(
+      message_list,
+      paste("The following required plate metadata columns are missing so further parsing cannot be conducted:",
+            paste(missing_cols, collapse = ", "))
+    )
+    # If critical metadata is missing, return early
+    return(list(
+      is_valid = FALSE,
+      messages = message_list
+    ))
+  }
+
+  # plate_metadata <<- plate_metadata
+
+  # check to see if all files passes file Path
+  pass_file_path <- all(looks_like_file_path(plate_metadata$file_name))
+  if (!pass_file_path) {
+    message_list <- c(message_list, "Ensure that alll file paths have foward or backward slashes based on Mac or Windows")
+  }
+
+  pass_rp1_pmt_volts <- all(check_rp1_numeric(plate_metadata$rp1_pmt_volts))
+  is_numeric <- check_rp1_numeric(plate_metadata$rp1_pmt_volts)
+  if (!pass_rp1_pmt_volts) {
+    bad_rp1_pmt_volts <- plate_metadata[!is_numeric, c("plateid", "rp1_pmt_volts")]
+    labeled_vals <- paste(bad_rp1_pmt_volts$plateid, bad_rp1_pmt_volts$rp1_pmt_volts, sep = ":")
+
+    message_list <- c(message_list, paste(
+      "Ensure that all files have an RP1 PMT (Volts) field that is numeric and if it is a decimal only one period is present. Values by plateid:",
+      paste(labeled_vals, collapse = ", "))
+    )
+  }
+  pass_rp1_target <- all(check_rp1_numeric(plate_metadata$rp1_target))
+  is_target_numeric <- check_rp1_numeric(plate_metadata$rp1_target)
+  if (!pass_rp1_target) {
+    invalid_rp1_target <- plate_metadata[!is_target_numeric, c("plateid", "rp1_target")]
+    labeled_bad_rp1_target <- paste(invalid_rp1_target$plateid, invalid_rp1_target$rp1_target, sep = ":")
+    message_list <- c(message_list, paste("Ensure that the RP1 Target is numeric and if it is a decimal only one period is present. Values by plateid:",
+                                          paste(labeled_bad_rp1_target,collapse = ", ")))
+  }
+
+  pass_time_format <- all(check_time_format(capitalize_am_pm(plate_metadata$acquisition_date)))
+  is_time_format <- check_time_format(capitalize_am_pm(plate_metadata$acquisition_date))
+  if (!pass_time_format) {
+    invalid_time_format <- plate_metadata[!is_time_format, c("plateid", "aquisition_date")]
+    labeled_invalid_time_format <- paste(invalid_time_format$plateid, invalid_time_format$aquisition_date)
+    message_list <- c(message_list, paste("Ensure the acquisition date is in the following date time format: DD-MMM-YYYY, HH:MM AM/PM Example: 01-Oct-2025, 12:12 PM  |Current Value by plateid:",
+                                          paste(labeled_invalid_time_format, collapse = ", ")))
+  }
+
+  # validate main data sets
+
+
+  # if no invalid messages then it is good to pass
+  is_valid <- length(message_list) == 0
+
+  if (is_valid)  {
+    return(list(
+      is_valid = is_valid,
+      messages = message_list
+      # updated_plate_data = plate_data
+    ))
+  } else {
+    return(list(
+      is_valid = is_valid,
+      messages = message_list
+    ))
+  }
+}
+
+validate_batch_plate_metadata <- function(plate_metadata, plate_id_data) {
+  cat("\n>>> ENTERING validate_batch_plate_metadata <<<\n")
+  cat("plate_metadata rows:", nrow(plate_metadata), "\n")
+  cat("plate_id_data rows:", nrow(plate_id_data), "\n")
+
+  message_list <- c()
+
+  # Check if uploaded files are in layout
+  check_uploaded_file_in_layout <- plate_metadata$file_name %in% plate_id_data$plate_filename
+  if (!all(check_uploaded_file_in_layout)) {
+    missing_files <- plate_metadata$file_name[!check_uploaded_file_in_layout]
+    message_list <- c(message_list, paste0(
+      "LAYOUT MISMATCH: The following uploaded plate files are not listed in the layout file:\n",
+      paste("  - ", missing_files, collapse = "\n"),
+      "\n\nPlease add these files to the 'plate_id' sheet in your layout file."
+    ))
+  }
+
+  # validate the required columns
+  required_cols <- c("file_name", "rp1_pmt_volts", "rp1_target", "acquisition_date")
+  missing_cols <- setdiff(required_cols, names(plate_metadata))
+
+  if (length(missing_cols) > 0) {
+    message_list <- c(
+      message_list,
+      paste0(
+        "MISSING METADATA COLUMNS: The following required columns are missing from plate metadata:\n",
+        paste("  - ", missing_cols, collapse = "\n"),
+        "\n\nThese columns must be present in the 'plate_id' sheet of your layout file."
+      )
+    )
+    # If critical metadata is missing, return early
+    cat(">>> EXITING validate_batch_plate_metadata - is_valid: FALSE <<<\n")
+    return(list(
+      is_valid = FALSE,
+      messages = message_list
+    ))
+  }
+
+  # check to see if all files pass file Path validation
+  pass_file_path <- all(looks_like_file_path(plate_metadata$file_name))
+  if (!pass_file_path) {
+    invalid_paths <- plate_metadata$file_name[!looks_like_file_path(plate_metadata$file_name)]
+    message_list <- c(message_list, paste0(
+      "INVALID FILE PATHS: The following file paths are incorrectly formatted:\n",
+      paste("  - ", invalid_paths, collapse = "\n"),
+      "\n\nFile paths must include directory separators (/ or \\) and be complete paths to the files."
+    ))
+  }
+
+  # Check RP1 PMT Volts
+  pass_rp1_pmt_volts <- all(check_rp1_numeric(plate_metadata$rp1_pmt_volts))
+  is_numeric <- check_rp1_numeric(plate_metadata$rp1_pmt_volts)
+  if (!pass_rp1_pmt_volts) {
+    bad_rp1_pmt_volts <- plate_metadata[!is_numeric, c("plateid", "rp1_pmt_volts")]
+    message_list <- c(message_list, paste0(
+      "INVALID RP1 PMT (Volts): The following plates have invalid RP1 PMT voltage values:\n",
+      paste(sprintf("  - Plate '%s': Value '%s'",
+                    bad_rp1_pmt_volts$plateid,
+                    bad_rp1_pmt_volts$rp1_pmt_volts),
+            collapse = "\n"),
+      "\n\nRP1 PMT (Volts) must be numeric with at most one decimal point (e.g., 500 or 500.5)."
+    ))
+  }
+
+  # Check RP1 Target
+  pass_rp1_target <- all(check_rp1_numeric(plate_metadata$rp1_target))
+  is_target_numeric <- check_rp1_numeric(plate_metadata$rp1_target)
+  if (!pass_rp1_target) {
+    invalid_rp1_target <- plate_metadata[!is_target_numeric, c("plateid", "rp1_target")]
+    message_list <- c(message_list, paste0(
+      "INVALID RP1 TARGET: The following plates have invalid RP1 Target values:\n",
+      paste(sprintf("  - Plate '%s': Value '%s'",
+                    invalid_rp1_target$plateid,
+                    invalid_rp1_target$rp1_target),
+            collapse = "\n"),
+      "\n\nRP1 Target must be numeric with at most one decimal point (e.g., 100 or 100.5)."
+    ))
+  }
+
+  # Check acquisition date format
+  pass_time_format <- all(check_time_format(capitalize_am_pm(plate_metadata$acquisition_date)))
+  is_time_format <- check_time_format(capitalize_am_pm(plate_metadata$acquisition_date))
+  if (!pass_time_format) {
+    invalid_time_format <- plate_metadata[!is_time_format, c("plateid", "acquisition_date")]
+    message_list <- c(message_list, paste0(
+      "INVALID ACQUISITION DATE FORMAT: The following plates have incorrectly formatted dates:\n",
+      paste(sprintf("  - Plate '%s': Value '%s'",
+                    invalid_time_format$plateid,
+                    invalid_time_format$acquisition_date),
+            collapse = "\n"),
+      "\n\nRequired format: DD-MMM-YYYY, HH:MM AM/PM\nExample: 01-Oct-2025, 12:12 PM"
+    ))
+  }
+
+  is_valid <- length(message_list) == 0
+
+  cat(">>> EXITING validate_batch_plate_metadata - is_valid:", is_valid, "<<<\n")
+
+  return(list(
+    is_valid = is_valid,
+    messages = message_list
+  ))
+}
+
+validate_batch_bead_array <- function(plate_data_list, antigen_import_list, blank_keyword) {
+  plate_data_list <<- plate_data_list
+  message_list <- list()
+  plate_names <- names(plate_data_list)
+
+  for (name in plate_names) {
+    # Get current dataset
+    df <- plate_data_list[[name]]
+
+    # Replace dots with spaces except for "%.Agg.Beads" and "Sampling.Errors"
+    col_names <- ifelse(names(df) %in% c("Sampling.Errors", "%.Agg.Beads"),
+                        names(df),                 # keep as-is
+                        gsub("\\.", " ", names(df)))  # replace . with space
+
+    # Assign new names
+    names(df) <- col_names
+
+    # Store updated data set
+    plate_data_list[[name]] <- df
+  }
+
+  antigens_check <- unique(antigen_import_list$antigen_label_on_plate)
+  check_antigens <- lapply(plate_data_list, function(df) {
+    sapply(antigens_check, function(name) name %in% names(df))
+  })
+
+  # check on each plate and then all plates results together
+  all_antigens_present <- all(sapply(check_antigens, function(x) all(x)))
+  if (!all_antigens_present) {
+    check_antigens_with_falses <- check_antigens[sapply(check_antigens, function(x) any(!x))]
+    if (length(check_antigens_with_falses) > 0) {
+      # For each plate with FALSE antigens
+      for (plate_name in names(check_antigens_with_falses)) {
+        missing_antigens <- names(check_antigens_with_falses[[plate_name]])[!check_antigens_with_falses[[plate_name]]]
+        # Create a formatted message
+        msg <- paste0(
+          "Plate ", plate_name,
+          " is missing the following antigens in the layout file: ",
+          paste(missing_antigens, collapse = ", ")
+        )
+        message_list <- c(message_list, msg)
+      }
+    }
+  }
+
+  #pass_agg_bead_check_list <- lapply(plate_list, check_agg_bead_column)
+  pass_agg_bead_check_list <- lapply(plate_data_list, check_batch_agg_bead_column)
+  all_true <- all(sapply(pass_agg_bead_check_list, function(x) x$result))
+  if (!all_true) {
+    failed <- names(pass_agg_bead_check_list)[!sapply(pass_agg_bead_check_list, function(x) x$result)]
+    agg_bead_message <- paste(
+      "The following plates are missing a % Agg Beads column:\n",
+      paste("-", failed, collapse = "\n"),
+      "\nEnsure each plate has a % Agg Beads column after the last antigen."
+    )
+    message_list <- c(message_list, agg_bead_message)
+  } else {
+    pass_bead_count_check_list <- lapply(plate_data_list, check_bead_count)
+
+    # Determine if all passed
+    all_true_bead <- all(sapply(pass_bead_count_check_list, function(x) x[[1]]))
+
+    if (!all_true_bead) {
+      failed_bead <- names(pass_bead_count_check_list)[!sapply(pass_bead_count_check_list, function(x) x[[1]])]
+
+      # Gather all detailed messages for failed plates
+      bead_messages <- sapply(failed_bead, function(plate) {
+        paste0("Plate: ", plate, "\n", pass_bead_count_check_list[[plate]][[2]])
+      }, USE.NAMES = FALSE)
+
+      # Combine into one final message
+      bead_count_message <- paste(
+        "Ensure the bead count is present after all MFI values in parentheses for the following plates:\n",
+        paste(bead_messages, collapse = "\n\n"),
+        sep = ""
+      )
+
+      # Add to message list
+      message_list <- c(message_list, bead_count_message)
+    }
+
+  }
+
+
+  # examine blanks in type column
+  # Loop over all plate data frames
+  for (i in seq_along(plate_data_list)) {
+    plate_data <- plate_data_list[[i]]
+    plate_name <- names(plate_data_list)[i]
+
+    #  Check if blank correction is needed
+    procceed_to_blank_check <- check_blank_in_sample_boolean(plate_data)
+    if (!procceed_to_blank_check) {
+      # Update plate data based on user keyword choice
+      plate_data <- check_blank_in_sample(plate_data, blank_keyword = blank_keyword)
+    }
+
+    # Check blank description format
+    pass_blank_description <- check_blank_description(plate_data)
+    if (!pass_blank_description[[1]]) {
+      message_list <- c(
+        message_list,
+        paste("Plate:", plate_name, "-", pass_blank_description[[2]])
+      )
+    }
+
+    # Update modified plate back into list
+    plate_data_list[[i]] <- plate_data
+  }
+
+  is_valid <- length(message_list) == 0
+
+  if (is_valid)  {
+    return(list(
+      is_valid = is_valid,
+      messages = message_list
+    ))
+  } else {
+    return(list(
+      is_valid = is_valid,
+      messages = message_list
+    ))
+  }
+
+}
+
+validate_batch_bead_array_data <- function(combined_plate_data, antigen_import_list, blank_keyword) {
+  cat("\n>>> ENTERING validate_batch_bead_array_data <<<\n")
+  cat("combined_plate_data rows:", nrow(combined_plate_data), "\n")
+  cat("antigen_import_list rows:", nrow(antigen_import_list), "\n")
+  cat("blank_keyword:", blank_keyword, "\n")
+
+  # Convert to data.frame to avoid tibble subscripting issues throughout
+  if (inherits(combined_plate_data, "tbl_df")) {
+    combined_plate_data <- as.data.frame(combined_plate_data)
+    cat("names combined_plate_data", "\n")
+    cat(names(combined_plate_data), "\n")
+  }
+
+  message_list <- c()
+  unique_plates <- unique(combined_plate_data$source_file)
+
+  # obtain antigens from the layout file that are labeled on the plate
+  valid_antigens <- unique(antigen_import_list$antigen_label_on_plate)
+  cat("valid_antigens", "\n")
+  cat(valid_antigens, "\n")
+
+  check_antigens <- all(valid_antigens %in% names(combined_plate_data))
+  if (!check_antigens) {
+    missing_antigens <- valid_antigens[!valid_antigens %in% names(combined_plate_data)]
+    message_list <- c(message_list,  paste(
+      "ANTIGEN MISMATCH: The following antigens are missing in the uploaded data files:",
+      paste(missing_antigens, collapse = ", "),
+      "\nPlease ensure these antigens exist in your plate data files."
+    ))
+  }
+
+  cat("after antigens")
+
+  # Check % Agg Beads column presence
+  pass_agg_bead_check <- check_batch_agg_bead_column(combined_plate_data)
+  if (!pass_agg_bead_check$result) {
+    message_list <- c(message_list, paste(
+      "MISSING COLUMN:",
+      pass_agg_bead_check$message
+    ))
+  } else {
+    # Check bead count format for each plate
+    for (plate in unique_plates) {
+      plate_data <- combined_plate_data[combined_plate_data$source_file == plate,]
+      pass_bead_count_check <- check_bead_count(plate_data)
+
+      # FIX: Access list element by index [[2]] not by name $message
+      if (!pass_bead_count_check[[1]]) {
+        error_details <- if(length(pass_bead_count_check) > 1) pass_bead_count_check[[2]] else "Unknown bead count error"
+        message_list <- c(message_list, paste0(
+          "BEAD COUNT FORMAT ERROR in file '", plate, "':\n",
+          error_details,
+          "\n\nExpected format: MFI_value (bead_count), e.g., '123.45 (50)'"
+        ))
+      }
+    }
+    cat("after bead count check")
+  }
+
+  # examine blanks in type column
+  for (plate in unique_plates) {
+    plate_data <- combined_plate_data[combined_plate_data$source_file == plate,]
+    procceed_to_blank_check <- check_blank_in_sample_boolean(df = plate_data)
+    cat("blank_check")
+
+    if (!procceed_to_blank_check) {
+      plate_data <- check_blank_in_sample(plate_data, blank_keyword = blank_keyword)
+    }
+
+    pass_blank_description <- check_blank_description_batch(plate_data)
+
+    # FIX: Access list element by index and add better context
+    if (!pass_blank_description[[1]]) {
+      error_details <- if(length(pass_blank_description) > 1) pass_blank_description[[2]] else "Invalid blank description"
+      message_list <- c(
+        message_list,
+        paste0("BLANK DESCRIPTION ERROR in file '", plate, "':\n", error_details)
+      )
+    }
+
+    # Write updated rows back into the combined df
+    combined_plate_data[combined_plate_data$source_file == plate, ] <- plate_data
+  }
+
+  is_valid <- length(message_list) == 0
+
+  cat(">>> EXITING validate_batch_bead_array_data - is_valid:", is_valid, "<<<\n")
+
+  return(list(
+    is_valid = is_valid,
+    messages = message_list
+  ))
+}
+
+create_batch_invalid_message_table <- function(validation_result, bead_array_validation) {
+  # Combine messages from both validation sources
+  combined_messages <- c(validation_result$messages, unlist(bead_array_validation$messages))
+
+  # Create a more user-friendly message table
+  if (length(combined_messages) == 0) {
+    return(data.frame(
+      "Status" = "All validations passed",
+      check.names = FALSE,
+      stringsAsFactors = FALSE
+    ))
+  }
+
+  message_table <- data.frame(
+    "Error #" = seq_along(combined_messages),
+    "Validation Error Details" = combined_messages,
+    check.names = FALSE,
+    stringsAsFactors = FALSE
+  )
+
+  return(message_table)
+}
 
 # check description of the blank
 check_blank_description <- function(df) {
@@ -151,7 +551,6 @@ check_blank_description_batch <- function(df) {
   }
 
 }
-
 
 # blank keyword can either be 'empty_well' or 'use_as_blank'
 check_blank_in_sample <- function(df, blank_keyword) {
@@ -196,9 +595,6 @@ check_blank_in_sample <- function(df, blank_keyword) {
   }
 }
 
-#skip_empty_well <- check_blank_in_sample(plte_data_v, blank_keyword = "empty_well")
-#replace_blank <- check_blank_in_sample(plte_data_v, blank_keyword = "use_as_blank")
-
 check_agg_bead_column <- function(df) {
   required_cols <- c("X..Agg.Beads")
   result <- required_cols %in% names(df)
@@ -224,58 +620,696 @@ check_batch_agg_bead_column <- function(df) {
 
 check_bead_count <- function(df) {
 
-start_col <- which(names(df) == "Description")
-possible_end_names <- c("% Agg Beads", "X..Agg.Beads", "%.Agg.Beads")
-end_col <- which(names(df) %in% possible_end_names)
-# end_col <- which(names(df) == "X..Agg.Beads")
+  start_col <- which(names(df) == "Description")
+  possible_end_names <- c("% Agg Beads", "X..Agg.Beads", "%.Agg.Beads")
+  end_col <- which(names(df) %in% possible_end_names)
 
-# 2. Subset the columns of interest
-subset_df <- df[, (start_col + 1):(end_col-1)]
+  # Validate column indices
 
-# 3. Apply regex check to all cells in those columns space care about ^\\d+(\\.\\d+)? \\(\\d+\\)$
-#    This creates a logical matrix (same size as subset_df)
-match_matrix <- apply(subset_df, 2, function(col) {
-  grepl("^\\d+(\\.\\d+)?\\s*\\(\\d+\\)$", col)
-})
+  if (length(start_col) == 0 || length(end_col) == 0) {
+    return(list(FALSE, "Could not find Description or % Agg Beads columns"))
+  }
 
-if (all(match_matrix)) {
-  return(list(TRUE))
-} else {
-  failed_positions <- which(!match_matrix, arr.ind = TRUE)
+  if (end_col <= start_col + 1) {
+    return(list(FALSE, "No antigen columns found between Description and % Agg Beads"))
+  }
 
-  # 2. Get the actual failed values
-  failed_values <- subset_df[failed_positions]
+  # Subset the columns of interest and convert to data.frame to avoid tibble issues
+  subset_df <- as.data.frame(df[, (start_col + 1):(end_col - 1)])
 
-  # 3. Combine row, column, and value into a data frame
-  failed_report <- data.frame(
-    row = failed_positions[, "row"],
-    antigen = sub("\\..*", "", colnames(subset_df)[failed_positions[, "col"]]),
-    value = failed_values,
-    stringsAsFactors = FALSE
-  )
-
-  msg <- apply(failed_report, 1, function(x) {
-    paste0("Row ", x["row"],
-           " | Antigen: ", x["antigen"],
-           " | Value: ", x["value"])
+  # Apply regex check to all cells in those columns
+  # This creates a logical matrix (same size as subset_df)
+  match_matrix <- apply(subset_df, 2, function(col) {
+    grepl("^\\d+(\\.\\d+)?\\s*\\(\\d+\\)$", as.character(col))
   })
 
-  final_message <- paste(msg, collapse = "\n")
+  # Ensure match_matrix is a matrix even with single column
+  if (!is.matrix(match_matrix)) {
+    match_matrix <- matrix(match_matrix, ncol = 1)
+    colnames(match_matrix) <- names(subset_df)
+  }
 
-  return(list(all(match_matrix), final_message))
+  if (all(match_matrix)) {
+    return(list(TRUE))
+  } else {
+    # Find failed positions using which with arr.ind
+    failed_positions <- which(!match_matrix, arr.ind = TRUE)
+
+    # Handle case where failed_positions might be empty or malformed
+    if (length(failed_positions) == 0 || nrow(failed_positions) == 0) {
+      return(list(FALSE, "Unknown bead count format error"))
+    }
+
+    # Build failed report manually to avoid tibble subscripting issues
+    failed_report <- data.frame(
+      row = failed_positions[, "row"],
+      col_idx = failed_positions[, "col"],
+      stringsAsFactors = FALSE
+    )
+
+    # Get values and column names safely
+    failed_report$antigen <- sapply(failed_report$col_idx, function(idx) {
+      col_name <- colnames(subset_df)[idx]
+      # Remove bead number suffix if present
+      sub("\\s*\\(\\d+\\)$", "", col_name)
+    })
+
+    failed_report$value <- mapply(function(r, c) {
+      as.character(subset_df[r, c])
+    }, failed_report$row, failed_report$col_idx)
+
+    # Create message
+    msg <- apply(failed_report, 1, function(x) {
+      paste0("Row ", x["row"],
+             " | Antigen: ", x["antigen"],
+             " | Value: ", x["value"])
+    })
+
+    # Limit message length to avoid overwhelming output
+    if (length(msg) > 20) {
+      msg <- c(head(msg, 20), sprintf("... and %d more errors", length(msg) - 20))
+    }
+
+    final_message <- paste(msg, collapse = "\n")
+
+    return(list(FALSE, final_message))
+  }
 }
 
+#' Validate required columns are not null
+#'
+#' @param data Data frame to validate
+#' @param required_cols Vector of required column names
+#' @param table_name Name of target table for error messages
+#'
+#' @return List with valid status, missing columns, and null columns
+validate_required_columns <- function(data, required_cols, table_name) {
+
+  result <- list(
+    valid = TRUE,
+    missing_cols = character(0),
+    null_cols = character(0),
+    null_row_counts = list(),
+    message = ""
+  )
+
+  # Check for missing columns
+  missing_cols <- setdiff(required_cols, names(data))
+  if (length(missing_cols) > 0) {
+    result$valid <- FALSE
+    result$missing_cols <- missing_cols
+  }
+
+  # Check for NULL values in required columns that exist
+  existing_required <- intersect(required_cols, names(data))
+  for (col in existing_required) {
+    null_count <- sum(is.na(data[[col]]))
+    if (null_count > 0) {
+      result$valid <- FALSE
+      result$null_cols <- c(result$null_cols, col)
+      result$null_row_counts[[col]] <- null_count
+    }
+  }
+
+  # Build message
+  msg_parts <- c()
+  if (length(result$missing_cols) > 0) {
+    msg_parts <- c(msg_parts,
+                   sprintf("Missing columns: %s", paste(result$missing_cols, collapse = ", ")))
+  }
+  if (length(result$null_cols) > 0) {
+    null_details <- sapply(result$null_cols, function(col) {
+      sprintf("%s (%d nulls)", col, result$null_row_counts[[col]])
+    })
+    msg_parts <- c(msg_parts,
+                   sprintf("Columns with NULL values: %s", paste(null_details, collapse = ", ")))
+  }
+
+  result$message <- if (length(msg_parts) > 0) {
+    sprintf("Validation failed for %s: %s", table_name, paste(msg_parts, collapse = "; "))
+  } else {
+    sprintf("Validation passed for %s", table_name)
+  }
+
+  return(result)
 }
 
 
+#' Get rows with null values in specified columns
+#'
+#' @param data Data frame to check
+#' @param columns Columns to check for nulls
+#'
+#' @return Data frame with rows containing nulls
+get_null_rows <- function(data, columns) {
 
-# check_bead_count(plte_data_v)
-#
-# plate_modified_data <- plte_data_v[1,]
-#  plate_modified_data$PT..75. <- "32"
-#  plate_modified_data <- rbind(plate_modified_data, plte_data_v)
-#
-# check_bead_count(plate_modified_data)
+  existing_cols <- intersect(columns, names(data))
+
+  if (length(existing_cols) == 0) {
+    return(data[0, ])
+  }
+
+  has_null <- apply(data[, existing_cols, drop = FALSE], 1, function(row) any(is.na(row)))
+
+  return(data[has_null, ])
+}
+
+
+#' Debug sample data preparation
+#'
+#' @param sample_plate_map Sample plate map
+#' @param combined_plate_data Combined plate data
+#' @param batch_metadata Batch metadata
+#' @param antigen_import_list Antigen list
+#' @param subject_map Subject map
+#'
+#' @return List with debug information
+debug_sample_preparation <- function(sample_plate_map, combined_plate_data,
+                                     batch_metadata, antigen_import_list, subject_map) {
+
+  debug_info <- list(
+    sample_plate_map = list(
+      nrow = nrow(sample_plate_map),
+      columns = names(sample_plate_map),
+      head = head(sample_plate_map)
+    ),
+    combined_plate_data = list(
+      nrow = nrow(combined_plate_data),
+      columns = names(combined_plate_data),
+      head = head(combined_plate_data)
+    ),
+    batch_metadata = list(
+      nrow = nrow(batch_metadata),
+      columns = names(batch_metadata),
+      head = head(batch_metadata)
+    ),
+    antigen_import_list = list(
+      nrow = nrow(antigen_import_list),
+      columns = names(antigen_import_list),
+      head = head(antigen_import_list)
+    ),
+    subject_map = list(
+      nrow = nrow(subject_map),
+      columns = names(subject_map),
+      head = head(subject_map)
+    )
+  )
+
+  return(debug_info)
+}
+
+
+#' Check if plates exist in database
+#'
+#' @param conn Database connection
+#' @param study_accession Study accession ID
+#' @param plate_ids Vector of plate IDs to check
+#'
+#' @return Data frame of existing plates
+check_existing_plates <- function(conn, study_accession, plate_ids) {
+
+  query <- glue::glue_sql("
+    SELECT
+      xmap_header_id,
+      study_accession,
+      experiment_accession,
+      plate_id,
+      file_name,
+      acquisition_date,
+      reader_serial_number,
+      rp1_pmt_volts,
+      rp1_target,
+      auth0_user,
+      workspace_id,
+      plateid,
+      plate,
+      sample_dilution_factor,
+      n_wells
+    FROM madi_results.xmap_header
+    WHERE study_accession = {study_accession}
+      AND plate_id IN ({plate_ids*});
+  ", .con = conn)
+
+  DBI::dbGetQuery(conn, query)
+}
+
+
+#' Get existing antigens for study/experiment
+#'
+#' @param conn Database connection
+#' @param study_accession Study accession ID
+#' @param experiment_accession Experiment accession ID
+#'
+#' @return Data frame of existing antigens
+get_existing_antigens <- function(conn, study_accession, experiment_accession) {
+
+  query <- glue::glue_sql("
+    SELECT study_accession, experiment_accession, antigen
+    FROM madi_results.xmap_antigen_family
+    WHERE study_accession = {study_accession}
+      AND experiment_accession = {experiment_accession}
+  ", .con = conn)
+
+  DBI::dbGetQuery(conn, query)
+}
+
+
+#' Get existing planned visits for study
+#'
+#' @param conn Database connection
+#' @param study_accession Study accession ID
+#'
+#' @return Data frame of existing visits
+get_existing_visits <- function(conn, study_accession) {
+
+  query <- glue::glue_sql("
+    SELECT study_accession, timepoint_name
+    FROM madi_results.xmap_planned_visit
+    WHERE study_accession = {study_accession}
+  ", .con = conn)
+
+  DBI::dbGetQuery(conn, query)
+}
+
+#' Insert new rows that don't exist in database
+#'
+#' @param conn Database connection
+#' @param schema Schema name
+#' @param table Table name
+#' @param new_data Data frame to insert
+#' @param existing_data Data frame of existing rows
+#' @param join_keys Column names to use for deduplication
+#' @param label Label for log messages
+#'
+#' @return Number of rows inserted
+insert_new_rows <- function(conn, schema, table, new_data, existing_data, join_keys, label) {
+
+  to_insert <- dplyr::anti_join(new_data, existing_data, by = join_keys)
+
+  if (nrow(to_insert) > 0) {
+    DBI::dbAppendTable(conn, DBI::Id(schema = schema, table = table), to_insert)
+    cat(sprintf("Inserted %d new %s entries\n", nrow(to_insert), label))
+  } else {
+    cat(sprintf("No new %s entries to insert\n", label))
+  }
+
+  nrow(to_insert)
+}
+
+
+#' Insert data frame to database table with validation
+#'
+#' @param conn Database connection
+#' @param schema Schema name
+#' @param table Table name
+#' @param data Data frame to insert
+#' @param required_cols Required columns that cannot be NULL
+#' @param label Label for log messages
+#'
+#' @return List with success status and row count
+insert_to_table <- function(conn, schema, table, data, label, required_cols = NULL) {
+
+  result <- list(
+    success = TRUE,
+    rows_inserted = 0,
+    message = "",
+    null_rows = NULL
+  )
+
+  if (nrow(data) == 0) {
+    result$message <- sprintf("No %s rows to insert", label)
+    cat(result$message, "\n")
+    return(result)
+  }
+
+  # Validate required columns if specified
+  if (!is.null(required_cols)) {
+    validation <- validate_required_columns(data, required_cols, table)
+
+    if (!validation$valid) {
+      result$success <- FALSE
+      result$message <- validation$message
+      result$null_rows <- get_null_rows(data, required_cols)
+
+      cat("VALIDATION ERROR:", validation$message, "\n")
+      cat("Sample of problematic rows:\n")
+      print(head(result$null_rows, 5))
+
+      return(result)
+    }
+  }
+
+  # Attempt insert
+  tryCatch({
+    DBI::dbAppendTable(conn, DBI::Id(schema = schema, table = table), data)
+    result$rows_inserted <- nrow(data)
+    result$message <- sprintf("Inserted %d %s rows", nrow(data), label)
+    cat(result$message, "\n")
+  }, error = function(e) {
+    result$success <<- FALSE
+    result$message <<- sprintf("Error inserting %s: %s", label, e$message)
+    cat("INSERT ERROR:", result$message, "\n")
+  })
+
+  return(result)
+}
+
+
+#' Upload specimen data with validation
+#'
+#' @param conn Database connection
+#' @param plates_map Plates map data frame
+#' @param specimen_type Specimen type code (X, S, B, C)
+#' @param combined_plate_data Combined plate data
+#' @param batch_metadata Batch metadata
+#' @param antigen_import_list Antigen list data
+#' @param subject_map Subject map data (only needed for samples)
+#'
+#' @return List with success status and row count
+upload_specimen_data <- function(conn, plates_map, specimen_type, combined_plate_data,
+                                 batch_metadata, antigen_import_list, subject_map = NULL) {
+
+  # Define required columns for each specimen type
+  required_columns <- list(
+    "X" = c("sampleid", "study_accession", "plate_id"),  # Add all NOT NULL columns
+    "S" = c("study_accession", "plate_id"),
+    "B" = c("study_accession", "plate_id"),
+    "C" = c("study_accession", "plate_id")
+  )
+
+  # Filter plates map for specimen type
+  specimen_map <- plates_map[plates_map$specimen_type == specimen_type, ]
+
+  if (nrow(specimen_map) == 0) {
+    return(list(success = TRUE, rows_inserted = 0, message = "No data to insert"))
+  }
+
+  # Prepare data based on specimen type
+  data <- NULL
+  table_name <- NULL
+  label <- NULL
+
+  tryCatch({
+    switch(
+      specimen_type,
+      "X" = {
+        # Debug before preparation
+        cat("\n=== DEBUG: Sample Preparation Inputs ===\n")
+        cat("specimen_map rows:", nrow(specimen_map), "\n")
+        cat("combined_plate_data rows:", nrow(combined_plate_data), "\n")
+        cat("subject_map rows:", nrow(subject_map), "\n")
+        cat("subject_map columns:", paste(names(subject_map), collapse = ", "), "\n")
+
+        data <- prepare_batch_bead_assay_samples(
+          sample_plate_map = specimen_map,
+          combined_plate_data = combined_plate_data,
+          batch_metadata = batch_metadata,
+          antigen_import_list = antigen_import_list,
+          subject_map = subject_map
+        )
+
+        # Debug after preparation
+        cat("\n=== DEBUG: Prepared Sample Data ===\n")
+        cat("Prepared data rows:", nrow(data), "\n")
+        cat("Prepared data columns:", paste(names(data), collapse = ", "), "\n")
+        cat("sampleid column exists:", "sampleid" %in% names(data), "\n")
+
+        if ("sampleid" %in% names(data)) {
+          cat("sampleid null count:", sum(is.na(data$sampleid)), "\n")
+          cat("sampleid unique values:", length(unique(data$sampleid)), "\n")
+          cat("sampleid sample:", head(data$sampleid, 10), "\n")
+        }
+
+        table_name <- "xmap_sample"
+        label <- "sample"
+      },
+      "S" = {
+        data <- prepare_batch_bead_assay_standards(
+          standard_plate_map = specimen_map,
+          combined_plate_data = combined_plate_data,
+          antigen_import_list = antigen_import_list,
+          batch_metadata = batch_metadata
+        )
+        table_name <- "xmap_standard"
+        label <- "standard"
+      },
+      "B" = {
+        data <- prepare_batch_bead_assay_blanks(
+          blanks_plate_map = specimen_map,
+          combined_plate_data = combined_plate_data,
+          antigen_import_list = antigen_import_list,
+          batch_metadata = batch_metadata
+        )
+        table_name <- "xmap_buffer"
+        label <- "blank"
+      },
+      "C" = {
+        data <- prepare_batch_bead_assay_controls(
+          controls_plate_map = specimen_map,
+          combined_plate_data = combined_plate_data,
+          antigen_import_list = antigen_import_list,
+          batch_metadata = batch_metadata
+        )
+        table_name <- "xmap_control"
+        label <- "control"
+      }
+    )
+  }, error = function(e) {
+    cat("ERROR preparing", specimen_type, "data:", e$message, "\n")
+    return(list(success = FALSE, rows_inserted = 0, message = e$message))
+  })
+
+  if (is.null(data)) {
+    return(list(success = TRUE, rows_inserted = 0, message = "No data prepared"))
+  }
+
+  # Insert with validation
+  insert_result <- insert_to_table(
+    conn = conn,
+    schema = "madi_results",
+    table = table_name,
+    data = data,
+    label = label,
+    required_cols = required_columns[[specimen_type]]
+  )
+
+  return(insert_result)
+}
+
+
+#' Upload antigen family data with deduplication
+#'
+#' @param conn Database connection
+#' @param antigen_import_list Antigen list data
+#' @param study_accession Study accession ID
+#' @param experiment_accession Experiment accession ID
+#'
+#' @return Number of rows inserted
+upload_antigen_family <- function(conn, antigen_import_list, study_accession, experiment_accession) {
+
+  antigen_family_df <- prepare_batch_antigen_family(antigen_import_list)
+  existing_antigens <- get_existing_antigens(conn, study_accession, experiment_accession)
+
+  insert_new_rows(
+    conn = conn,
+    schema = "madi_results",
+    table = "xmap_antigen_family",
+    new_data = antigen_family_df,
+    existing_data = existing_antigens,
+    join_keys = c("study_accession", "experiment_accession", "antigen"),
+    label = "antigen family"
+  )
+}
+
+
+#' Upload planned visits data with deduplication
+#'
+#' @param conn Database connection
+#' @param timepoint_map Timepoint map data
+#' @param study_accession Study accession ID
+#'
+#' @return Number of rows inserted
+upload_planned_visits <- function(conn, timepoint_map, study_accession) {
+
+  planned_visits_df <- prepare_planned_visits(timepoint_map = timepoint_map)
+  existing_visits <- get_existing_visits(conn, study_accession)
+
+  insert_new_rows(
+    conn = conn,
+    schema = "madi_results",
+    table = "xmap_planned_visit",
+    new_data = planned_visits_df,
+    existing_data = existing_visits,
+    join_keys = c("study_accession", "timepoint_name"),
+    label = "planned visit"
+  )
+}
+
+
+#' Upload complete batch to database with validation
+#'
+#' @param conn Database connection
+#' @param batch_plates Batch plate data
+#' @param metadata_batch Batch metadata
+#' @param layout_sheets List of layout template sheets
+#'
+#' @return List with success status and upload details
+upload_batch_to_database <- function(conn, batch_plates, metadata_batch, layout_sheets) {
+
+  # Extract layout sheets
+  timepoint_map <- layout_sheets[["timepoint"]]
+  subject_map <- layout_sheets[["subject_groups"]]
+  antigen_import_list <- layout_sheets[["antigen_list"]]
+  plates_map <- layout_sheets[["plates_map"]]
+
+  # Get unique identifiers
+  study_accession <- unique(metadata_batch$study_accession)
+  experiment_accession <- unique(metadata_batch$experiment_name)
+  plates_to_upload <- unique(metadata_batch$plate_id)
+
+  # Initialize result tracking
+  result <- list(
+    success = FALSE,
+    already_exists = FALSE,
+    counts = list(
+      header = 0,
+      samples = 0,
+      standards = 0,
+      blanks = 0,
+      controls = 0,
+      antigens = 0,
+      visits = 0
+    ),
+    errors = list(),
+    message = ""
+  )
+
+  # Check for existing plates
+  existing_plates <- check_existing_plates(conn, study_accession, plates_to_upload)
+
+  if (nrow(existing_plates) > 0) {
+    result$already_exists <- TRUE
+    result$message <- "These plates already exist for the study"
+    return(result)
+  }
+
+  # Upload header
+  upload_metadata_df <- prepare_batch_header(metadata_batch)
+  header_result <- insert_to_table(
+    conn, "madi_results", "xmap_header", upload_metadata_df, "header",
+    required_cols = c("study_accession", "plate_id")
+  )
+  result$counts$header <- header_result$rows_inserted
+
+  if (!header_result$success) {
+    result$errors$header <- header_result$message
+    result$message <- "Failed to upload header"
+    return(result)
+  }
+
+  # Join plates with source file
+  batch_plates_combined <- merge(
+    batch_plates,
+    metadata_batch[, c("source_file", "plate")],
+    by.x = "source_file",
+    all.x = TRUE
+  )
+  cat("After join batch\n")
+
+  # Debug: Print combined data info
+  cat("\n=== DEBUG: batch_plates_combined ===\n")
+  cat("Rows:", nrow(batch_plates_combined), "\n")
+  cat("Columns:", paste(names(batch_plates_combined), collapse = ", "), "\n")
+
+  # Upload samples
+  sample_result <- upload_specimen_data(
+    conn = conn,
+    plates_map = plates_map,
+    specimen_type = "X",
+    combined_plate_data = batch_plates_combined,
+    batch_metadata = metadata_batch,
+    antigen_import_list = antigen_import_list,
+    subject_map = subject_map
+  )
+  result$counts$samples <- sample_result$rows_inserted
+
+  if (!sample_result$success) {
+    result$errors$samples <- sample_result$message
+    result$message <- "Failed to upload samples"
+    return(result)
+  }
+
+  # Upload standards
+  standards_result <- upload_specimen_data(
+    conn = conn,
+    plates_map = plates_map,
+    specimen_type = "S",
+    combined_plate_data = batch_plates_combined,
+    batch_metadata = metadata_batch,
+    antigen_import_list = antigen_import_list
+  )
+  result$counts$standards <- standards_result$rows_inserted
+
+  if (!standards_result$success) {
+    result$errors$standards <- standards_result$message
+  }
+
+  # Upload blanks
+  blanks_result <- upload_specimen_data(
+    conn = conn,
+    plates_map = plates_map,
+    specimen_type = "B",
+    combined_plate_data = batch_plates_combined,
+    batch_metadata = metadata_batch,
+    antigen_import_list = antigen_import_list
+  )
+  result$counts$blanks <- blanks_result$rows_inserted
+
+  if (!blanks_result$success) {
+    result$errors$blanks <- blanks_result$message
+  }
+
+  # Upload controls
+  controls_result <- upload_specimen_data(
+    conn = conn,
+    plates_map = plates_map,
+    specimen_type = "C",
+    combined_plate_data = batch_plates_combined,
+    batch_metadata = metadata_batch,
+    antigen_import_list = antigen_import_list
+  )
+  result$counts$controls <- controls_result$rows_inserted
+
+  if (!controls_result$success) {
+    result$errors$controls <- controls_result$message
+  }
+
+  # Upload antigen family
+  result$counts$antigens <- upload_antigen_family(
+    conn = conn,
+    antigen_import_list = antigen_import_list,
+    study_accession = study_accession,
+    experiment_accession = experiment_accession
+  )
+
+  # Upload planned visits
+  result$counts$visits <- upload_planned_visits(
+    conn = conn,
+    timepoint_map = timepoint_map,
+    study_accession = study_accession
+  )
+
+  result$success <- length(result$errors) == 0
+  result$message <- if (result$success) {
+    "Batch uploaded successfully"
+  } else {
+    paste("Upload completed with errors:", paste(names(result$errors), collapse = ", "))
+  }
+
+  return(result)
+}
+
+
 
 # Overall function to call plate validation
 plate_validation <- function(plate_metadata, plate_data, blank_keyword) {
@@ -395,18 +1429,6 @@ plate_validation <- function(plate_metadata, plate_data, blank_keyword) {
  #
  # }
 }
-
-#  validation_result <- plate_validation(plate_metadata = meta_df_view, plate_data = plte_data_v, blank_keyword = "empty_well")
-#  validation_result
-# #validation_result$is_valid
-# # is.null(validation_result$messages)
-# #
-# # validation_result <- plate_validation(plate_metadata = meta_df_view, plate_data = plte_data_v, blank_keyword = "use_as_blank")
-# # validation_result
-# #
-#  validation_result <- plate_validation(plate_metadata = meta_df_view, plate_data = plate_modified_data, blank_keyword = "use_as_blank")
-#  validation_result # no updated_plate_data in list
-
 
 createValidateBadge <- function(is_validated) {
 

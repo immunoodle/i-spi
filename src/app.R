@@ -3,10 +3,8 @@
 # ==============================================================
 source("global.R", local = TRUE)
 
-
 #Set to 1 for local and do not push in prod
-#Sys.setenv(LOCAL_DEV = "1")
-
+# Sys.setenv(LOCAL_DEV = "1")
 
 # Source authentication configuration (Step 1)
 # Defines DEX_*, APP_REDIRECT_URI, OIDC_SCOPES, endpoints, get_jwks(), `%||%`, dex_client
@@ -866,6 +864,15 @@ server <- function(input, output, session) {
       bead_array_header_list <- reactiveVal(list())
       bead_array_plate_list <- reactiveVal(list())
       sample_dilution_plate_df <- reactiveVal(NULL)
+
+      batch_validation_state <- reactiveVal(list(
+        is_validated = FALSE,
+        is_uploaded = FALSE,
+        validation_time = NULL,
+        upload_time = NULL,
+        metadata_result = NULL,
+        bead_array_result = NULL
+      ))
 
       # layout_template_sheets <- reactiveValues(
       #   plate_id = NULL,
