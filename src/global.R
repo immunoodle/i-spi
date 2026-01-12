@@ -100,8 +100,6 @@ library(shiny.destroy)
 handlers(global = TRUE)
 handlers("shiny")
 
-
-
 # Simple setup based on platform
 if (Sys.info()["sysname"] == "Windows" || exists("RStudio.Version", envir = globalenv())) {
   plan(multisession)
@@ -120,17 +118,13 @@ options(future.rng.onMisuse = "ignore")
 options(shiny.maxRequestSize = 30*1024^2)
 options(future.globals.maxSize = Inf)
 
-
-
 # Print basic info
 message("Cores available: ", parallel::detectCores())
 message("Workers: ", future::nbrOfWorkers())
 
-
 # Set options
 options(shiny.maxRequestSize = 100 * 1024^2)
 options(auth0_disable = FALSE)
-
 
 # Define custom functions
 rounddf <- function(x, digits = rep(2, ncol(x)), func = round, pad = FALSE) {
