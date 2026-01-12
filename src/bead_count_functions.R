@@ -1,5 +1,15 @@
 # Functions for Bead Count Analysis
 
+# Calculate Log Dilution Factor and clean up plate names
+calculate_log_dilution <- function(dat){
+  dat <- dat %>% mutate(dilution_factor = 1/dat$dilution,
+                        log_dilution = log10(dilution_factor))
+
+  # dat$mfi <- log10(dat$mfi)
+  #dat_v <<- dat
+  return(dat)
+}
+
 # function takes in df which can be sample data or standard curve data with
 #well column and converts character well to a well number in 96 well multiplex bead assay
 #plate
