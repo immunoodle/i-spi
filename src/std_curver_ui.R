@@ -5,15 +5,14 @@ observeEvent(list(
   input$study_level_tabs,
   input$main_tabs), {
 
-    req(input$qc_component == "Standard Curver",
+    req(input$qc_component == "Standard Curve",
         input$readxMap_study_accession != "Click here",
         input$readxMap_experiment_accession != "Click here",
         input$study_level_tabs == "Experiments",
         input$main_tabs == "view_files_tab")
 
 
-    if (input$qc_component == "Standard Curver") {
-      cat("In standard curver")
+    if (input$qc_component == "Standard Curve") {
       selected_study <- input$readxMap_study_accession
       selected_experiment <- input$readxMap_experiment_accession
 
