@@ -95,6 +95,7 @@ RUN R -e "install.packages(c('viridis', 'htmltools'))"
 RUN R -e "install.packages(c('minpack.lm', 'Deriv'))"
 RUN R -e "install.packages('nls.multstart')"
 RUN R -e "install.packages(c('ggrepel', 'cowplot'))"
+RUN R -e "install.packages('patchwork')"
 
 
 RUN rm -rf /srv/shiny-server/*

@@ -466,20 +466,29 @@ output$view_stored_experiments_ui <- renderUI({
                           radioGroupButtons(
                             inputId = "qc_component",
                             label = "",
-                            choices = c("Bead Count", "Standard Curve","Standard Curve Summary"),
+                            choices = c("Bead Count", "Standard Curve",  "Standard Curve Summary"),
                             selected = character(0)
                           ),
                           conditionalPanel(
                             condition = "input.qc_component == 'Bead Count'",
                             uiOutput("bead_count_module_ui")
                           ),
+                          # conditionalPanel(
+                          #   condition = "input.qc_component == 'Standard Curve'",
+                          #  uiOutput("sc_fit_module_ui")
+                          # ),
                           conditionalPanel(
                             condition = "input.qc_component == 'Standard Curve'",
-                           uiOutput("sc_fit_module_ui")
+                            uiOutput("std_curver_ui")
                           ),
+
+                          # conditionalPanel(
+                          #   condition = "input.qc_component == 'Standard Curve Summary'",
+                          #   uiOutput("standardCurveSummaryUI")
+                          # ),
                           conditionalPanel(
                             condition = "input.qc_component == 'Standard Curve Summary'",
-                            uiOutput("standardCurveSummaryUI")
+                            uiOutput("std_curver_summary_ui")
                           )
                         ),
 
@@ -581,6 +590,12 @@ output$dynamic_data_ui <- renderUI({
         title = "Samples",
         DT::dataTableOutput("swide_sample"),
         downloadButton("download_stored_sample")
+      ),
+      tabPanel(
+        title = "Samples QC",
+        DT::dataTableOutput("stored_best_sample_se"),
+        downloadButton("download_stored_best_sample_se")
+
       )
     )
     )
@@ -825,38 +840,38 @@ observeEvent(input$qc_component, {
   }
 
   # ----- Standard Curve Module -----
-  if (input$qc_component == "Standard Curve" &&
-      input$readxMap_study_accession != "" &&
-      input$readxMap_study_accession != "Click here" &&
-      input$readxMap_experiment_accession != "" &&
-      input$readxMap_experiment_accession != "Click here") {
-
-    # Destroy previous module (if exists)
-    prev_sc_mod_id <- paste0("standard_curve_fit_mod_", reload_sc_fit_mod_count)
-    try(destroyModule(prev_sc_mod_id), silent = TRUE)
-
-    # Increment counter and build new ID
-    reload_sc_fit_mod_count <<- reload_sc_fit_mod_count + 1
-    new_sc_mod_id <- paste0("standard_curve_fit_mod_", reload_sc_fit_mod_count)
-
-    # Render UI and load module
-    output$sc_fit_module_ui <- renderUI({
-      destroyableStandardCurveFittingModuleUI(new_sc_mod_id)
-    })
-
-    destroyableStandardCurveFittingServer(
-      id = new_sc_mod_id,
-      selected_study = reactive(input$readxMap_study_accession),
-      selected_experiment = reactive(input$readxMap_experiment_accession),
-      currentuser()
-    )
-
-  } else {
-    # If switching away, destroy any existing SC module
-    try(destroyModule(paste0("standard_curve_fit_mod_", reload_sc_fit_mod_count)), silent = TRUE)
-    output$sc_fit_module_ui <- renderUI({ NULL })
-   # gc(verbose = TRUE)
-  }
+  # if (input$qc_component == "Standard Curve" &&
+  #     input$readxMap_study_accession != "" &&
+  #     input$readxMap_study_accession != "Click here" &&
+  #     input$readxMap_experiment_accession != "" &&
+  #     input$readxMap_experiment_accession != "Click here") {
+  #
+  #   # Destroy previous module (if exists)
+  #   prev_sc_mod_id <- paste0("standard_curve_fit_mod_", reload_sc_fit_mod_count)
+  #   try(destroyModule(prev_sc_mod_id), silent = TRUE)
+  #
+  #   # Increment counter and build new ID
+  #   reload_sc_fit_mod_count <<- reload_sc_fit_mod_count + 1
+  #   new_sc_mod_id <- paste0("standard_curve_fit_mod_", reload_sc_fit_mod_count)
+  #
+  #   # Render UI and load module
+  #   output$sc_fit_module_ui <- renderUI({
+  #     destroyableStandardCurveFittingModuleUI(new_sc_mod_id)
+  #   })
+  #
+  #   destroyableStandardCurveFittingServer(
+  #     id = new_sc_mod_id,
+  #     selected_study = reactive(input$readxMap_study_accession),
+  #     selected_experiment = reactive(input$readxMap_experiment_accession),
+  #     currentuser()
+  #   )
+  #
+  # } else {
+  #   # If switching away, destroy any existing SC module
+  #   try(destroyModule(paste0("standard_curve_fit_mod_", reload_sc_fit_mod_count)), silent = TRUE)
+  #   output$sc_fit_module_ui <- renderUI({ NULL })
+  #  # gc(verbose = TRUE)
+  # }
   # ----- Standard Curve Summary Module -----
   # if (input$qc_component == "Standard Curve Summary" &&
   #     input$readxMap_study_accession != "" &&

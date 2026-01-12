@@ -330,7 +330,7 @@ generate_layout_template <- function(all_plates, study_accession, experiment_acc
     antigen_label_on_plate = antigen_names,
     antigen_abbreviation = str_split_i(antigen_names," ",1),
     standard_curve_max_concentration = 100000,
-    l_asy_constraint_method = "unconstrained",
+    l_asy_constraint_method = "default",
     l_asy_min_constraint = 0,
     l_asy_max_constraint = 0,
     antigen_family = NA_character_,
@@ -493,7 +493,7 @@ generate_layout_template <- function(all_plates, study_accession, experiment_acc
   cell_valid_table <- tibble(
     tibble(
       l_asy_constraint_method = c(
-        "unconstrained",
+        "default",
         "user_defined",
         "range_of_blanks",
         "geometric_mean_of_blanks"

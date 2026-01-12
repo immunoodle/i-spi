@@ -471,7 +471,7 @@ render_study_parameters <- reactive({
                     targets = which(colnames(antigen_families_rv()) == "l_asy_constraint_method"),
                     render = JS("
                                   function(data, type, row, meta) {
-                                    var opts = ['unconstrained','user_defined','range_of_blanks', 'geometric_mean_of_blanks'];
+                                    var opts = ['default','user_defined','range_of_blanks', 'geometric_mean_of_blanks'];
                                     if (type === 'display') {
                                       var select = '<select>';
                                       for (var i = 0; i < opts.length; i++) {

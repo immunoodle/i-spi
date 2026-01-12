@@ -6,7 +6,7 @@
 #      input$study_level_tabs,
 #      input$main_tabs), {
 
-fetch_db_samples <- function(study_accession, experiment_accession) {
+fetch_db_samples_bc <- function(study_accession, experiment_accession) {
   query <- paste0("SELECT * FROM madi_results.xmap_sample
 WHERE study_accession = '", study_accession,"'
 AND experiment_accession = '", experiment_accession,"'
@@ -31,7 +31,7 @@ buffer_data <- distinct(buffer_data[,!(names(buffer_data) %in% c("xmap_buffer_id
 return(buffer_data)
 }
 
-fetch_db_standards <- function(study_accession, experiment_accession) {
+fetch_db_standards_bc <- function(study_accession, experiment_accession) {
   query <- paste0("SELECT * FROM madi_results.xmap_standard
 WHERE study_accession = '", study_accession,"'
 AND experiment_accession = '", experiment_accession,"'
@@ -138,12 +138,12 @@ beadCountServer <- function(id, selected_study, selected_experiment,currentuser)
    #observeEvent(reload_flag, {
 
 
-    sample_data_bc <- fetch_db_samples(study_accession = selected_study(), experiment_accession = selected_experiment())
+    sample_data_bc <- fetch_db_samples_bc(study_accession = selected_study(), experiment_accession = selected_experiment())
     sample_data_bc <- obtain_well_number(sample_data_bc, "well")
     cat("Bead Count: Sample Data\n")
     print(names(sample_data_bc))
 
-    standard_data_curve <- fetch_db_standards(study_accession = selected_study(), experiment_accession = selected_experiment())
+    standard_data_curve <- fetch_db_standards_bc(study_accession = selected_study(), experiment_accession = selected_experiment())
 
     if (!is.null(selected_study()) && length(selected_study()) > 0 &&
         !is.null(selected_experiment()) && length(selected_experiment()) > 0 &&
@@ -168,6 +168,9 @@ beadCountServer <- function(id, selected_study, selected_experiment,currentuser)
 
 
       sample_data_bc$subject_accession <- sample_data_bc$patientid
+
+      print(names(sample_data_bc))
+
 
       sample_data_bc <- dplyr::rename(sample_data_bc, value_reported = antibody_mfi)
 

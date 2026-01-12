@@ -51,6 +51,10 @@ library(formattable)
 library(drda)
 library(tmvtnorm)
 
+## std-curver
+library(patchwork)
+library(rlang)
+
 # For standard curve Summary
 library(fracture)
 

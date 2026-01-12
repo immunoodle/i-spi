@@ -909,9 +909,23 @@ server <- function(input, output, session) {
       source("dilution_standards_controls_ui.R", local = TRUE)
       source("blank_control_ui.R", local = TRUE)
       source('propagate_functions.R', local = TRUE)
-      source("standard_curve_functions.R", local = TRUE)
-      source("standardcurveui.R", local = TRUE)
-      source("standard_curve_summary_ui.R", local = TRUE)
+     # source("standard_curve_functions.R", local = TRUE)
+
+      source("std_curver_ui.R", local = TRUE)
+      source("std_curve_functions.R", local = TRUE)
+      source("db_functions.R", local = TRUE)
+      source("model_functions.R", local = TRUE)
+      source("plot_functions.R", local = TRUE)
+      source("batch_fit_functions.R", local = TRUE)
+
+      source("std_curver_summary_ui.R", local = TRUE)
+      source("std_curver_summary_functions.R", local = TRUE)
+#
+#       source("standardcurveui.R", local = TRUE)
+#       source("standard_curve_summary_ui.R", local = TRUE)
+
+
+
       source("outliers.R", local = TRUE)
       source("outlier_ui1.R", local = TRUE)
       source("dilution_analysis_ui.R", local = TRUE)

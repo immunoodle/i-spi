@@ -414,6 +414,17 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
       output$swide_sample <- DT::renderDataTable(wide_sample, options = list(scrollX = TRUE))
       stored_plates_data$stored_samplew <- wide_sample
     }
+
+    # Ssamples with QC metrics
+    qc_best_samples_se <- fetch_best_sample_se_all(study_accession = input$readxMap_study_accession, experiment_accession = input$readxMap_experiment_accession,
+                                                   conn = conn)
+    # stored_best_sample_se <- qc_best_samples_se
+    stored_plates_data$stored_best_sample_se <- qc_best_samples_se
+
+
+    output$stored_best_sample_se = DT::renderDataTable(qc_best_samples_se, options = list(scrollX = TRUE))
+
+
   }
   # Update the experiment in antigen family
   create_antigen_family_rows(input$readxMap_study_accession, input$readxMap_experiment_accession)
@@ -480,6 +491,21 @@ observe({
   output$download_stored_control <- createDownloadHandler("stored_control", "stored controls")
   output$download_stored_buffer <- createDownloadHandler("stored_buffer", "stored buffers")
   output$download_stored_sample <- createDownloadHandler("stored_sample", "stored samples")
+  output$download_stored_best_sample_se <- createDownloadHandler("stored_best_sample_se","stored best samples")
+
+  # output$download_stored_best_sample_se <- downloadHandler(
+  #   filename = function() {
+  #       paste(input$readxMap_study_accession, input$readxMap_experiment_accession, "best_sample_se.csv", sep = "_")
+  #     },
+  #     content = function(file) {
+  #
+  #       req(qc_best_samples_se)
+  #       # download data component (data frame)
+  #       write.csv(qc_best_samples_se, file, row.names = FALSE)
+  #     }
+  #   )
+
+
 
   output$stored_plates_ui <- renderUI({
     req(input$readxMap_experiment_accession)

@@ -4828,6 +4828,7 @@ compute_fitted_df <- function(standard_curve_study_data, min_log_dilution) {
 aggregate_standard_curves <- function(experiment_fitted_data, antigen_selection, min_log_dilution, g_value, bkg, is_log_mfi_axis) {
   x_values <- seq(min_log_dilution, 0, length.out = 1000)
 
+  experiment_fitted_data <<- experiment_fitted_data
   # Filter by antigen and rename columns
   experiment_fitted_data <- experiment_fitted_data[experiment_fitted_data$antigen == antigen_selection,]
   names(experiment_fitted_data)[names(experiment_fitted_data) == 'x'] <- 'log_dilution'
