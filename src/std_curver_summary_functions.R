@@ -212,8 +212,12 @@ aggregate_standard_curves <- function(best_pred_all,
 
 }
 
-summarize_sc_fits_plotly <- function(best_pred_all, cv_df, best_plate_all, study_params, experiment_accession,
+summarize_sc_fits_plotly <- function(best_pred_all, cv_df, best_plate_all, experiment_accession,
                                      aggregated_fit, antigen, source) {
+
+  best_pred_exp <- best_pred_all[best_pred_all$experiment_accession == experiment_accession,]
+  is_log_response <- unique(best_pred_exp$is_log_response)
+  is_log_independent <- unique(best_pred_exp$is_log_x)
 
   microviz_kelly_pallete <-  c("#f3c300","#875692","#f38400","#a1caf1","#be0032","#c2b280","#848482",
                                "#008856","#e68fac","#0067a5","#f99379","#604e97", "#f6a600",  "#b3446c" ,
@@ -227,13 +231,13 @@ summarize_sc_fits_plotly <- function(best_pred_all, cv_df, best_plate_all, study
   print(nrow(best_plates_exp_source))
   assay_response_variable <- unique(best_plates_exp_source$assay_response_variable)[1]
   assay_independent_variable <- unique(best_plates_exp_source$assay_independent_variable)[1]
-  if (study_params$is_log_response) {
+  if (is_log_response) {
     y_axis_label <- paste("log<sub>10</sub>", assay_response_variable)
   } else {
     y_axis_label <- assay_response_variable
   }
 
-  if (study_params$is_log_independent) {
+  if (is_log_independent) {
     x_axis_label <- paste("log<sub>10</sub>", assay_independent_variable)
   } else {
     x_axis_label <- assay_independent_variable
