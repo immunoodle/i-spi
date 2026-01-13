@@ -718,11 +718,12 @@ fetch_best_pred_all_summary <- function(study_accession, experiment_accession, p
       SELECT
         study_accession,
         BOOL_OR(CASE WHEN param_name = 'is_log_mfi_axis' THEN param_boolean_value END) AS is_log_mfi_axis,
-        MAX(CASE WHEN param_name = 'blank_option' THEN param_character_value END) AS blank_option
+        MAX(CASE WHEN param_name = 'blank_option' THEN param_character_value END) AS blank_option,
+        BOOL_OR(CASE WHEN param_name = 'applyProzone' THEN param_boolean_value END) AS apply_prozone
       FROM madi_results.xmap_study_config
       WHERE study_accession = {study_accession}
         AND param_user = {param_user}
-        AND param_name IN ('is_log_mfi_axis', 'blank_option')
+        AND param_name IN ('is_log_mfi_axis', 'blank_option', 'applyProzone')
       GROUP BY study_accession
     )
     SELECT
@@ -730,7 +731,7 @@ fetch_best_pred_all_summary <- function(study_accession, experiment_accession, p
       p.predicted_concentration, p.se_x, p.pcov,
       p.study_accession, p.experiment_accession, p.sample_dilution_factor,
       p.plateid, p.plate, p.antigen, p.source, p.id_match, p.best_glance_all_id,
-      g.is_log_response, g.is_log_x, g.bkg_method
+      g.is_log_response, g.is_log_x, g.bkg_method, g.apply_prozone
     FROM madi_results.best_pred_all p
     LEFT JOIN madi_results.best_glance_all g
       ON p.best_glance_all_id = g.best_glance_all_id
@@ -738,7 +739,8 @@ fetch_best_pred_all_summary <- function(study_accession, experiment_accession, p
     WHERE p.study_accession = {study_accession}
       AND p.experiment_accession = {experiment_accession}
       AND g.is_log_response = params.is_log_mfi_axis
-      AND g.bkg_method = params.blank_option",
+      AND g.bkg_method = params.blank_option
+      AND g.apply_prozone = params.apply_prozone",
                     .con = conn
   )
   dbGetQuery(conn, query)
@@ -750,11 +752,12 @@ fetch_best_standard_all_summary <- function(study_accession, experiment_accessio
       SELECT
         study_accession,
         BOOL_OR(CASE WHEN param_name = 'is_log_mfi_axis' THEN param_boolean_value END) AS is_log_mfi_axis,
-        MAX(CASE WHEN param_name = 'blank_option' THEN param_character_value END) AS blank_option
+        MAX(CASE WHEN param_name = 'blank_option' THEN param_character_value END) AS blank_option,
+        BOOL_OR(CASE WHEN param_name = 'applyProzone' THEN param_boolean_value END) AS apply_prozone
       FROM madi_results.xmap_study_config
       WHERE study_accession = {study_accession}
         AND param_user = {param_user}
-        AND param_name IN ('is_log_mfi_axis', 'blank_option')
+        AND param_name IN ('is_log_mfi_axis', 'blank_option', 'applyProzone')
       GROUP BY study_accession
     )
     SELECT
@@ -763,7 +766,7 @@ fetch_best_standard_all_summary <- function(study_accession, experiment_accessio
       s.sampleid, s.well, s.dilution, s.antigen, s.assay_response,
       s.assay_response_variable, s.assay_independent_variable,
       s.concentration, s.g, s.best_glance_all_id,
-      g.is_log_response, g.is_log_x, g.bkg_method
+      g.is_log_response, g.is_log_x, g.bkg_method, g.apply_prozone
     FROM madi_results.best_standard_all s
     LEFT JOIN madi_results.best_glance_all g
       ON s.best_glance_all_id = g.best_glance_all_id
@@ -771,7 +774,8 @@ fetch_best_standard_all_summary <- function(study_accession, experiment_accessio
     WHERE s.study_accession = {study_accession}
       AND s.experiment_accession = {experiment_accession}
       AND g.is_log_response = params.is_log_mfi_axis
-      AND g.bkg_method = params.blank_option",
+      AND g.bkg_method = params.blank_option
+      AND g.apply_prozone = params.apply_prozone",
                     .con = conn
   )
   dbGetQuery(conn, query)
@@ -783,11 +787,12 @@ fetch_best_sample_se_all_summary <- function(study_accession, experiment_accessi
       SELECT
         study_accession,
         BOOL_OR(CASE WHEN param_name = 'is_log_mfi_axis' THEN param_boolean_value END) AS is_log_mfi_axis,
-        MAX(CASE WHEN param_name = 'blank_option' THEN param_character_value END) AS blank_option
+        MAX(CASE WHEN param_name = 'blank_option' THEN param_character_value END) AS blank_option,
+        BOOL_OR(CASE WHEN param_name = 'applyProzone' THEN param_boolean_value END) AS apply_prozone
       FROM madi_results.xmap_study_config
       WHERE study_accession = {study_accession}
         AND param_user = {param_user}
-        AND param_name IN ('is_log_mfi_axis', 'blank_option')
+        AND param_name IN ('is_log_mfi_axis', 'blank_option', 'applyProzone')
       GROUP BY study_accession
     )
     SELECT
@@ -800,7 +805,7 @@ fetch_best_sample_se_all_summary <- function(study_accession, experiment_accessi
       ss.dilution, ss.overall_se, ss.assay_response, ss.se_concentration,
       ss.au, ss.pcov, ss.source, ss.gate_class_loq, ss.gate_class_lod,
       ss.gate_class_pcov, ss.uid, ss.best_glance_all_id,
-      g.is_log_response, g.is_log_x, g.bkg_method
+      g.is_log_response, g.is_log_x, g.bkg_method, g.apply_prozone
     FROM madi_results.best_sample_se_all ss
     LEFT JOIN madi_results.best_glance_all g
       ON ss.best_glance_all_id = g.best_glance_all_id
@@ -808,26 +813,38 @@ fetch_best_sample_se_all_summary <- function(study_accession, experiment_accessi
     WHERE ss.study_accession = {study_accession}
       AND ss.experiment_accession = {experiment_accession}
       AND g.is_log_response = params.is_log_mfi_axis
-      AND g.bkg_method = params.blank_option",
+      AND g.bkg_method = params.blank_option
+      AND g.apply_prozone = params.apply_prozone",
                     .con = conn
   )
   dbGetQuery(conn, query)
 }
 
+fetch_current_sc_options_wide <- function(currentuser, study_accession, conn) {
+  query <- glue_sql(
+    "
+SELECT
+  study_accession,
+  param_user,
+  BOOL_OR(CASE WHEN param_name = 'is_log_mfi_axis' THEN param_boolean_value END) AS is_log_mfi_axis,
+  MAX(CASE WHEN param_name = 'blank_option' THEN param_character_value END) AS blank_option,
+  BOOL_OR(CASE WHEN param_name = 'applyProzone' THEN param_boolean_value END) AS apply_prozone
+FROM madi_results.xmap_study_config
+WHERE study_accession = {study_accession}
+  AND param_user = {currentuser}
+  AND param_name IN ('is_log_mfi_axis', 'blank_option', 'applyProzone')
+GROUP BY study_accession, param_user
+",
+    currentuser     = currentuser,
+    study_accession = study_accession,
+    .con = conn
+  )
 
-fetch_current_sc_options_wide <- function(currentuser, conn){
-  query <- glue_sql("SELECT
-      study_accession,
-      param_user,
-      BOOL_OR(CASE WHEN param_name = 'is_log_mfi_axis' THEN param_boolean_value END) AS is_log_mfi_axis,
-	  MAX(CASE WHEN param_name = 'blank_option' THEN param_character_value END) AS blank_option
-    FROM madi_results.xmap_study_config
-    WHERE study_accession = 'MADI_01'
-      AND param_user = {currentuser}
-      AND param_name IN ('is_log_mfi_axis', 'blank_option')
-    GROUP BY study_accession, param_user", .con = conn)
+  print(query)
   dbGetQuery(conn, query)
 }
+
+
 
 
 attach_antigen_familes <- function(best_pred_all, antigen_families) {

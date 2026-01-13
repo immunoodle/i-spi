@@ -92,7 +92,7 @@ observeEvent(list(
                        style = "background-color: #f0f8ff; border: 1px solid #4a90e2;
                               padding: 10px; margin-bottom: 15px; border-radius: 5px;",
                        tags$h4("Current Standard Curve Summary Context", style = "margin-top: 0; color: #2c5aa0;"),
-                       textOutput("current_sc_summary_context")
+                       uiOutput("current_sc_summary_context")
                      )
             )
           ),
@@ -108,31 +108,36 @@ observeEvent(list(
         ) # end tagList
       })
 
-      output$current_sc_summary_context <- renderText({
+      output$current_sc_summary_context <- renderUI({
         best_pred_exp <- best_pred_all[best_pred_all$experiment_accession == selected_experiment,]
         if (nrow(best_pred_exp) > 0) {
             is_log_response <- unique(best_pred_exp$is_log_response)
             is_log_independent <- unique(best_pred_exp$is_log_x)
             blank_option <- unique(best_pred_exp$bkg_method)
+            apply_prozone_correction <- unique(best_pred_exp$apply_prozone)
 
-            return(glue::glue(
+            return(HTML(glue::glue(
               "Showing Standard Curves Fit with: ",
-              "Response Scale: {ifelse(is_log_response, 'log', 'linear')} | ",
-              "Concentration Scale: {ifelse(is_log_independent, 'log', 'linear')} | ",
-              "Blank Handling: {blank_option}"
-            ))
+              "Response Scale: {ifelse(is_log_response, 'log<sub>10</sub>', 'linear')} | ",
+              "Concentration Scale: {ifelse(is_log_independent, 'log<sub>10</sub>', 'linear')} | ",
+              "Blank Handling: {blank_option} | ",
+              "Prozone Correction: {ifelse(apply_prozone_correction, 'applied', 'not applied')}"
+            )))
         } else {
-          currrent_sc_options <- fetch_current_sc_options_wide(currentuser = currentuser(), conn = conn)
-          is_log_response <- unique(currrent_sc_options$is_log_mfi_axis)
+          current_sc_options <- fetch_current_sc_options_wide(currentuser = currentuser(),
+                                                               study_accession = selected_study, conn = conn)
+          is_log_response <- unique(current_sc_options$is_log_mfi_axis)
           #print(is_log_response)
-          blank_option <- unique(currrent_sc_options$blank_option)
+          blank_option <- unique(current_sc_options$blank_option)
+          apply_prozone_correction <- unique(current_sc_options$apply_prozone)
           #print(blank_option)
-          return(glue::glue(
+          return(HTML(glue::glue(
             "Standard Curves have not been saved for the current combination of standard curve options selected:\n",
-            "Response Scale: {ifelse(is_log_response, 'log', 'linear')} | ",
+            "Response Scale: {ifelse(is_log_response, 'log<sub>10</sub>', 'linear')} | ",
             "Concentration Scale: waiting for first fit | ",
-            "Blank Handling: {blank_option}"
-          ))
+            "Blank Handling: {blank_option} | ",
+            "Prozone Correction: {ifelse(apply_prozone_correction, 'applied', 'not applied')}"
+          )))
 
         }
 
@@ -253,7 +258,6 @@ observeEvent(list(
 
       norm_best_sample <- norm_best_sample[, intersect(names(norm_best_sample), tbl_cols)]
 
-      #norm_best_sample <<- norm_best_sample[, !(names(norm_best_sample) %in% c("is_log_response", "is_log_x", "bkg_method"))]
       norm_best_sample$best_sample_se_all_id  <- as.numeric(norm_best_sample$best_sample_se_all_id)
       norm_best_sample$best_glance_all_id     <- as.numeric(norm_best_sample$best_glance_all_id)
 
