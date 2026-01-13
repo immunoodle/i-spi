@@ -323,8 +323,9 @@ plot_standard_curve <- function(best_fit,
   ##   • Combine model‑derived SE and sample‑specific SE to get a
   ##     common axis range.
   ## -----------------------------------------------------------------
-  se_model   <- best_fit$best_pred$se_x
-  se_samples <- samples_predicted_conc$se_x
+  print(names(best_fit$best_pred))
+  se_model   <- best_fit$best_pred$se_concentration
+  se_samples <- samples_predicted_conc$se_concentration
   se_all <- c(best_fit$best_pred$pcov,  samples_predicted_conc$pcov)
   se_range      <- range(se_all, na.rm = TRUE)
 

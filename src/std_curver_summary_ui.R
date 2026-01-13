@@ -27,15 +27,24 @@ observeEvent(list(
                                              experiment_accession = selected_experiment,
                                              conn = conn)
 
-      best_standard_all <- fetch_best_standard_all(study_accession = selected_study,
+      # best_standard_all <- fetch_best_standard_all(study_accession = selected_study,
+      #                                              experiment_accession = selected_experiment,
+      #                                              conn = conn)
+      best_standard_all <- fetch_best_standard_all_summary(study_accession = selected_study,
+                                                           experiment_accession = selected_experiment,
+                                                           param_user = currentuser(),
+                                                           conn = conn)
+
+
+
+      # best_pred_all <- fetch_best_pred_all(study_accession = selected_study,
+      #                                      experiment_accession = selected_experiment,
+      #                                      conn = conn)
+      best_pred_all <- fetch_best_pred_all_summary(study_accession = selected_study,
                                                    experiment_accession = selected_experiment,
+                                                   param_user = currentuser(),
                                                    conn = conn)
 
-
-
-      best_pred_all <- fetch_best_pred_all(study_accession = selected_study,
-                                           experiment_accession = selected_experiment,
-                                           conn = conn)
 
 
       antigen_families <- fetch_antigen_family_table(selected_study)
@@ -50,9 +59,15 @@ observeEvent(list(
                                                experiment_accession = selected_experiment,
                                                 conn = conn)
 
-      best_sample_se_all <- fetch_best_sample_se_all(study_accession = selected_study,
-                                                 experiment_accession = selected_experiment,
-                                                 conn = conn)
+      # best_sample_se_all <- fetch_best_sample_se_all(study_accession = selected_study,
+      #                                            experiment_accession = selected_experiment,
+      #                                            conn = conn)
+
+      best_sample_se_all <- fetch_best_sample_se_all_summary(study_accession = selected_study,
+                                       experiment_accession = selected_experiment,
+                                       param_user = currentuser(),
+                                       conn = conn)
+
 
 
       antigen_settings <- fetch_antigen_parameters(
@@ -72,22 +87,64 @@ observeEvent(list(
       output$std_curver_summary_ui <- renderUI({
         tagList(
           fluidRow(
+            column(9,
+                     div(
+                       style = "background-color: #f0f8ff; border: 1px solid #4a90e2;
+                              padding: 10px; margin-bottom: 15px; border-radius: 5px;",
+                       tags$h4("Current Standard Curve Summary Context", style = "margin-top: 0; color: #2c5aa0;"),
+                       uiOutput("current_sc_summary_context")
+                     )
+            )
+          ),
+          fluidRow(
             column(4, uiOutput("best_std_antigen_family_ui")),
             column(4, uiOutput("best_std_antigen_ui")),
             column(4, uiOutput("best_std_antigen_source_ui"))
           ),
           plotlyOutput("std_curve_summary_plot"),
           uiOutput("download_standard_curve_fits_data_button_ui"),
-          actionButton("save_norm_assay_response", "Save Normalized Assay Response")
+          uiOutput("save_norm_btn_ui")
 
         ) # end tagList
       })
 
+      output$current_sc_summary_context <- renderUI({
+        best_pred_exp <- best_pred_all[best_pred_all$experiment_accession == selected_experiment,]
+        if (nrow(best_pred_exp) > 0) {
+            is_log_response <- unique(best_pred_exp$is_log_response)
+            is_log_independent <- unique(best_pred_exp$is_log_x)
+            blank_option <- unique(best_pred_exp$bkg_method)
+            apply_prozone_correction <- unique(best_pred_exp$apply_prozone)
+
+            return(HTML(glue::glue(
+              "Showing Standard Curves Fit with: ",
+              "Response Scale: {ifelse(is_log_response, 'log<sub>10</sub>', 'linear')} | ",
+              "Concentration Scale: {ifelse(is_log_independent, 'log<sub>10</sub>', 'linear')} | ",
+              "Blank Handling: {blank_option} | ",
+              "Prozone Correction: {ifelse(apply_prozone_correction, 'applied', 'not applied')}"
+            )))
+        } else {
+          current_sc_options <- fetch_current_sc_options_wide(currentuser = currentuser(),
+                                                               study_accession = selected_study, conn = conn)
+          is_log_response <- unique(current_sc_options$is_log_mfi_axis)
+          #print(is_log_response)
+          blank_option <- unique(current_sc_options$blank_option)
+          apply_prozone_correction <- unique(current_sc_options$apply_prozone)
+          #print(blank_option)
+          return(HTML(glue::glue(
+            "Standard Curves have not been saved for the current combination of standard curve options selected:\n",
+            "Response Scale: {ifelse(is_log_response, 'log<sub>10</sub>', 'linear')} | ",
+            "Concentration Scale: waiting for first fit | ",
+            "Blank Handling: {blank_option} | ",
+            "Prozone Correction: {ifelse(apply_prozone_correction, 'applied', 'not applied')}"
+          )))
+
+        }
+
+      })
 
       output$best_std_antigen_family_ui <- renderUI({
-
-        # req(best_standard_all$antigen_family)
-
+        req(nrow(best_pred_all[best_pred_all$experiment_accession == selected_experiment,]) > 0)
         selectInput("best_std_antigen_family",
                     label = "Antigen Family",
                     choices =   unique(best_pred_all[best_pred_all$experiment_accession == selected_experiment,]$antigen_family))
@@ -137,7 +194,7 @@ observeEvent(list(
 
       aggregated_fit <- reactive({
         req(best_glance_all)
-        req(best_pred_all)
+        req(nrow(best_pred_all) > 0)
         selected_study <- input$readxMap_study_accession
         selected_experiment <- input$readxMap_experiment_accession
 
@@ -152,16 +209,24 @@ observeEvent(list(
         })
 
       output$std_curve_summary_plot <- renderPlotly({
+        req(aggregated_fit)
         selected_experiment <- input$readxMap_experiment_accession
         aggregated_fit<- aggregated_fit()
         #aggregated_fit_v <<- aggregated_fit
         summarize_sc_fits_plotly(best_pred_all = best_pred_all, cv_df = cv_df, aggregated_fit = aggregated_fit(),
                                   best_plate_all = best_plate_all,
-                                  study_params = study_params, experiment_accession = selected_experiment,
+                                  experiment_accession = selected_experiment,
                                   antigen =  input$best_std_antigen, source =  input$best_std_source)
 
       })
 
+
+      output$save_norm_btn_ui <- renderUI({
+        req(selected_experiment)
+        if (nrow(best_pred_all[best_pred_all$experiment_accession == selected_experiment,]) > 0) {
+          actionButton("save_norm_assay_response", "Save Normalized Assay Response")
+        }
+      })
 
 
       observeEvent(input$save_norm_assay_response, {
@@ -181,10 +246,20 @@ observeEvent(list(
           )
 
 
+
+
       norm_best_sample <- conduct_linear_interpolation_batch(
         best_sample_se_all = best_sample_se_all,
         aggregated_fit_v   = agg_curves_all_antigens
       )
+
+
+      tbl_cols <- dbListFields(conn, DBI::Id(schema="madi_results", table="best_sample_se_all"))
+
+      norm_best_sample <- norm_best_sample[, intersect(names(norm_best_sample), tbl_cols)]
+
+      norm_best_sample$best_sample_se_all_id  <- as.numeric(norm_best_sample$best_sample_se_all_id)
+      norm_best_sample$best_glance_all_id     <- as.numeric(norm_best_sample$best_glance_all_id)
 
       # Upsert the normalized assay response
       upsert_best_curve(
@@ -206,6 +281,7 @@ observeEvent(list(
 
       output$download_standard_curve_fits_data_button_ui <- renderUI({
         req(best_glance_all)
+        req(nrow(best_pred_all[best_pred_all$experiment_accession == selected_experiment,]) > 0)
         req(input$readxMap_study_accession, input$readxMap_experiment_accession)
         button_label <-  paste0("Download Standard Curve Fits Data for ", input$readxMap_experiment_accession, " in ", input$readxMap_study_accession)
 
