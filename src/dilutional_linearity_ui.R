@@ -161,8 +161,8 @@ dilutionalLinearityServer <- function(id, selected_study, selected_experiment, c
     })
 
 
+    # count the number of dilutions present
     dilution_count <- reactive({
-      #req(input$dil_lin_response)
 
       ds <- prepare_lm_sample_data(
         study_accession = selected_study(),
@@ -174,18 +174,6 @@ dilutionalLinearityServer <- function(id, selected_study, selected_experiment, c
       length(unique(ds$dilution))
     })
 
-    dilutions_assessed <- reactive({
-      #req(input$dil_lin_response)
-
-      ds <- prepare_lm_sample_data(
-        study_accession = selected_study(),
-        experiment_accession = selected_experiment(),
-        is_log_mfi_axis = is_log_mfi_axis,
-        response_type = "raw_assay_response"
-      )
-
-      unique(ds$dilution)
-    })
 
 
 
@@ -232,18 +220,48 @@ dilutionalLinearityServer <- function(id, selected_study, selected_experiment, c
     #   !is.null(plate_lm_facets())
     # })
 
+    # output$invalid_dilution_count_message <- renderUI({
+    #
+    #   if (dilution_count() <= 1) {
+    #    # HTML(paste("<span style='font-size: 1.5em;'> There must be more than one serum dilution to access dilutional linearity.</span>"))
+    #     HTML(paste("There must be more than one serum dilution to access dilutional linearity."))
+    #
+    #   } else {
+    #     HTML(paste0("Dilutional Linearity Assessment (", dilution_count(), " serum dilutions): ",
+    #                 paste(dilutions_assessed(), collapse = ", ")))
+    #
+    #   }
+    # })
+
     output$invalid_dilution_count_message <- renderUI({
 
-      if (dilution_count() <= 1) {
-       # HTML(paste("<span style='font-size: 1.5em;'> There must be more than one serum dilution to access dilutional linearity.</span>"))
-        HTML(paste("There must be more than one serum dilution to access dilutional linearity."))
+      ds <- prepare_lm_sample_data(
+        study_accession = selected_study(),
+        experiment_accession = selected_experiment(),
+        is_log_mfi_axis = is_log_mfi_axis,
+        response_type = "raw_assay_response"
+      )
 
-      } else {
-        HTML(paste0("Dilutional Linearity Assessment (", dilution_count(), " serum dilutions): ",
-                    paste(dilutions_assessed(), collapse = ", ")))
-
+      # Case 1: no rows
+      if (nrow(ds) == 0) {
+        return(HTML("QC metrics including arbitrary units from the standard curve are not yet available for these samples. Dilutional linearity assessment is pending."))
       }
+
+      dils <- unique(ds$dilution)
+      n    <- length(dils)
+
+      # Case 2: rows but insufficient dilutions
+      if (n <= 1) {
+        return(HTML("There must be more than one serum dilution to access dilutional linearity."))
+      }
+
+      # Case 3: valid
+      HTML(paste0(
+        "Dilutional Linearity Assessment (", n, " serum dilutions): ",
+        paste(dils, collapse = ", ")
+      ))
     })
+
 
     #cached_facets <- reactiveVal(NULL)
 
