@@ -934,7 +934,7 @@ observeEvent(input$readxMap_study_accession, {
 
     # NEW: Show notification to user
     showNotification(
-      "Study changed. All batch data has been cleared. Please upload new files.",
+      "The workspace is clear for working with a new Study.",
       type = "warning",
       duration = 5
     )
