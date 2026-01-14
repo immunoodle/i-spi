@@ -223,36 +223,188 @@ output$readxMapData <- renderUI({
     import_plate_data_title <- paste("Import", input$readxMap_study_accession, "Plate Data", sep = " ")
     tagList(
       fluidPage(
-        tagList(
-          h3(import_plate_data_title),
-         # if (input$readxMap_study_accession != "Click here") {
-            bsCollapsePanel(
-              "Instructions",
-              p("This is where we can load plate data from either Raw excel files or from the xPONENT format."),
-              p("1. Choose an existing study OR Create a new study."),
-              p("2. Choose an existing experiment OR Create a new experiment."),
-              p("3. Choose an xPONENT format OR a RAW format to upload."),
-              p("4. Browse to your plate data and import it in the correct format."),
-              p("5. Parse the plate data into correct columns/fields appropriate and required for each data component/type."),
-              p("6. Upload each data component/type."),
-              style = "success"
-            )
-        #  }
-        ),
         # tagList(
         #   h3(import_plate_data_title),
-        #   bsCollapsePanel(
-        #     "Instructions",
-        #     p("This is where we can load plate data from either Raw excel files or from the xPONENT format."),
-        #     p("1. Choose an existing study OR Create a new study."),
-        #     p("2. Choose an existing experiment OR Create a new experiment."),
-        #     p("3. Choose an xPONENT format OR a RAW format to upload."),
-        #     p("4. Browse to your plate data and import it in the correct format."),
-        #     p("5. Parse the plate data into correct columns/fields appropriate and required for each data component/type."),
-        #     p("6. Upload each data component/type."),
-        #     style = "success"
-        #   )
+        #     bsCollapsePanel(
+        #       "Instructions",
+        #       p("This is where we can load plate data from either Raw excel files or from the xPONENT format."),
+        #       p("1. Choose an existing study OR Create a new study."),
+        #       p("2. Choose an existing experiment OR Create a new experiment."),
+        #       p("3. Choose an xPONENT format OR a RAW format to upload."),
+        #       p("4. Browse to your plate data and import it in the correct format."),
+        #       p("5. Parse the plate data into correct columns/fields appropriate and required for each data component/type."),
+        #       p("6. Upload each data component/type."),
+        #       style = "success"
+        #     )
         # ),
+        tagList(
+          h3(import_plate_data_title),
+          bsCollapsePanel(
+            "Instructions for Importing and Uploading batches of plate files.",
+            p("This is where we can load plate data from either Raw excel files, the xPONENT format or batches of raw files."),
+            # Section A: Before uploading
+            h4("A. Before Uploading Batch Plate Files"),
+            p("Ensure you have completed the following:"),
+            tags$ol(
+              tags$li("Created or loaded a Project - Navigate to \"Create, Add, and Load Projects\" in the sidebar."),
+              tags$li("Created or selected a Study - Type a new study name (up to 15 characters) or select an existing one."),
+              tags$li("Selected the sidebar option to Import Plate Data."),
+              tags$li("Created or selected an Experiment - Each experiment represents a specific assay run or feature (e.g., \"IgG_total\", \"FcgR2a\")."),
+              tags$li("Selected Layout Template as the file format.")
+            ),
+
+            # Section B: Upload Experiment Files
+            h4("B. Upload Experiment Files"),
+            tags$ol(
+              tags$li("Click \"Select all experiment raw data files\"."),
+              tags$li("Select all plate files (.xlsx) for this batch."),
+              tags$li("Enter a Feature name (up to 15 characters) - this identifies the assay type (e.g., \"IgGtot\", \"FcgR2a\").")
+            ),
+
+            # Section C: Configure Plate Settings
+            h4("C. Configure Plate Settings"),
+            tags$ol(
+              tags$li(
+                strong("Number of Wells:"),
+                p("Select the plate format (6, 12, 24, 48, 96, 384, or 1536 wells).")
+              ),
+              tags$li(
+                strong("Description Delimiter:"),
+                p("If your Description field contains data, select the character that separates elements:"),
+                tags$ul(
+                  tags$li(tags$code("_"), " (underscore) - most common"),
+                  tags$li(tags$code("|"), " (pipe)"),
+                  tags$li(tags$code(":"), " (colon)"),
+                  tags$li(tags$code("-"), " (hyphen)")
+                )
+              ),
+              tags$li(
+                strong("Optional Elements:"),
+                p("Check/uncheck to include group assignments:"),
+                tags$ul(
+                  tags$li("☑ SampleGroupA"),
+                  tags$li("☑ SampleGroupB")
+                )
+              ),
+              tags$li(
+                strong("Element Order:"),
+                p("Drag and drop to match your Description field structure:"),
+                tags$ul(
+                  tags$li("Default order: PatientID → TimePeriod → DilutionFactor"),
+                  tags$li("With groups: PatientID → SampleGroupA → SampleGroupB → TimePeriod → DilutionFactor")
+                )
+              )
+            ),
+
+            # Section D: Generate Layout Template
+            h4("D. Generate Layout Template"),
+            tags$ol(
+              tags$li("Click \"Generate a Layout file\"."),
+              tags$li("Save the Excel file to your computer."),
+              tags$li("The template contains pre-populated sheets based on your plate data.")
+            ),
+
+            # Section E: Review and Edit Layout Template
+            h4("E. Review and Edit Layout Template"),
+            p("Open the generated Excel file and verify/edit each sheet:"),
+
+            tags$h5("Sheet: plate_id"),
+            tags$table(
+              class = "table table-bordered table-sm",
+              tags$thead(tags$tr(tags$th("Column"), tags$th("Description"))),
+              tags$tbody(
+                tags$tr(tags$td("study_name"), tags$td("Study identifier")),
+                tags$tr(tags$td("experiment_name"), tags$td("Experiment identifier")),
+                tags$tr(tags$td("number_of_wells"), tags$td("Plate format (96, 384, etc.)")),
+                tags$tr(tags$td("plate_number"), tags$td("Internal plate identifier")),
+                tags$tr(tags$td("plateid"), tags$td("Plate ID from instrument")),
+                tags$tr(tags$td("plate_filename"), tags$td("Original file path"))
+              )
+            ),
+
+            tags$h5("Sheet: subject_groups"),
+            tags$table(
+              class = "table table-bordered table-sm",
+              tags$thead(tags$tr(tags$th("Column"), tags$th("Description"))),
+              tags$tbody(
+                tags$tr(tags$td("study_name"), tags$td("Study identifier")),
+                tags$tr(tags$td("subject_id"), tags$td("Unique patient/subject identifier")),
+                tags$tr(tags$td("groupa"), tags$td("First categorical grouping")),
+                tags$tr(tags$td("groupb"), tags$td("Second categorical grouping"))
+              )
+            ),
+
+            tags$h5("Sheet: timepoint"),
+            tags$table(
+              class = "table table-bordered table-sm",
+              tags$thead(tags$tr(tags$th("Column"), tags$th("Description"))),
+              tags$tbody(
+                tags$tr(tags$td("study_name"), tags$td("Study identifier")),
+                tags$tr(tags$td("timepoint_tissue_abbreviation"), tags$td("Short timepoint code")),
+                tags$tr(tags$td("tissue_type"), tags$td("e.g., \"blood\"")),
+                tags$tr(tags$td("tissue_subtype"), tags$td("e.g., \"serum\"")),
+                tags$tr(tags$td("description"), tags$td("Full timepoint description")),
+                tags$tr(tags$td("min_time_since_day_0"), tags$td("Minimum days from baseline")),
+                tags$tr(tags$td("max_time_since_day_0"), tags$td("Maximum days from baseline"))
+              )
+            ),
+
+            tags$h5("Sheet: antigen_list"),
+            tags$table(
+              class = "table table-bordered table-sm",
+              tags$thead(tags$tr(tags$th("Column"), tags$th("Description"))),
+              tags$tbody(
+                tags$tr(tags$td("antigen_label_on_plate"), tags$td("Column name from plate file")),
+                tags$tr(tags$td("antigen_abbreviation"), tags$td("Short name for analysis")),
+                tags$tr(tags$td("antigen_family"), tags$td("Grouping category")),
+                tags$tr(tags$td("standard_curve_max_concentration"), tags$td("Upper limit for curve fitting"))
+              )
+            ),
+
+            tags$h5("Sheet: plates_map"),
+            tags$table(
+              class = "table table-bordered table-sm",
+              tags$thead(tags$tr(tags$th("Column"), tags$th("Description"))),
+              tags$tbody(
+                tags$tr(tags$td("study_name"), tags$td("Study identifier")),
+                tags$tr(tags$td("plate_number"), tags$td("Plate identifier")),
+                tags$tr(tags$td("well"), tags$td("Well position")),
+                tags$tr(tags$td("specimen_type"), tags$td("X, S, B, C, or empty")),
+                tags$tr(tags$td("specimen_source"), tags$td("Source material identifier")),
+                tags$tr(tags$td("specimen_dilution_factor"), tags$td("Numeric dilution")),
+                tags$tr(tags$td("subject_id"), tags$td("Links to subject_groups")),
+                tags$tr(tags$td("biosample_id_barcode"), tags$td("Sample barcode")),
+                tags$tr(tags$td("timepoint_tissue_abbreviation"), tags$td("Links to timepoint sheet"))
+              )
+            ),
+
+            # Section F: Upload Completed Layout
+            h4("F. Upload Completed Layout"),
+            tags$ol(
+              tags$li("Click \"Upload a completed layout file\"."),
+              tags$li("Select your edited layout template."),
+              tags$li("Review the plate layout visualization."),
+              tags$li(
+                "Configure Blank and Empty Well Handling:",
+                tags$ul(
+                  tags$li("\"Skip Empty Wells\" - removes blank entries"),
+                  tags$li("\"Use as Blank\" - treats as background controls")
+                )
+              )
+            ),
+
+            # Section G: Validate and Upload
+            h4("G. Validate and Upload"),
+            tags$ol(
+              tags$li("Check the Batch Validated badge appears (green checkmark)."),
+              tags$li("If validation fails, review error messages and correct issues."),
+              tags$li("Click \"Upload Batch\" to store data in database."),
+              tags$li("Verify Batch Uploaded badge appears.")
+            ),
+
+            style = "warning"
+          )
+        ),
         br()
         ,
         fluidRow(
