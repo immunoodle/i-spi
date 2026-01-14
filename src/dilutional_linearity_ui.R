@@ -26,6 +26,12 @@ dilutionalLinearityModuleUI <- function(id) {
     style = "success"
         )),
     mainPanel(
+      div(
+        style = "background-color: #f0f8ff; border: 1px solid #4a90e2;
+                              padding: 10px; margin-bottom: 15px; border-radius: 5px;",
+        tags$h4("Current Dilutional Linearity Context", style = "margin-top: 0; color: #2c5aa0;"),
+        uiOutput(ns("invalid_dilution_count_message")),
+      ),
       fluidRow(column(3, uiOutput(ns("da_lin_antigenUI"))),
                column(3,
                       uiOutput(ns("response_selectionUI"))),
@@ -35,7 +41,6 @@ dilutionalLinearityModuleUI <- function(id) {
       div(class = "dilution-linearity-plot-container",
         plotlyOutput(ns("selected_facet"), height = "800px")
       ),
-      uiOutput(ns("invalid_dilution_count_message")),
       br(),
       uiOutput(ns("download_processed_lm_fit_dataUI")),
       br(),
@@ -65,11 +70,15 @@ dilutionalLinearityServer <- function(id, selected_study, selected_experiment, c
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
-    sample_data_dl <- fetch_db_samples(study_accession = selected_study(), experiment_accession = selected_experiment())
+   # sample_data_dl <- fetch_db_samples(study_accession = selected_study(), experiment_accession = selected_experiment(), conn = conn)
+    sample_data_dl <- fetch_best_sample_se_all_summary(study_accession = selected_study(),
+                                     experiment_accession = selected_experiment(),
+                                     param_user = currentuser(),
+                                     conn = conn)
 
       if (!is.null(selected_study()) && length(selected_study()) > 0 &&
         !is.null(selected_experiment()) && length(selected_experiment()) > 0 &&
-        !is.null(sample_data_dl) && length(sample_data_dl > 0)){
+        !is.null(sample_data_dl) && length(sample_data_dl) > 0) {
 
       # Filter sample data
       sample_data_dl$selected_str <- paste0(sample_data_dl$study_accession, sample_data_dl$experiment_accession)
@@ -91,7 +100,10 @@ dilutionalLinearityServer <- function(id, selected_study, selected_experiment, c
 
       sample_data_dl$subject_accession <- sample_data_dl$patientid
 
-      sample_data_dl <- dplyr::rename(sample_data_dl, value_reported = antibody_mfi)
+      print(names(sample_data_dl))
+      sample_data_dl <- dplyr::rename(sample_data_dl, value_reported = assay_response)
+
+      #sample_data_dl <- dplyr::rename(sample_data_dl, value_reported = mfi)
 
       arm_choices <- unique(sample_data_dl$arm_name)
       visits <- unique(sample_data_dl$visit_name)
@@ -105,6 +117,7 @@ dilutionalLinearityServer <- function(id, selected_study, selected_experiment, c
     output$da_lin_antigenUI <- renderUI({
       req(study_configuration)
       req(nrow(study_configuration) > 0)
+      req(dilution_count() > 1)
       cat("in antigen lin selector")
       antigen_choices <- strsplit(study_configuration[study_configuration$param_name == "antigen_order",]$param_character_value, ",")[[1]]
       if (all(is.na(antigen_choices))) {
@@ -122,25 +135,59 @@ dilutionalLinearityServer <- function(id, selected_study, selected_experiment, c
     })
 
     output$response_selectionUI <- renderUI({
+      req(dilution_count() > 1)
       selectInput(
         inputId = ns("dil_lin_response"),
         label = "Response type",
         choices = c("Arbritary Units" = "au",
-                    "MFI" = "mfi")
+                    "Raw Assay Response" = "raw_assay_response")
       )
     })
 
     output$linear_correction_UI <- renderUI({
+      req(dilution_count() > 1)
+
       checkboxInput(inputId = ns("apply_lm_corr"),
                     label = "Apply Linear Correction",
                     value = T)
     })
 
     output$exclude_concentrated_samples_UI <- renderUI({
+      req(dilution_count() > 1)
+
       checkboxInput(inputId = ns("exclude_conc_samples"),
                     label = "Exclude Concentrated Samples from Model Fittting",
                     value = T)
     })
+
+
+    dilution_count <- reactive({
+      #req(input$dil_lin_response)
+
+      ds <- prepare_lm_sample_data(
+        study_accession = selected_study(),
+        experiment_accession = selected_experiment(),
+        is_log_mfi_axis = is_log_mfi_axis,
+        response_type = "raw_assay_response"
+      )
+
+      length(unique(ds$dilution))
+    })
+
+    dilutions_assessed <- reactive({
+      #req(input$dil_lin_response)
+
+      ds <- prepare_lm_sample_data(
+        study_accession = selected_study(),
+        experiment_accession = selected_experiment(),
+        is_log_mfi_axis = is_log_mfi_axis,
+        response_type = "raw_assay_response"
+      )
+
+      unique(ds$dilution)
+    })
+
+
 
     plate_lm_facets <- reactive({
     #  req(input$qc_component == "Dilutional Linearity")
@@ -186,10 +233,15 @@ dilutionalLinearityServer <- function(id, selected_study, selected_experiment, c
     # })
 
     output$invalid_dilution_count_message <- renderUI({
-      if (is.null(plate_lm_facets())) {
-        HTML(paste("<span style='font-size: 1.5em;'> There must be more than one serum dilution to access dilutional linearity.</span>"))
+
+      if (dilution_count() <= 1) {
+       # HTML(paste("<span style='font-size: 1.5em;'> There must be more than one serum dilution to access dilutional linearity.</span>"))
+        HTML(paste("There must be more than one serum dilution to access dilutional linearity."))
+
       } else {
-        NULL  # or some other UI element
+        HTML(paste0("Dilutional Linearity Assessment (", dilution_count(), " serum dilutions): ",
+                    paste(dilutions_assessed(), collapse = ", ")))
+
       }
     })
 
