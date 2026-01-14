@@ -152,22 +152,163 @@ shiny_notify <- function(session = shiny::getDefaultReactiveDomain()) {
   }
 }
 
+# upsert_best_curve <- function(conn,
+#                               df,
+#                               schema = "madi_results",
+#                               table  = "best_plate_all",
+#                               notify = NULL,
+#                               quiet  = FALSE) {
+#
+#   ## ----------------------------
+#   ## Notifier
+#   ## ----------------------------
+#   if (is.null(notify)) {
+#     notify <- function(msg) {
+#       if (!quiet) message(as.character(msg))
+#     }
+#   }
+#
+#   bail <- function(msg) {
+#     notify(msg)
+#     invisible(FALSE)
+#   }
+#
+#   ## ----------------------------
+#   ## Basic checks
+#   ## ----------------------------
+#   if (!DBI::dbIsValid(conn)) {
+#     return(bail("Database connection is not valid."))
+#   }
+#
+#   if (!is.data.frame(df) || nrow(df) == 0) {
+#     return(bail("No data provided for upsert."))
+#   }
+#
+#   cols <- names(df)
+#
+#   ## ----------------------------
+#   ## Natural keys by table
+#   ## ----------------------------
+#   nk <- get_natural_keys(table)
+#
+#   if (is.null(nk)) {
+#     stop("Unknown table: ", table)
+#   }
+#
+#   ## ----------------------------
+#   ## Validate natural keys
+#   ## ----------------------------
+#   missing_keys <- setdiff(nk, cols)
+#   if (length(missing_keys) > 0) {
+#     stop("Missing natural-key columns for ", table, ": ",
+#          paste(missing_keys, collapse = ", "))
+#   }
+#
+#   if (anyNA(df[, nk, drop = FALSE])) {
+#     bad <- which(!complete.cases(df[, nk, drop = FALSE]))
+#     print(df[bad, nk, drop = FALSE])
+#     return(bail("Natural-key columns contain NA; cannot upsert."))
+#   }
+#
+#   ## ----------------------------
+#   ## Optional: verify UNIQUE index exists
+#   ## ----------------------------
+#   idx_check_sql <- glue::glue_sql(
+#     "SELECT 1
+#      FROM pg_index i
+#      JOIN pg_class t ON t.oid = i.indrelid
+#      JOIN pg_namespace n ON n.oid = t.relnamespace
+#      WHERE n.nspname = {schema}
+#        AND t.relname = {table}
+#        AND i.indisunique
+#      LIMIT 1",
+#     .con = conn
+#   )
+#
+#   if (nrow(DBI::dbGetQuery(conn, idx_check_sql)) == 0) {
+#     return(bail(paste0("No UNIQUE index found for ", schema, ".", table,
+#                        ". Run schema migrations first.")))
+#   }
+#
+#   ## ----------------------------
+#   ## Transaction
+#   ## ----------------------------
+#   ok <- tryCatch({
+#
+#     DBI::dbWithTransaction(conn, {
+#
+#       tmp_name <- paste0("tmp_upsert_", table, "_", sample.int(1e9, 1))
+#
+#       ## Create temp table using glue_sql
+#       ## Note: Use DBI::SQL() for identifiers that need special handling
+#       schema_id <- DBI::dbQuoteIdentifier(conn, schema)
+#       table_id <- DBI::dbQuoteIdentifier(conn, table)
+#       tmp_id <- DBI::dbQuoteIdentifier(conn, tmp_name)
+#
+#       create_temp_sql <- glue::glue_sql(
+#         "CREATE TEMP TABLE {DBI::SQL(tmp_id)}
+#          (LIKE {DBI::SQL(schema_id)}.{DBI::SQL(table_id)} INCLUDING DEFAULTS)
+#          ON COMMIT DROP",
+#         .con = conn
+#       )
+#
+#       DBI::dbExecute(conn, create_temp_sql)
+#
+#       ## Bulk write to temp table
+#       DBI::dbWriteTable(
+#         conn,
+#         name = tmp_name,
+#         value = df,
+#         append = TRUE,
+#         row.names = FALSE
+#       )
+#
+#       ## Build and execute UPSERT statement
+#       upsert_sql <- build_upsert_sql_glue(
+#         conn = conn,
+#         schema = schema,
+#         table = table,
+#         tmp_name = tmp_name,
+#         cols = cols,
+#         nk = nk
+#       )
+#
+#       DBI::dbExecute(conn, upsert_sql)
+#     })
+#
+#     TRUE
+#
+#   }, error = function(e) {
+#     notify(paste0(table, " upsert failed: ", conditionMessage(e)))
+#     FALSE
+#   })
+#
+#   if (ok) {
+#     notify(paste0(table, " upsert completed (", nrow(df), " rows)."))
+#     invisible(TRUE)
+#   } else {
+#     invisible(FALSE)
+#   }
+# }
+
+
+
 upsert_best_curve <- function(conn,
                               df,
                               schema = "madi_results",
                               table  = "best_plate_all",
                               notify = NULL,
-                              quiet  = FALSE) {
+                              quiet  = FALSE,
+                              batch_size = 50000,
+                              use_copy = TRUE,
+                              skip_index_check = FALSE) {
 
   ## ----------------------------
   ## Notifier
   ## ----------------------------
   if (is.null(notify)) {
-    notify <- function(msg) {
-      if (!quiet) message(as.character(msg))
-    }
+    notify <- function(msg) if (!quiet) message(Sys.time(), " - ", msg)
   }
-
   bail <- function(msg) {
     notify(msg)
     invisible(FALSE)
@@ -176,121 +317,194 @@ upsert_best_curve <- function(conn,
   ## ----------------------------
   ## Basic checks
   ## ----------------------------
-  if (!DBI::dbIsValid(conn)) {
-    return(bail("Database connection is not valid."))
-  }
-
-  if (!is.data.frame(df) || nrow(df) == 0) {
-    return(bail("No data provided for upsert."))
-  }
+  if (!DBI::dbIsValid(conn)) return(bail("Database connection is not valid."))
+  if (!is.data.frame(df) || nrow(df) == 0) return(bail("No data provided."))
 
   cols <- names(df)
-
-  ## ----------------------------
-  ## Natural keys by table
-  ## ----------------------------
   nk <- get_natural_keys(table)
+  if (is.null(nk)) stop("Unknown table: ", table)
 
-  if (is.null(nk)) {
-    stop("Unknown table: ", table)
-  }
-
-  ## ----------------------------
-  ## Validate natural keys
-  ## ----------------------------
   missing_keys <- setdiff(nk, cols)
   if (length(missing_keys) > 0) {
-    stop("Missing natural-key columns for ", table, ": ",
-         paste(missing_keys, collapse = ", "))
+    stop("Missing natural-key columns: ", paste(missing_keys, collapse = ", "))
   }
 
   if (anyNA(df[, nk, drop = FALSE])) {
-    bad <- which(!complete.cases(df[, nk, drop = FALSE]))
-    print(df[bad, nk, drop = FALSE])
     return(bail("Natural-key columns contain NA; cannot upsert."))
   }
 
   ## ----------------------------
-  ## Optional: verify UNIQUE index exists
+  ## Cache index check (skip on repeated calls)
   ## ----------------------------
-  idx_check_sql <- glue::glue_sql(
-    "SELECT 1
-     FROM pg_index i
-     JOIN pg_class t ON t.oid = i.indrelid
-     JOIN pg_namespace n ON n.oid = t.relnamespace
-     WHERE n.nspname = {schema}
-       AND t.relname = {table}
-       AND i.indisunique
-     LIMIT 1",
-    .con = conn
-  )
+  if (!skip_index_check) {
+    cache_key <- paste0(schema, ".", table)
+    if (!exists(".upsert_index_cache", envir = .GlobalEnv)) {
+      assign(".upsert_index_cache", new.env(parent = emptyenv()), envir = .GlobalEnv)
+    }
+    cache <- get(".upsert_index_cache", envir = .GlobalEnv)
 
-  if (nrow(DBI::dbGetQuery(conn, idx_check_sql)) == 0) {
-    return(bail(paste0("No UNIQUE index found for ", schema, ".", table,
-                       ". Run schema migrations first.")))
-  }
-
-  ## ----------------------------
-  ## Transaction
-  ## ----------------------------
-  ok <- tryCatch({
-
-    DBI::dbWithTransaction(conn, {
-
-      tmp_name <- paste0("tmp_upsert_", table, "_", sample.int(1e9, 1))
-
-      ## Create temp table using glue_sql
-      ## Note: Use DBI::SQL() for identifiers that need special handling
-      schema_id <- DBI::dbQuoteIdentifier(conn, schema)
-      table_id <- DBI::dbQuoteIdentifier(conn, table)
-      tmp_id <- DBI::dbQuoteIdentifier(conn, tmp_name)
-
-      create_temp_sql <- glue::glue_sql(
-        "CREATE TEMP TABLE {DBI::SQL(tmp_id)}
-         (LIKE {DBI::SQL(schema_id)}.{DBI::SQL(table_id)} INCLUDING DEFAULTS)
-         ON COMMIT DROP",
+    if (!isTRUE(cache[[cache_key]])) {
+      idx_exists <- DBI::dbGetQuery(conn, glue::glue_sql(
+        "SELECT 1 FROM pg_indexes
+         WHERE schemaname = {schema} AND tablename = {table}
+         AND indexdef LIKE '%UNIQUE%' LIMIT 1",
         .con = conn
-      )
-
-      DBI::dbExecute(conn, create_temp_sql)
-
-      ## Bulk write to temp table
-      DBI::dbWriteTable(
-        conn,
-        name = tmp_name,
-        value = df,
-        append = TRUE,
-        row.names = FALSE
-      )
-
-      ## Build and execute UPSERT statement
-      upsert_sql <- build_upsert_sql_glue(
-        conn = conn,
-        schema = schema,
-        table = table,
-        tmp_name = tmp_name,
-        cols = cols,
-        nk = nk
-      )
-
-      DBI::dbExecute(conn, upsert_sql)
-    })
-
-    TRUE
-
-  }, error = function(e) {
-    notify(paste0(table, " upsert failed: ", conditionMessage(e)))
-    FALSE
-  })
-
-  if (ok) {
-    notify(paste0(table, " upsert completed (", nrow(df), " rows)."))
-    invisible(TRUE)
-  } else {
-    invisible(FALSE)
+      ))
+      if (nrow(idx_exists) == 0) {
+        return(bail(paste0("No UNIQUE index for ", schema, ".", table)))
+      }
+      cache[[cache_key]] <- TRUE
+    }
   }
+
+  ## ----------------------------
+  ## Pre-compute SQL components (avoid repeated quoting)
+  ## ----------------------------
+  sql_parts <- build_sql_components(conn, schema, table, cols, nk)
+
+  ## ----------------------------
+  ## Batch processing for large datasets
+  ## ----------------------------
+  n_rows <- nrow(df)
+  if (n_rows > batch_size) {
+    notif_id <- paste0("upsert_", table)
+
+    notify(sprintf("Processing %d rows in %d batches", n_rows, ceiling(n_rows / batch_size)))
+
+    batches <- split(df, ceiling(seq_len(n_rows) / batch_size))
+    results <- vapply(seq_along(batches), function(i) {
+      # notify(sprintf("Batch %d/%d (%d rows)", i, length(batches), nrow(batches[[i]])))
+      showNotification(
+        sprintf("Batch %d/%d (%d rows)", i, length(batches), nrow(batches[[i]])),
+        id = notif_id,
+        duration = NULL,
+        type = "message"
+      )
+      upsert_batch(conn, batches[[i]], sql_parts, use_copy, notify)
+    }, logical(1))
+
+    removeNotification(notif_id)
+
+    if (all(results)) {
+      notify(sprintf("All %d batches completed successfully", length(batches)))
+      return(invisible(TRUE))
+    } else {
+      return(bail(sprintf("%d/%d batches failed", sum(!results), length(batches))))
+    }
+  }
+
+  ## Single batch
+  ok <- upsert_batch(conn, df, sql_parts, use_copy, notify)
+  if (ok) notify(paste0(table, " upsert completed (", n_rows, " rows)."))
+  invisible(ok)
 }
 
+## ----------------------------
+## Pre-compute SQL components once
+## ----------------------------
+build_sql_components <- function(conn, schema, table, cols, nk) {
+  schema_id <- as.character(DBI::dbQuoteIdentifier(conn, schema))
+  table_id <- as.character(DBI::dbQuoteIdentifier(conn, table))
+
+  cols_quoted <- vapply(cols, function(x) {
+    as.character(DBI::dbQuoteIdentifier(conn, x))
+  }, character(1), USE.NAMES = FALSE)
+
+  nk_quoted <- vapply(nk, function(x) {
+    as.character(DBI::dbQuoteIdentifier(conn, x))
+  }, character(1), USE.NAMES = FALSE)
+
+  cols_list <- paste(cols_quoted, collapse = ", ")
+  nk_list <- paste(nk_quoted, collapse = ", ")
+
+  update_cols <- setdiff(cols, nk)
+  if (length(update_cols) > 0) {
+    update_quoted <- vapply(update_cols, function(x) {
+      as.character(DBI::dbQuoteIdentifier(conn, x))
+    }, character(1), USE.NAMES = FALSE)
+    set_clause <- paste(
+      vapply(update_quoted, function(col) paste0(col, " = EXCLUDED.", col), character(1)),
+      collapse = ", "
+    )
+    conflict_action <- paste("DO UPDATE SET", set_clause)
+  } else {
+    conflict_action <- "DO NOTHING"
+  }
+
+  list(
+    schema_id = schema_id,
+    table_id = table_id,
+    cols = cols,
+    cols_list = cols_list,
+    nk_list = nk_list,
+    conflict_action = conflict_action
+  )
+}
+
+## ----------------------------
+## Execute single batch with COPY optimization
+## ----------------------------
+upsert_batch <- function(conn, df, sql_parts, use_copy, notify) {
+  tryCatch({
+    DBI::dbWithTransaction(conn, {
+      tmp_name <- paste0("tmp_", substr(digest::digest(Sys.time()), 1, 8))
+      tmp_id <- as.character(DBI::dbQuoteIdentifier(conn, tmp_name))
+
+      # Minimal temp table - UNLOGGED equivalent for temp tables
+      create_sql <- sprintf(
+        "CREATE TEMP TABLE %s (%s) ON COMMIT DROP",
+        tmp_id,
+        paste(sprintf("%s %s",
+                      vapply(sql_parts$cols, function(x) as.character(DBI::dbQuoteIdentifier(conn, x)), character(1)),
+                      vapply(df, pg_type_map, character(1))
+        ), collapse = ", ")
+      )
+      DBI::dbExecute(conn, create_sql)
+
+      # Use COPY for bulk loading (much faster than INSERT)
+      if (use_copy && requireNamespace("RPostgres", quietly = TRUE)) {
+        RPostgres::dbWriteTable(
+          conn, tmp_name, df,
+          append = TRUE,
+          row.names = FALSE,
+          copy = TRUE  # Uses PostgreSQL COPY protocol
+        )
+      } else {
+        DBI::dbWriteTable(conn, tmp_name, df, append = TRUE, row.names = FALSE)
+      }
+
+      # Execute upsert
+      upsert_sql <- sprintf(
+        "INSERT INTO %s.%s (%s) SELECT %s FROM %s ON CONFLICT (%s) %s",
+        sql_parts$schema_id, sql_parts$table_id,
+        sql_parts$cols_list, sql_parts$cols_list, tmp_id,
+        sql_parts$nk_list, sql_parts$conflict_action
+      )
+      DBI::dbExecute(conn, upsert_sql)
+    })
+    TRUE
+  }, error = function(e) {
+    notify(paste0("Batch failed: ", conditionMessage(e)))
+    FALSE
+  })
+}
+
+## ----------------------------
+## Map R types to PostgreSQL types
+## ----------------------------
+pg_type_map <- function(col) {
+  switch(class(col)[1],
+         "integer" = "INTEGER",
+         "numeric" = "DOUBLE PRECISION",
+         "character" = "TEXT",
+         "logical" = "BOOLEAN",
+         "Date" = "DATE",
+         "POSIXct" = "TIMESTAMPTZ",
+         "POSIXlt" = "TIMESTAMPTZ",
+         "factor" = "TEXT",
+         "TEXT"
+  )
+}
 ## ----------------------------
 ## Helper: Get natural keys for table
 ## ----------------------------
@@ -453,7 +667,8 @@ fetch_best_tidy_all <- function(study_accession,experiment_accession, conn) {
   return(best_tidy_all)
 }
 fetch_best_pred_all <- function(study_accession, experiment_accession, conn) {
-  query <- glue("SELECT best_pred_all_id, x, model, yhat, overall_se, predicted_concentration, se_x, pcov, study_accession, experiment_accession, sample_dilution_factor, plateid, plate, antigen, source, id_match
+  query <- glue("SELECT best_pred_all_id, x, model, yhat, overall_se, predicted_concentration, se_x, pcov, study_accession, experiment_accession, sample_dilution_factor, plateid, plate,
+  antigen, source, id_match, best_glance_all_id
 	FROM madi_results.best_pred_all
 	WHERE study_accession = '{study_accession}'
   AND experiment_accession = '{experiment_accession}';")
@@ -462,7 +677,8 @@ fetch_best_pred_all <- function(study_accession, experiment_accession, conn) {
 }
 
 fetch_best_standard_all <- function(study_accession,experiment_accession, conn) {
-  query <- glue("SELECT best_standard_all_id, study_accession, experiment_accession, feature, source, plateid, plate, stype, sample_dilution_factor, sampleid, well, dilution, antigen, assay_response, assay_response_variable, assay_independent_variable, concentration, g
+  query <- glue("SELECT best_standard_all_id, study_accession, experiment_accession, feature, source, plateid, plate, stype, sample_dilution_factor, sampleid, well,
+  dilution, antigen, assay_response, assay_response_variable, assay_independent_variable, concentration, g, best_glance_all_id
 	FROM madi_results.best_standard_all
 	WHERE study_accession = '{study_accession}'
   AND experiment_accession = '{experiment_accession}';")
@@ -481,8 +697,11 @@ fetch_best_glance_all <- function(study_accession,experiment_accession, conn) {
 
 fetch_best_sample_se_all <- function(study_accession, experiment_accession, conn) {
   query <- glue("
-SELECT best_sample_se_all_id, predicted_concentration, study_accession, experiment_accession, timeperiod, patientid, well, stype, sampleid, agroup, pctaggbeads, samplingerrors, antigen,
-antibody_n, plateid, plate, sample_dilution_factor, assay_response_variable, assay_independent_variable, y_new, dilution, overall_se, assay_response, se_x, au, pcov, source, gate_class_loq, gate_class_lod, gate_class_pcov, uid
+SELECT best_sample_se_all_id, predicted_concentration, study_accession, experiment_accession, timeperiod, patientid, well, stype, sampleid,
+agroup, pctaggbeads, samplingerrors, antigen,
+antibody_n, plateid, plate, sample_dilution_factor, assay_response_variable, assay_independent_variable, dilution, overall_se, assay_response,
+se_concentration, au, pcov, source, gate_class_loq, gate_class_lod,
+gate_class_pcov, uid, best_glance_all_id
 	FROM madi_results.best_sample_se_all
 	WHERE study_accession = '{study_accession}'
 	AND experiment_accession = '{experiment_accession}';")
@@ -491,9 +710,148 @@ antibody_n, plateid, plate, sample_dilution_factor, assay_response_variable, ass
 }
 
 
+## Specific fetch queries for the summary of standard curves accounting for
+# selected study_configuration based on glance_id
+fetch_best_pred_all_summary <- function(study_accession, experiment_accession, param_user, conn) {
+  query <- glue_sql("
+    WITH params AS (
+      SELECT
+        study_accession,
+        BOOL_OR(CASE WHEN param_name = 'is_log_mfi_axis' THEN param_boolean_value END) AS is_log_mfi_axis,
+        MAX(CASE WHEN param_name = 'blank_option' THEN param_character_value END) AS blank_option,
+        BOOL_OR(CASE WHEN param_name = 'applyProzone' THEN param_boolean_value END) AS apply_prozone
+      FROM madi_results.xmap_study_config
+      WHERE study_accession = {study_accession}
+        AND param_user = {param_user}
+        AND param_name IN ('is_log_mfi_axis', 'blank_option', 'applyProzone')
+      GROUP BY study_accession
+    )
+    SELECT
+      p.best_pred_all_id, p.x, p.model, p.yhat, p.overall_se,
+      p.predicted_concentration, p.se_x, p.pcov,
+      p.study_accession, p.experiment_accession, p.sample_dilution_factor,
+      p.plateid, p.plate, p.antigen, p.source, p.id_match, p.best_glance_all_id,
+      g.is_log_response, g.is_log_x, g.bkg_method, g.apply_prozone
+    FROM madi_results.best_pred_all p
+    LEFT JOIN madi_results.best_glance_all g
+      ON p.best_glance_all_id = g.best_glance_all_id
+    CROSS JOIN params
+    WHERE p.study_accession = {study_accession}
+      AND p.experiment_accession = {experiment_accession}
+      AND g.is_log_response = params.is_log_mfi_axis
+      AND g.bkg_method = params.blank_option
+      AND g.apply_prozone = params.apply_prozone",
+                    .con = conn
+  )
+  dbGetQuery(conn, query)
+}
+
+fetch_best_standard_all_summary <- function(study_accession, experiment_accession, param_user, conn) {
+  query <- glue_sql("
+    WITH params AS (
+      SELECT
+        study_accession,
+        BOOL_OR(CASE WHEN param_name = 'is_log_mfi_axis' THEN param_boolean_value END) AS is_log_mfi_axis,
+        MAX(CASE WHEN param_name = 'blank_option' THEN param_character_value END) AS blank_option,
+        BOOL_OR(CASE WHEN param_name = 'applyProzone' THEN param_boolean_value END) AS apply_prozone
+      FROM madi_results.xmap_study_config
+      WHERE study_accession = {study_accession}
+        AND param_user = {param_user}
+        AND param_name IN ('is_log_mfi_axis', 'blank_option', 'applyProzone')
+      GROUP BY study_accession
+    )
+    SELECT
+      s.best_standard_all_id, s.study_accession, s.experiment_accession,
+      s.feature, s.source, s.plateid, s.plate, s.stype, s.sample_dilution_factor,
+      s.sampleid, s.well, s.dilution, s.antigen, s.assay_response,
+      s.assay_response_variable, s.assay_independent_variable,
+      s.concentration, s.g, s.best_glance_all_id,
+      g.is_log_response, g.is_log_x, g.bkg_method, g.apply_prozone
+    FROM madi_results.best_standard_all s
+    LEFT JOIN madi_results.best_glance_all g
+      ON s.best_glance_all_id = g.best_glance_all_id
+    CROSS JOIN params
+    WHERE s.study_accession = {study_accession}
+      AND s.experiment_accession = {experiment_accession}
+      AND g.is_log_response = params.is_log_mfi_axis
+      AND g.bkg_method = params.blank_option
+      AND g.apply_prozone = params.apply_prozone",
+                    .con = conn
+  )
+  dbGetQuery(conn, query)
+}
+
+fetch_best_sample_se_all_summary <- function(study_accession, experiment_accession, param_user, conn) {
+  query <- glue_sql("
+    WITH params AS (
+      SELECT
+        study_accession,
+        BOOL_OR(CASE WHEN param_name = 'is_log_mfi_axis' THEN param_boolean_value END) AS is_log_mfi_axis,
+        MAX(CASE WHEN param_name = 'blank_option' THEN param_character_value END) AS blank_option,
+        BOOL_OR(CASE WHEN param_name = 'applyProzone' THEN param_boolean_value END) AS apply_prozone
+      FROM madi_results.xmap_study_config
+      WHERE study_accession = {study_accession}
+        AND param_user = {param_user}
+        AND param_name IN ('is_log_mfi_axis', 'blank_option', 'applyProzone')
+      GROUP BY study_accession
+    )
+    SELECT
+      ss.best_sample_se_all_id, ss.predicted_concentration,
+      ss.study_accession, ss.experiment_accession, ss.timeperiod,
+      ss.patientid, ss.well, ss.stype, ss.sampleid, ss.agroup,
+      ss.pctaggbeads, ss.samplingerrors, ss.antigen, ss.antibody_n,
+      ss.plateid, ss.plate, ss.sample_dilution_factor,
+      ss.assay_response_variable, ss.assay_independent_variable,
+      ss.dilution, ss.overall_se, ss.assay_response, ss.se_concentration,
+      ss.au, ss.pcov, ss.source, ss.gate_class_loq, ss.gate_class_lod,
+      ss.gate_class_pcov, ss.uid, ss.best_glance_all_id,
+      g.is_log_response, g.is_log_x, g.bkg_method, g.apply_prozone
+    FROM madi_results.best_sample_se_all ss
+    LEFT JOIN madi_results.best_glance_all g
+      ON ss.best_glance_all_id = g.best_glance_all_id
+    CROSS JOIN params
+    WHERE ss.study_accession = {study_accession}
+      AND ss.experiment_accession = {experiment_accession}
+      AND g.is_log_response = params.is_log_mfi_axis
+      AND g.bkg_method = params.blank_option
+      AND g.apply_prozone = params.apply_prozone",
+                    .con = conn
+  )
+  dbGetQuery(conn, query)
+}
+
+fetch_current_sc_options_wide <- function(currentuser, study_accession, conn) {
+  query <- glue_sql(
+    "
+SELECT
+  study_accession,
+  param_user,
+  BOOL_OR(CASE WHEN param_name = 'is_log_mfi_axis' THEN param_boolean_value END) AS is_log_mfi_axis,
+  MAX(CASE WHEN param_name = 'blank_option' THEN param_character_value END) AS blank_option,
+  BOOL_OR(CASE WHEN param_name = 'applyProzone' THEN param_boolean_value END) AS apply_prozone
+FROM madi_results.xmap_study_config
+WHERE study_accession = {study_accession}
+  AND param_user = {currentuser}
+  AND param_name IN ('is_log_mfi_axis', 'blank_option', 'applyProzone')
+GROUP BY study_accession, param_user
+",
+    currentuser     = currentuser,
+    study_accession = study_accession,
+    .con = conn
+  )
+
+  print(query)
+  dbGetQuery(conn, query)
+}
+
+
+
+
 attach_antigen_familes <- function(best_pred_all, antigen_families) {
   pred_with_antigen_familes <- merge(best_pred_all, antigen_families[, c("study_accession", "antigen", "antigen_family")],
                                      by = c("study_accession", "antigen"), all.x = T)
   return(pred_with_antigen_familes)
 
 }
+
+

@@ -545,35 +545,72 @@ observeEvent(list(
       batch_outputs <- create_batch_fit_outputs(batch_fit_res = batch_fit_res, antigen_plate_list_res)
 
       # add unique identifiers and rename the response variable to be generic for saving
-     batch_outputs_proccessed <-  process_batch_outputs(batch_outputs = batch_outputs, response_var = response_var)
+     batch_outputs_processed <-  process_batch_outputs(batch_outputs = batch_outputs, response_var = response_var)
 
 
-     # cat("AFTER PROCES sample_se  ", "uid" %in% names(batch_outputs$best_sample_se_all), "\n")
-     #
-     # cat("AFTER PROCES pred  ", "id_match" %in% names(batch_outputs$best_pred_all), "\n")
+     upsert_best_curve(
+       conn   = conn,
+       df     = batch_outputs_processed$best_glance_all,
+       schema = "madi_results",
+       table  = "best_glance_all",
+       notify = shiny_notify(session)
+     )
+     showNotification(id = "batch_sc_fit_notify","Best Fit Statistics saved", duration = NULL)
 
-      # batch_outputs$best_pred_all <- batch_outputs$best_pred_all %>%
-      #   dplyr::group_by(study_accession,
-      #                   experiment_accession,
-      #                   plateid,
-      #                   antigen,
-      #                   source) %>%
-      #   dplyr::mutate(id_match = dplyr::row_number()) %>%
-      #   dplyr::ungroup()
-      #
-      #
-      # batch_outputs$best_sample_se_all <- batch_outputs$best_sample_se_all |>
-      #   dplyr::rename(assay_response = all_of(response_var)) |>
-      #   dplyr::mutate(uid = seq_len(n()))
-      #
-      # batch_outputs$best_standard_all <- batch_outputs$best_standard_all |>
-      #   dplyr::rename(assay_response = all_of(response_var))
-      #
-      # batch_outputs <<- batch_outputs
+  #    # Retrieve lookup of IDs using NK
+     study_to_save <- unique(batch_outputs_processed$best_glance_all$study_accession)
+
+     glance_lookup <- DBI::dbGetQuery(
+       conn,
+       glue::glue("
+    SELECT
+      best_glance_all_id,
+      study_accession,
+      experiment_accession,
+      plateid,
+      plate,
+      sample_dilution_factor,
+      source,
+      antigen
+    FROM madi_results.best_glance_all
+    WHERE study_accession = '{study_to_save}';
+  ")
+     )
+
+    glance_lookup$best_glance_all_id <- as.integer(glance_lookup$best_glance_all_id)
+
+
+      # #natural key (nk) vector for the glance
+      keys <- c("study_accession", "experiment_accession", "plateid",
+                "plate", "sample_dilution_factor", "source", "antigen")
+
+
+      # attach the best_glance_all_id to the table
+      batch_outputs_processed$best_pred_all <-
+        dplyr::inner_join(
+          batch_outputs_processed$best_pred_all,
+          glance_lookup,
+          by = keys
+        )
+
+      batch_outputs_processed$best_sample_se_all <-
+        dplyr::inner_join(
+          batch_outputs_processed$best_sample_se_all,
+          glance_lookup,
+          by = keys
+        )
+
+      batch_outputs_processed$best_standard_all <-
+        dplyr::inner_join(
+          batch_outputs_processed$best_standard_all,
+          glance_lookup,
+          by = keys
+        )
+
 
       upsert_best_curve(
         conn   = conn,
-        df     = batch_outputs_proccessed$best_plate_all,
+        df     = batch_outputs_processed$best_plate_all,
         schema = "madi_results",
         table  = "best_plate_all",
         notify = shiny_notify(session)
@@ -581,42 +618,43 @@ observeEvent(list(
 
       showNotification(id = "batch_sc_fit_notify","Best Plates saved", duration = NULL)
 
+      showNotification(id = "batch_sc_fit_notify","Saving parameter estimates...", duration = NULL)
+
       upsert_best_curve(
         conn   = conn,
-        df     = batch_outputs_proccessed$best_tidy_all,
+        df     = batch_outputs_processed$best_tidy_all,
         schema = "madi_results",
         table  = "best_tidy_all",
         notify = shiny_notify(session)
       )
       showNotification(id = "batch_sc_fit_notify","Best parameter estimates saved", duration = NULL)
 
-      upsert_best_curve(
-        conn   = conn,
-        df     = batch_outputs_proccessed$best_glance_all,
-        schema = "madi_results",
-        table  = "best_glance_all",
-        notify = shiny_notify(session)
-      )
-      showNotification(id = "batch_sc_fit_notify","Best Fit Statistics saved", duration = NULL)
-
      # batch_outputs$best_pred_all$id_match <- match(batch_outputs$best_pred_all$x, unique(batch_outputs$best_pred_all$x))
 
 
+      showNotification(id = "batch_sc_fit_notify","Saving predicted standards...", duration = NULL)
+
+      #print(str(batch_outputs_processed$best_pred_all))
 
       upsert_best_curve(
         conn   = conn,
-        df     = batch_outputs_proccessed$best_pred_all,
+        df     = batch_outputs_processed$best_pred_all,
         schema = "madi_results",
         table  = "best_pred_all",
         notify = shiny_notify(session)
       )
 
+
       showNotification(id = "batch_sc_fit_notify","Best Predicted standards saved", duration = NULL)
 
 
+      showNotification(id = "batch_sc_fit_notify","Saving Predicted samples...", duration = NULL)
+
+      #print(str(batch_outputs_processed$best_sample_se_all))
+
       upsert_best_curve(
       conn   = conn,
-      df     = batch_outputs_proccessed$best_sample_se_all,
+      df     = batch_outputs_processed$best_sample_se_all,
       schema = "madi_results",
       table  = "best_sample_se_all",
       notify = shiny_notify(session)
@@ -624,10 +662,11 @@ observeEvent(list(
 
       showNotification(id = "batch_sc_fit_notify","Best Predicted Samples saved", duration = NULL)
 
+      showNotification(id = "batch_sc_fit_notify","Saving Best Standards...", duration = NULL)
 
       upsert_best_curve(
         conn   = conn,
-        df     = batch_outputs_proccessed$best_standard_all,
+        df     = batch_outputs_processed$best_standard_all,
         schema = "madi_results",
         table  = "best_standard_all",
         notify = shiny_notify(session)
@@ -635,7 +674,7 @@ observeEvent(list(
 
       )
 
-    showNotification(id = "batch_sc_fit_notify","Best Standards saved", duration = NULL)
+      showNotification(id = "batch_sc_fit_notify","Best Standards saved", duration = NULL)
 
 
 
