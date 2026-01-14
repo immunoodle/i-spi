@@ -2554,9 +2554,23 @@ prepare_planned_visits <- function(timepoint_map) {
 
 prepare_batch_header <- function(metadata_batch) {
   metadata_batch <- metadata_batch[,c("study_accession", "experiment_name", "plate_id", "file_name", "acquisition_date",
-                                      "reader_serial_number", "rp1_pmt_volts", "rp1_target", "auth0_user", "workspace_id", "plateid", "plate", "sample_dilution_factor",
+                                      "reader_serial_number", "rp1_pmt_volts", "rp1_target", "auth0_user", "workspace_id", "plateid", "plate",
+                                      "sample_dilution_factor",
                                       "n_wells")]
   names(metadata_batch)[names(metadata_batch) == "experiment_name"] <- "experiment_accession"
+  metadata_batch$assay_response_variable <- "mfi"
+  metadata_batch$assay_independent_variable <- "concentration"
+  metadata_batch$sample_dilution_factor <- unique(check_df$sample_dilution_factor[!is.na(check_df$sample_dilution_factor)])[1]
+
+  # Debug output
+  cat("\n=== prepare_batch_header DEBUG ===\n")
+  cat("Columns in prepared header:", paste(names(metadata_batch), collapse = ", "), "\n")
+  cat("Number of plates:", nrow(metadata_batch), "\n")
+  cat("sample_dilution_factor values:", paste(metadata_batch$sample_dilution_factor, collapse = ", "), "\n")
+  cat("assay_response_variable values:", paste(unique(metadata_batch$assay_response_variable), collapse = ", "), "\n")
+  cat("assay_independent_variable values:", paste(unique(metadata_batch$assay_independent_variable), collapse = ", "), "\n")
+  cat("===================================\n")
+
   return(metadata_batch)
 }
 
