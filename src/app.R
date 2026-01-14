@@ -4,7 +4,8 @@
 source("global.R", local = TRUE)
 
 #Set to 1 for local and do not push in prod
-# Sys.setenv(LOCAL_DEV = "1")
+Sys.setenv(LOCAL_DEV = "1")
+local_email_user <- "mscotzens@gmail.com"
 
 # Source authentication configuration (Step 1)
 # Defines DEX_*, APP_REDIRECT_URI, OIDC_SCOPES, endpoints, get_jwks(), `%||%`, dex_client
@@ -98,15 +99,12 @@ header <- dashboardHeader(
   titleWidth = 350
 )
 
- sidebar <- dashboardSidebar(uiOutput("userpanel"))
-# sidebar <- dashboardSidebar(
-#   uiOutput("sidebar_info"),
-#   sidebarMenuOutput("sidebar_tabs")  # dynamic sidebar menu
-# )
-#sidebar <- sidebarLayout(uiOutput("userpanel"), uiOutput("main_tab_selector"))
-body <- dashboardBody(uiOutput("body_content_ui")) # Content depends on auth state
-#body <- mainPanel(uiOutput("body_content_ui")) # Content depends on auth state
+ sidebar <- dashboardSidebar(    useShinyjs(),
+                                 useShinyalert(),
+                                 shinyjs::hidden(actionButton("execute_delete_btn", "")),
+                                 uiOutput("userpanel"))
 
+body <- dashboardBody(uiOutput("body_content_ui")) # Content depends on auth state
 
 ui <- tagList(
   tags$head(
@@ -385,7 +383,7 @@ server <- function(input, output, session) {
     if (is_local_dev()) {
       list(
         is_authenticated = TRUE,
-        email = "seamus.owen.stein@dartmouth.edu",   # Or any test user
+        email = local_email_user,   # Or any test user
         name = "Local Dev User",
         id_token = "FAKE_ID_TOKEN_FOR_DEV"
       )
@@ -873,6 +871,17 @@ server <- function(input, output, session) {
         metadata_result = NULL,
         bead_array_result = NULL
       ))
+
+      description_status <- reactiveVal(list(
+        has_content = TRUE,
+        has_sufficient_elements = TRUE,
+        min_elements_found = 0,
+        required_elements = 3,  # PatientID, TimePeriod, DilutionFactor at minimum
+        checked = FALSE,
+        message = NULL
+      ))
+
+      delete_confirmed <- reactiveVal(FALSE)
 
       # layout_template_sheets <- reactiveValues(
       #   plate_id = NULL,

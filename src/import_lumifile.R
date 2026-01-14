@@ -52,6 +52,170 @@ output$fileUploaded <- reactive({
 
 outputOptions(output, 'fileUploaded', suspendWhenHidden=FALSE)
 
+output$delete_study_ui <- renderUI({
+  tabRefreshCounter()$import_tab
+  if (input$main_tabs != "home_page" & input$main_tabs != "manage_project_tab" & input$study_tabs == "delete_study") {
+    if (input$readxMap_study_accession != "Click here") {
+      import_plate_data_title <- paste("Delete", input$readxMap_study_accession, "Plate Data", sep = " ")
+      tagList(
+        fluidPage(
+
+        )
+      )
+    } else {
+      import_plate_data_title<- paste("Choose a study for deleting plate data")
+    }
+  }
+})
+
+# UI COMPONENT: Delete Study UI
+output$delete_study_ui <- renderUI({
+  tabRefreshCounter()$import_tab
+  if (input$main_tabs != "home_page" & input$main_tabs != "manage_project_tab" & input$study_tabs == "delete_study") {
+    if (input$readxMap_study_accession != "Click here") {
+      selected_study_accession <- input$readxMap_study_accession
+      import_plate_data_title <- paste("Delete", selected_study_accession, "Plate Data", sep = " ")
+
+      tagList(
+        fluidPage(
+          fluidRow(
+            column(12,
+                   h3(import_plate_data_title, style = "color: #d9534f; margin-bottom: 20px;"),
+                   hr()
+            )
+          ),
+          fluidRow(
+            column(12,
+                   h4("Tables with data for this study:", style = "margin-bottom: 15px;"),
+                   div(
+                     style = "background-color: #f9f9f9; padding: 15px; border-radius: 5px; border: 1px solid #ddd;",
+                     DT::dataTableOutput("delete_study_table")
+                   )
+            )
+          ),
+          fluidRow(
+            column(12,
+                   div(
+                     style = "margin-top: 25px; padding: 15px; background-color: #fcf8e3; border: 1px solid #faebcc; border-radius: 5px;",
+                     icon("exclamation-triangle", style = "color: #8a6d3b;"),
+                     span(
+                       "Warning: Deleting study data is permanent and cannot be undone.",
+                       style = "color: #8a6d3b; font-weight: bold; margin-left: 10px;"
+                     )
+                   )
+            )
+          ),
+          fluidRow(
+            column(12,
+                   div(
+                     style = "margin-top: 20px; text-align: center;",
+                     actionButton(
+                       "delete_study_btn",
+                       label = tagList(icon("trash"), "Delete Study Data"),
+                       class = "btn-danger btn-lg",
+                       style = "padding: 12px 30px; font-size: 16px;"
+                     )
+                   )
+            )
+          )
+        )
+      )
+    } else {
+      tagList(
+        fluidPage(
+          fluidRow(
+            column(12,
+                   div(
+                     style = "text-align: center; padding: 50px; color: #777;",
+                     icon("hand-pointer", style = "font-size: 48px; margin-bottom: 20px;"),
+                     h4("Choose a study for deleting plate data")
+                   )
+            )
+          )
+        )
+      )
+    }
+  }
+})
+
+# SERVER: Reactive to fetch row counts for selected study
+delete_study_data <- reactive({
+  req(input$readxMap_study_accession)
+  req(input$readxMap_study_accession != "Click here")
+
+  selected_study_accession <- input$readxMap_study_accession
+
+  query <- glue_sql(
+    "SELECT * FROM public.count_study_accession_rows({selected_study_accession}) WHERE row_count > 0;",
+    selected_study_accession = selected_study_accession,
+    .con = conn
+  )
+
+  tryCatch({
+    result <- dbGetQuery(conn, query)
+    result
+  }, error = function(e) {
+    shinyalert(
+      title = "Error",
+      text = paste("Error fetching data:", e$message),
+      type = "error"
+    )
+    data.frame(
+      schema_name = character(),
+      table_name = character(),
+      row_count = integer()
+    )
+  })
+})
+
+# SERVER: Render the DataTable
+output$delete_study_table <- DT::renderDataTable({
+  req(delete_study_data())
+
+  data <- delete_study_data()
+
+  if (nrow(data) == 0) {
+    return(
+      DT::datatable(
+        data.frame(Message = "No data found for this study accession"),
+        options = list(dom = 't'),
+        rownames = FALSE
+      )
+    )
+  }
+
+  # Add total row
+  total_row <- data.frame(
+    schema_name = "TOTAL",
+    table_name = "",
+    row_count = sum(data$row_count)
+  )
+  data_with_total <- rbind(data, total_row)
+
+  DT::datatable(
+    data_with_total,
+    colnames = c("Schema", "Table", "Row Count"),
+    rownames = FALSE,
+    options = list(
+      dom = 't',
+      paging = FALSE,
+      ordering = FALSE,
+      columnDefs = list(
+        list(className = 'dt-center', targets = 2),
+        list(className = 'dt-left', targets = c(0, 1))
+      )
+    ),
+    class = "table table-striped table-bordered"
+  ) %>%
+    DT::formatStyle(
+      columns = c("schema_name", "table_name", "row_count"),
+      target = "row",
+      backgroundColor = DT::styleEqual("TOTAL", "#f5f5f5"),
+      fontWeight = DT::styleEqual("TOTAL", "bold")
+    ) %>%
+    DT::formatRound(columns = "row_count", digits = 0, mark = ",")
+})
+
 output$readxMapData <- renderUI({
  tabRefreshCounter()$import_tab
   if (input$main_tabs != "home_page" & input$main_tabs != "manage_project_tab" & input$study_tabs == "import_tab") {
@@ -200,76 +364,49 @@ output$readxMapData <- renderUI({
                              status = "outline-primary"
                            )
                          ),
-                         tags$div(
-                           class = "element-controls",
-                           # style = "display: flex; align-items: center; gap: 10px;",
-                           tags$span(style = "font-weight: 600; align-self: center;", "Description Delimiter:"),
-                           radioGroupButtons(
-                             inputId = "description_delimiter",
-                             label = NULL,
-                             choices = setNames(c("_", "|", ":", "-"), c("_", "|", ":", "-")),
-                             selected = "_",
-                             size = "sm",
-                             status = "outline-primary"
-                           )
-                         ),
-                         # tags$head(
-                         #   tags$style(HTML("
-                         #    .element-controls {
-                         #      display: flex;
-                         #      flex-wrap: wrap;
-                         #      gap: 20px;
-                         #      padding: 15px;
-                         #      background: #f8f9fa;
-                         #      border-radius: 8px;
-                         #      margin-bottom: 15px;
-                         #    }
-                         #  "))
-                         # ),
-                         # Checkboxes to include/exclude optional elements
-                         tags$div(
-                           class = "element-controls",
-                           tags$span(style = "font-weight: 600; align-self: center;", "Include Optional Elements:"),
-                           checkboxGroupButtons(
-                             inputId = "optional_elements",
-                             label = NULL,
-                             choices = c("SampleGroupA", "SampleGroupB"),
-                             selected = c("SampleGroupA", "SampleGroupB"),
-                             status = "outline-primary",
-                             checkIcon = list(
-                               yes = icon("check"),
-                               no = icon("times")
+                         conditionalPanel(
+                           condition = "output.descriptionHasContent",
+                           tags$div(
+                             class = "element-controls",
+                             tags$span(style = "font-weight: 600; align-self: center;", "Description Delimiter:"),
+                             radioGroupButtons(
+                               inputId = "description_delimiter",
+                               label = NULL,
+                               choices = setNames(c("_", "|", ":", "-"), c("_", "|", ":", "-")),
+                               selected = "_",
+                               size = "sm",
+                               status = "outline-primary"
                              )
                            )
+                           ),
+                          conditionalPanel(
+                           condition = "output.descriptionHasSufficientElements",
+                           # Checkboxes to include/exclude optional elements
+                           tags$div(
+                             class = "element-controls",
+                             tags$span(style = "font-weight: 600; align-self: center;", "Include Optional Elements:"),
+                             checkboxGroupButtons(
+                               inputId = "optional_elements",
+                               label = NULL,
+                               choices = c("SampleGroupA", "SampleGroupB"),
+                               selected = c("SampleGroupA", "SampleGroupB"),
+                               status = "outline-primary",
+                               checkIcon = list(
+                                 yes = icon("check"),
+                                 no = icon("times")
+                               )
+                             )
+                           )
+                           ),
+                         conditionalPanel(
+                           condition = "output.descriptionHasSufficientElements",
+                           uiOutput("order_input_ui")
                          ),
-                         uiOutput("order_input_ui"),
-                         uiOutput("bcsorder_input_ui"),
-                         # orderInput(
-                         #   inputId = "XElementOrder",
-                         #   label = "Sample Elements (drag and drop items to change order)",
-                         #   items = c('PatientID', 'DilutionFactor', 'TimePeriod', 'SampleGroupA', 'SampleGroupB'),
-                         #   width = "100%", item_class = 'primary'
-                         # ),
-                         # fluidRow(
-                         #   column(
-                         #     width = 12,
-                         #     tags$div(
-                         #       style = "display: flex; align-items: center; margin-top: 10px;",
-                         #       tags$h5("Current Order:", style = "margin: 0; margin-right: 10px;"),
-                         #       textOutput("XElementOrder", inline = TRUE)
-                         #     )
-                         #   )
-                         # ),
-                         # fluidRow(
-                         #   column(
-                         #     width = 12,
-                         #     tags$div(
-                         #       style = "display: flex; align-items: center; margin-top: 10px;",
-                         #       tags$h5("Current Order:", style = "margin: 0; margin-right: 10px;"),
-                         #       textOutput("BCSElementOrder", inline = TRUE)
-                         #     )
-                         #   )
-                         # ),
+                         conditionalPanel(
+                           condition = "output.descriptionHasContent",
+                           uiOutput("bcsorder_input_ui")
+                         )
+                         ,
                          downloadButton("blank_layout_file", "Generate a Layout file")
                        ),
                        fileInput("upload_layout_file"
@@ -278,31 +415,6 @@ output$readxMapData <- renderUI({
                                  , multiple=FALSE)
                      )
                    ),
-                   # conditionalPanel(
-                   #   condition = "input.xPonentFile == 'Layout Template'",
-                   #   fileInput("upload_experiment_files",
-                   #             label = "Select all experiment raw data files",
-                   #             accept = c(".xlsx",".xls"),
-                   #             multiple = TRUE),
-                   #   conditionalPanel(
-                   #     condition = "output.hasExperimentPath",
-                   #      radioButtons(inputId = "n_wells_on_plate", "Select Number of Wells to Generate on Plates",
-                   #                choices = c(96, 6, 12, 24, 48, 384, 1536),
-                   #                selected = 96,
-                   #                inline = T),
-                   #     tags$div(
-                   #       style = "display: inline-flex; align-items: center; gap: 10px; padding: 10px; background: #f8f9fa; border-radius: 8px;",
-                   #       tags$span(style = "font-weight: 600;", "Delimiter:"),
-                   #       radioGroupButtons(
-                   #         inputId = "description_delimiter",
-                   #         label = NULL,
-                   #         choices = setNames(c("_", "|", ":"), c("_", "|", ":")),
-                   #         selected = "_",
-                   #         size = "sm",
-                   #         status = "outline-primary"
-                   #       )
-                   #     ),
-
                      ),
                      conditionalPanel(
                        condition = "input.upload_layout_file != ''",
@@ -344,11 +456,56 @@ output$readxMapData <- renderUI({
   } else {
     import_plate_data_title<- paste("Choose or create a study for Importing Plate Data")
   }
-
    }
-  #else {
-  #   NULL
-  # }
+})
+
+output$description_warning_ui <- renderUI({
+  status <- description_status()
+
+  if (!status$checked) {
+    return(NULL)
+  }
+
+  if (!status$has_content) {
+    # Warning for completely blank Description
+    tags$div(
+      style = "background-color: #fff3cd; border: 1px solid #ffc107; padding: 15px; margin: 10px 0; border-radius: 5px;",
+      tags$h5(
+        tags$i(class = "fa fa-exclamation-triangle", style = "color: #856404;"),
+        " Description Field is Blank",
+        style = "margin-top: 0; color: #856404;"
+      ),
+      tags$p("The Description field in your plate data is empty. Default values will be used:"),
+      tags$ul(
+        tags$li("Subject ID: '1'"),
+        tags$li("Sample Dilution Factor: 1"),
+        tags$li("Timeperiod: 'T0'"),
+        tags$li("Groups: 'Unknown'")
+      ),
+      tags$p(
+        tags$strong("You will need to manually update the layout template with correct values before uploading."),
+        style = "margin-bottom: 0; color: #856404;"
+      )
+    )
+  } else if (!status$has_sufficient_elements) {
+    # Warning for insufficient elements
+    tags$div(
+      style = "background-color: #fff3cd; border: 1px solid #ffc107; padding: 15px; margin: 10px 0; border-radius: 5px;",
+      tags$h5(
+        tags$i(class = "fa fa-exclamation-triangle", style = "color: #856404;"),
+        " Insufficient Description Elements",
+        style = "margin-top: 0; color: #856404;"
+      ),
+      tags$p(sprintf(
+        "The Description field has only %d element(s), but at least %d are required.",
+        status$min_elements_found,
+        status$required_elements
+      )),
+      tags$p("Missing fields will be filled with default values. Manual update may be required.")
+    )
+  } else {
+    return(NULL)
+  }
 })
 
 output$hasExperimentPath <- reactive({
@@ -393,14 +550,39 @@ output$blank_layout_file <- downloadHandler(
       cat("      •", ag, "\n")
     }
 
+    # generate_layout_template(
+    #   all_plates = all_plates,
+    #   study_accession = input$readxMap_study_accession,
+    #   experiment_accession = input$readxMap_experiment_accession_import,
+    #   n_wells = input$n_wells_on_plate,
+    #   header_list = bead_array_header_list(),
+    #   output_file = file
+    # )
+
+    desc_status <- description_status()
+
     generate_layout_template(
       all_plates = all_plates,
       study_accession = input$readxMap_study_accession,
       experiment_accession = input$readxMap_experiment_accession_import,
       n_wells = input$n_wells_on_plate,
       header_list = bead_array_header_list(),
-      output_file = file
+      output_file = file,
+      # NEW: Pass description status for handling defaults
+      description_status = desc_status,
+      delimiter = if (desc_status$has_content) input$description_delimiter else "_",
+      element_order = if (desc_status$has_sufficient_elements) input$XElementOrder else c("PatientID", "TimePeriod", "DilutionFactor"),
+      bcs_element_order = if (desc_status$has_content) input$BCSElementOrder else c("Source", "DilutionFactor")
     )
+
+    # Show notification if defaults were applied
+    if (!desc_status$has_content || !desc_status$has_sufficient_elements) {
+      showNotification(
+        "Layout template generated with default values. Please review and update before uploading.",
+        type = "warning",
+        duration = 10
+      )
+    }
 
     cat("✓ Layout template generated!\n")
     cat("╚══════════════════════════════════════════════════════════╝\n\n")
@@ -616,11 +798,74 @@ output$current_context_display <- renderText({
   )
 })
 
+output$segment_selector <- renderUI({
+  #req(inFile()$datapath != )
+
+  req(is_valid_plate()) # Only show if it has a valid plate too
+
+  req(plate_data())  # Ensure that there is data to work with
+  # require sheet
+  req(input$uploaded_sheet)
+
+  type_p_completed()
+
+  # Find unique types in the dataset
+  plate_data() %>%
+    #slice(8:n()) %>%
+    janitor::clean_names() %>%
+    mutate(description = gsub("[^A-Za-z0-9]+", "_", description) %>% trimws(whitespace = "_")) %>%
+    mutate(type = str_remove_all(type, "[0-9]")) %>%
+    pull(type) %>%
+    unique() -> unique_types
+
+  unique_types <- c("P", unique_types)
+  # only handle the allowed types
+  allowed_types <- c("P", "X", "S", "C", "B","E")
+  unique_types <- unique_types[!is.na(unique_types) & unique_types %in% allowed_types]
+
+  unique_plate_types(unique_types)
+
+  if (!type_p_completed()) {
+    unique_types <- "P"
+  }
+
+  # Create a tab for each unique type
+  tabs <- lapply(unique_types, function(type) {
+    tabPanel(
+      title = paste("Type", type),
+      uiOutput(outputId = paste0("ui_", type))  # This will be where we place the table and inputs
+    )
+  })
+
+  #late_data_in <<- plate_data()
+
+  # add optimization tab if detect multiple sample serum dilutions.
+  tabs <- append(tabs, list(uiOutput("optimization_tab")))
+
+  #  is_opt_experiment <- is_optimization_plate(plate_data())
+  # if (is_opt_experiment && all_completed()) {
+  if (optimization_ready()) {
+    tabs <- append(
+      tabs,
+      list(
+        tabPanel(
+          title = "Optimization",
+          #uiOutput("optimize_plate_info"),
+          uiOutput("plate_optimized_status"),
+          uiOutput(outputId = "ui_optimization"),
+          uiOutput(outputId = "ui_split_button")
+        )
+      )
+    )
+  }
+
+
+  # Make sure to return the tabsetPanel with all tabs included
+  do.call(tabsetPanel, tabs)
+
+})
 
 ### Observes
-
-
-
 # Call on server start
 onSessionStart()
 
@@ -769,20 +1014,6 @@ observeEvent(input$upload_to_shiny,{
   # original_df_combined <- reactive({NULL})
   # list_of_dataframes <- reactive({NULL})
   updateSelectInput(session = session, "uploaded_sheet", NULL)
-
-
-  # type_vector_obs <- c("S", "C", "B", "X")
-  #
-  # # Reset all rhandsontables
-  # for (type in type_vector_obs) {
-  #  # if (!is.null(output[[paste0("table_", type)]])) {
-  #     cat(paste0("table_", type))
-  #       output[[paste0("table_", type)]] <- renderRHandsontable({
-  #         NULL
-  #         #rhandsontable(data.frame())  # blank placeholder
-  #       })
-  #   }
-  #}
 
   print("file_uploaded")
 
@@ -943,73 +1174,6 @@ observeEvent(input$view_raw_header,{
   })
  # platemetadata <<- header_info()
   print(header_info())
-})
-
-output$segment_selector <- renderUI({
-  #req(inFile()$datapath != )
-
-  req(is_valid_plate()) # Only show if it has a valid plate too
-
-  req(plate_data())  # Ensure that there is data to work with
-  # require sheet
-  req(input$uploaded_sheet)
-
-  type_p_completed()
-
-  # Find unique types in the dataset
-  plate_data() %>%
-    #slice(8:n()) %>%
-    janitor::clean_names() %>%
-    mutate(description = gsub("[^A-Za-z0-9]+", "_", description) %>% trimws(whitespace = "_")) %>%
-    mutate(type = str_remove_all(type, "[0-9]")) %>%
-    pull(type) %>%
-    unique() -> unique_types
-
-  unique_types <- c("P", unique_types)
-  # only handle the allowed types
-  allowed_types <- c("P", "X", "S", "C", "B","E")
-  unique_types <- unique_types[!is.na(unique_types) & unique_types %in% allowed_types]
-
-  unique_plate_types(unique_types)
-
- if (!type_p_completed()) {
-   unique_types <- "P"
- }
-
-  # Create a tab for each unique type
-  tabs <- lapply(unique_types, function(type) {
-    tabPanel(
-      title = paste("Type", type),
-      uiOutput(outputId = paste0("ui_", type))  # This will be where we place the table and inputs
-    )
-  })
-
-  #late_data_in <<- plate_data()
-
-  # add optimization tab if detect multiple sample serum dilutions.
-  tabs <- append(tabs, list(uiOutput("optimization_tab")))
-
-  #  is_opt_experiment <- is_optimization_plate(plate_data())
-  # if (is_opt_experiment && all_completed()) {
-  if (optimization_ready()) {
-    tabs <- append(
-      tabs,
-      list(
-        tabPanel(
-          title = "Optimization",
-          #uiOutput("optimize_plate_info"),
-          uiOutput("plate_optimized_status"),
-          uiOutput(outputId = "ui_optimization"),
-          uiOutput(outputId = "ui_split_button")
-        )
-      )
-    )
-  }
-
-
-  # Make sure to return the tabsetPanel with all tabs included
-  do.call(tabsetPanel, tabs)
-
 })
 
 # Observe when data is selected again.
@@ -1234,6 +1398,47 @@ observeEvent(input$upload_experiment_files, {
   cat("  → Source files in combined data:",
       paste(unique(all_plates$source_file), collapse=", "), "\n")
 
+  # Check Description field status after loading plate data
+  cat("\n╔══════════════════════════════════════════════════════════╗\n")
+  cat("║         CHECKING DESCRIPTION FIELD                       ║\n")
+  cat("╚══════════════════════════════════════════════════════════╝\n")
+
+  # Get the current delimiter (default to underscore)
+  delimiter <- if (!is.null(input$description_delimiter)) input$description_delimiter else "_"
+
+  # Check description elements
+  desc_check <- check_description_elements(
+    plate_data = all_plates,
+    delimiter = delimiter,
+    required_elements = 3
+  )
+
+  # Update the reactive
+  description_status(list(
+    has_content = desc_check$has_content,
+    has_sufficient_elements = desc_check$has_sufficient_elements,
+    min_elements_found = desc_check$min_elements_found,
+    required_elements = desc_check$required_elements,
+    checked = TRUE,
+    message = desc_check$message
+  ))
+
+  # Show notifications
+  if (!desc_check$has_content) {
+    showNotification(
+      "Description field is blank. Default values will be used.",
+      type = "warning",
+      duration = 10
+    )
+  } else if (!desc_check$has_sufficient_elements) {
+    showNotification(
+      sprintf("Description has insufficient elements (%d found, %d required).",
+              desc_check$min_elements_found, desc_check$required_elements),
+      type = "warning",
+      duration = 10
+    )
+  }
+
   # Extract and log antigens
   metadata_cols <- c("source_file", "Well", "Type", "Description",
                      "% Agg Beads", "Sampling Errors", "Acquisition Time")
@@ -1254,6 +1459,30 @@ observeEvent(input$upload_experiment_files, {
     duration = 3
   )
 })
+
+observeEvent(input$description_delimiter, {
+  req(batch_plate_data())
+
+  all_plates <- batch_plate_data()
+  delimiter <- input$description_delimiter
+
+  # Re-check description elements with new delimiter
+  desc_check <- check_description_elements(
+    plate_data = all_plates,
+    delimiter = delimiter,
+    required_elements = 3
+  )
+
+  # Update the reactive
+  description_status(list(
+    has_content = desc_check$has_content,
+    has_sufficient_elements = desc_check$has_sufficient_elements,
+    min_elements_found = desc_check$min_elements_found,
+    required_elements = desc_check$required_elements,
+    checked = TRUE,
+    message = desc_check$message
+  ))
+}, ignoreInit = TRUE)
 
 observeEvent(input$upload_layout_file, {
   req(input$readxMap_study_accession)
@@ -1654,5 +1883,276 @@ observeEvent(input$upload_batch_button, {
       )
     }
   }
+})
+
+# SERVER: Execute deletion when confirmation is received
+observeEvent(input$delete_confirmation, {
+  # input$delete_confirmation is TRUE when confirmed, FALSE when cancelled
+  req(input$delete_confirmation == TRUE)
+  req(input$readxMap_study_accession)
+  req(input$readxMap_study_accession != "Click here")
+
+  selected_study_accession <- input$readxMap_study_accession
+
+  cat("\nDelete confirmation received for:", selected_study_accession, "\n")
+
+  # Show busy indicator
+  show_modal_spinner(
+    spin = "fading-circle",
+    color = "#3c8dbc",
+    text = "Deleting study data... Please wait."
+  )
+
+  # Execute the delete procedure
+  tryCatch({
+    query <- glue_sql(
+      "CALL public.delete_study_accession_rows({selected_study_accession});",
+      selected_study_accession = selected_study_accession,
+      .con = conn
+    )
+
+    cat("\nExecuting query:\n")
+    print(query)
+
+    result <- dbExecute(conn, query)
+
+    cat("\ndbExecute result:", result, "\n")
+
+    # Remove busy indicator
+    remove_modal_spinner()
+
+    # Show success message
+    shinyalert(
+      title = "Success!",
+      text = paste0(
+        "All data for '", selected_study_accession, "' has been successfully deleted."
+      ),
+      type = "success"
+    )
+
+    # Trigger refresh - get the list, modify it, set it back
+    current_counters <- tabRefreshCounter()
+    current_counters$import_tab <- current_counters$import_tab + 1
+    tabRefreshCounter(current_counters)
+
+  }, error = function(e) {
+    cat("\nError during deletion:", e$message, "\n")
+
+    # Remove busy indicator
+    remove_modal_spinner()
+
+    # Show error message
+    shinyalert(
+      title = "Deletion Failed",
+      text = paste("An error occurred while deleting the data:\n\n", e$message),
+      type = "error"
+    )
+  })
+})
+
+# SERVER: Confirmation Modal Dialog
+observeEvent(input$delete_study_btn, {
+  req(input$readxMap_study_accession)
+  req(input$readxMap_study_accession != "Click here")
+
+  data <- delete_study_data()
+
+  if (nrow(data) == 0) {
+    shinyalert(
+      title = "No Data",
+      text = "No data to delete for this study.",
+      type = "warning"
+    )
+    return()
+  }
+
+  selected_study_accession <- input$readxMap_study_accession
+  total_rows <- sum(data$row_count)
+  table_count <- nrow(data)
+
+  shinyalert(
+    title = "Confirm Deletion",
+    text = paste0(
+      "You are about to permanently delete all data for:\n\n",
+      selected_study_accession, "\n\n",
+      "This will remove ", format(total_rows, big.mark = ","), " rows from ",
+      table_count, " table", ifelse(table_count > 1, "s", ""), ".\n\n",
+      "THIS ACTION CANNOT BE UNDONE!"
+    ),
+    type = "warning",
+    showCancelButton = TRUE,
+    confirmButtonText = "Yes, Delete Permanently",
+    cancelButtonText = "Cancel",
+    confirmButtonCol = "#d9534f",
+    inputId = "delete_confirmation"  # This creates input$delete_confirmation
+  )
+})
+
+observeEvent(input$execute_delete_btn, {
+  req(input$readxMap_study_accession)
+
+  selected_study_accession <- input$readxMap_study_accession
+
+  # Show busy indicator
+  show_modal_spinner(
+    spin = "fading-circle",
+    color = "#3c8dbc",
+    text = "Deleting study data... Please wait."
+  )
+
+  # Execute the delete procedure
+  tryCatch({
+    query <- glue_sql(
+      "CALL public.delete_study_accession_rows({selected_study_accession});",
+      selected_study_accession = selected_study_accession,
+      .con = conn
+    )
+    cat("\n execute_delete_btn: query to delete study: \n")
+    print(query)
+
+    dbExecute(conn, query)
+
+    # Remove busy indicator
+    remove_modal_spinner()
+
+    # Show success message
+    shinyalert(
+      title = "Success!",
+      text = paste0(
+        "All data for '", selected_study_accession, "' has been successfully deleted."
+      ),
+      type = "success"
+    )
+
+    # Trigger refresh of the tab/data
+    current_counters <- tabRefreshCounter()
+    current_counters$import_tab <- current_counters$import_tab + 1
+    tabRefreshCounter(current_counters)
+
+  }, error = function(e) {
+    # Remove busy indicator
+    remove_modal_spinner()
+
+    # Show error message
+    shinyalert(
+      title = "Deletion Failed",
+      text = paste("An error occurred while deleting the data:\n\n", e$message),
+      type = "error"
+    )
+  })
+})
+
+# SERVER: Cancel Deletion - Close Modal
+observeEvent(input$cancel_delete_btn, {
+  removeModal()
+  showNotification(
+    "Deletion cancelled.",
+    type = "message",
+    duration = 2
+  )
+})
+
+# SERVER: Confirm Deletion - Execute Delete Query
+observeEvent(input$confirm_delete_btn, {
+  req(input$readxMap_study_accession)
+
+  selected_study_accession <- input$readxMap_study_accession
+
+  # Show progress modal
+  showModal(modalDialog(
+    title = "Deleting Data...",
+    size = "s",
+    easyClose = FALSE,
+    footer = NULL,
+    div(
+      style = "text-align: center; padding: 30px;",
+      icon("spinner", class = "fa-spin", style = "font-size: 48px; color: #3c8dbc;"),
+      p(
+        style = "margin-top: 20px; font-size: 14px;",
+        "Please wait while the data is being deleted..."
+      )
+    )
+  ))
+
+  # Execute the delete procedure
+  tryCatch({
+    query <- glue_sql(
+      "CALL public.delete_study_accession_rows({selected_study_accession});",
+      selected_study_accession = selected_study_accession,
+      .con = conn
+    )
+
+    dbExecute(conn, query)
+
+    # Close progress modal and show success
+    removeModal()
+
+    showModal(modalDialog(
+      title = tagList(
+        icon("check-circle", style = "color: #5cb85c;"),
+        span("Deletion Complete", style = "color: #5cb85c;")
+      ),
+      size = "s",
+      easyClose = TRUE,
+
+      div(
+        style = "text-align: center; padding: 20px;",
+        icon("check-circle", style = "font-size: 48px; color: #5cb85c;"),
+        p(
+          style = "margin-top: 20px; font-size: 16px;",
+          sprintf(
+            "All data for '%s' has been successfully deleted.",
+            selected_study_accession
+          )
+        )
+      ),
+
+      footer = tagList(
+        actionButton(
+          "close_success_modal",
+          "Close",
+          class = "btn-success",
+          style = "padding: 10px 30px;"
+        )
+      )
+    ))
+
+    # Trigger refresh of the tab/data
+    current_counters <- tabRefreshCounter()
+    current_counters$import_tab <- current_counters$import_tab + 1
+    tabRefreshCounter(current_counters)
+
+  }, error = function(e) {
+    removeModal()
+
+    showModal(modalDialog(
+      title = tagList(
+        icon("times-circle", style = "color: #d9534f;"),
+        span("Deletion Failed", style = "color: #d9534f;")
+      ),
+      size = "m",
+      easyClose = TRUE,
+
+      div(
+        style = "text-align: center; padding: 20px;",
+        icon("times-circle", style = "font-size: 48px; color: #d9534f;"),
+        p(
+          style = "margin-top: 20px; font-size: 14px;",
+          "An error occurred while deleting the data:"
+        ),
+        div(
+          style = "background-color: #f2dede; padding: 15px; border-radius: 5px; margin-top: 15px; text-align: left;",
+          code(e$message)
+        )
+      ),
+
+      footer = modalButton("Close")
+    ))
+  })
+})
+
+# SERVER: Close Success Modal
+observeEvent(input$close_success_modal, {
+  removeModal()
 })
 

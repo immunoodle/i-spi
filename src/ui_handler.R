@@ -6,13 +6,6 @@ reset_import_values <- function() {
     upload_state_value$upload_state <- NULL
     rv_value_button$valueButton <- 0
 
-    # Clear reactiveValues objects
-    # header_rvdata$data <- NULL
-    # standard_rvdata$data <- NULL
-    # sample_rvdata$data <- NULL
-    # control_rvdata$data <- NULL
-    # buffer_rvdata$data <- NULL
-
     # Clear reactiveVal objects
     plate_data(NULL)
     unique_plate_types(NULL)
@@ -130,7 +123,8 @@ output$study_sidebar <- renderUI({
       id = "study_tabs",
       menuItem("Import Plate Data", tabName = "import_tab", icon = icon("file")),
       menuItem("View, Process, and Export Data", tabName = "view_files_tab", icon = icon("dashboard")),
-      menuItem("Change Study Settings", tabName = "study_settings", icon = icon("cog"))
+      menuItem("Change Study Settings", tabName = "study_settings", icon = icon("cog")),
+      menuItem("Delete Study Data", tabName = "delete_study", icon = icon("delete-left"))
     )
   } else {
     # disabled visual: mimic menu appearance but not interactive
@@ -147,6 +141,9 @@ output$study_sidebar <- renderUI({
                      ),
                      tags$li(class = "treeview disabled",
                              tags$a(href = "#", icon("cog"), "Change Study Settings")
+                     ),
+                     tags$li(class = "treeview disabled",
+                             tags$a(href = "#", icon("delete-left"), "Delete Study Data")
                      )
              )
     )
@@ -167,40 +164,6 @@ observeEvent(input$readxMap_study_accession, {
     # when disabled, also clear selection (optional)
     updateTabItems(session, "study_tabs", selected = "study_none")
   }
-
-  # if (input$readxMap_study_accession != "Click here") {
-  #
-  #   initial_source <- obtain_initial_source(input$readxMap_study_accession)
-  #   # std <<- stored_plates_data$stored_standard
-  #   # initial_source <<- unique(stored_plates_data$stored_standard$source)[1]
-  #
-  #   # Initialize study parameters for a user and study
-  #   study_user_params_nrow <- nrow(fetch_study_configuration(study_accession = input$readxMap_study_accession
-  #                                                            , user = currentuser()))
-  #   if (study_user_params_nrow == 0) {
-  #     intitialize_study_configurations(study_accession = input$readxMap_study_accession,
-  #                                      user = currentuser(), initial_source = initial_source)
-  #
-  #   }
-  #
-  #   # study_exp is a data frame with study and experiment names filtered by user/project workspace
-  #   study_exp <- reactive_df_study_exp()
-  #   # filter study_exp by current study selected in navigation
-  #   filtered_exp <- study_exp[study_exp$study_accession == input$readxMap_study_accession, ]
-  #
-  #   print(paste("\n filtered_exp rows:", nrow(filtered_exp)))
-  #
-  #   if (nrow(filtered_exp) > 0) {
-  #     expvector <- setNames(filtered_exp$experiment_accession, filtered_exp$experiment_name)
-  #   } else {
-  #     expvector <- character(0)
-  #   }
-  #
-  #   experiment_drop <- c("Click OR Create New" = "Click here", expvector)
-  #   print(paste("\n experiment choices:", experiment_drop))
-  #
-  #   experiment_choices_rv(experiment_drop)
-  # }
 
 }, ignoreNULL = FALSE)
 
@@ -240,6 +203,10 @@ output$landing_page_ui <- renderUI({
           tags$li(
             tags$p("Change Study Settings"),
             tags$p("If you need to change a study’s settings, click Change Study Settings in the sidebar.")
+          ),
+          tags$li(
+            tags$p("Delete Study Data"),
+            tags$p("If you need to remove all ofa study's data, click Delete Study Data in the sidebar.")
           ),
           tags$li(
             tags$p("Conduct Analyses"),
@@ -288,7 +255,8 @@ output$body_tabs <- renderUI({
       tabItem(tabName = "view_files_tab", uiOutput("view_stored_experiments_ui")),
       tabItem(tabName = "study_settings", uiOutput("studyParameters_UI")),
       tabItem(tabName = "import_tab", uiOutput("readxMapData")),
-      tabItem(tabName = "manage_project_tab", uiOutput("manage_project_ui"))
+      tabItem(tabName = "manage_project_tab", uiOutput("manage_project_ui")),
+      tabItem(tabName = "delete_study", uiOutput("delete_study_ui"))
     )
    # dynamic_tabs  # append dynamic tabs here
   ))
@@ -393,15 +361,6 @@ output$view_stored_experiments_ui <- renderUI({
   req(reactive_df_study_exp())
   # Get data
   df <- reactive_df_study_exp()
-  #df <- df[df$study_accession != "Click here", ]
-  #df_v <<- df
-  # Build choices safely
-  # study_choices <- c("Click here" = "Click here",
-  #                    setNames(unique(df$study_accession),
-  #                             unique(df$study_name)))
-  # experiment_choices <- c("Click here" = "Click here",
-  #                   setNames(unique(df$experiment_accession),
-  #                            unique(df$experiment_name)))
 
  # if (!is.null(input$readxMap_study_accession)) {
     df_filtered <- df[df$study_accession == input$readxMap_study_accession, ]
@@ -414,11 +373,6 @@ output$view_stored_experiments_ui <- renderUI({
 # if (input$readxMap_study_accession != "Click here") {
    stored_plate_title <- paste("View, Process, and Export", input$readxMap_study_accession, "Data", sep = " ")
 
- # } else if (input$main_tabs != "home_page" & input$main_tabs != "manage_project_tab") {
- #   stored_plate_title <- paste("Choose or create a study to View, Process, and Export Data")
- # } else {
- #   stored_plate_title <- ""
- # }
   tagList(
     fluidPage(
       h3(stored_plate_title),
@@ -599,42 +553,6 @@ output$dynamic_data_ui <- renderUI({
       )
     )
     )
-
-    # bsCollapse(
-    #   id = "dataCollapse",
-    #   multiple = FALSE,
-    #   bsCollapsePanel(
-    #     title = "Header",
-    #     DT::dataTableOutput("stored_header"),
-    #     downloadButton("download_stored_header"),
-    #     uiOutput("header_actions"),
-    #     style = "primary"
-    #   ),
-    #   bsCollapsePanel(
-    #     title = "Standards",
-    #     DT::dataTableOutput("swide_standard"),
-    #     downloadButton("download_stored_standard"),
-    #     style = "primary"
-    #   ),
-    #   bsCollapsePanel(
-    #     title = "Controls",
-    #     DT::dataTableOutput("swide_control"),
-    #     downloadButton("download_stored_control"),
-    #     style = "primary"
-    #   ),
-    #   bsCollapsePanel(
-    #     title = "Buffer",
-    #     DT::dataTableOutput("swide_buffer"),
-    #     downloadButton("download_stored_buffer"),
-    #     style = "primary"
-    #   ),
-    #   bsCollapsePanel(
-    #     title = "Sample",
-    #     DT::dataTableOutput("swide_sample"),
-    #     downloadButton("download_stored_sample"),
-    #     style = "primary"
-    #   )
-    # )
   } else {
     NULL  # Removes the bsCollapse completely
   }
@@ -711,53 +629,11 @@ observeEvent(input$refresh_experiments_button, {
   refresh_experiment_trigger(refresh_experiment_trigger() + 1)
 })
 
-# observeEvent({
-#   list(
-#     input$main_tabs,
-#     input$study_tabs,
-#     input$readxMap_study_accession
-#   )
-# }, {
-#
-#  # req(input$readxMap_study_accession, cancelOutput = TRUE)
-#
-#   if (input$main_tabs != "home_page" &&
-#       input$main_tabs != "manage_project_tab" &&
-#       input$study_tabs == "view_files_tab") {
-#
-#     select_query <- glue::glue_sql("
-#       SELECT DISTINCT
-#         xmap_header.study_accession,
-#         xmap_header.experiment_accession,
-#         xmap_header.study_accession AS study_name,
-#         xmap_header.experiment_accession AS experiment_name,
-#         xmap_header.workspace_id,
-#         xmap_users.project_name
-#       FROM madi_results.xmap_header
-#       JOIN madi_results.xmap_users
-#         ON xmap_header.workspace_id = xmap_users.workspace_id
-#       WHERE xmap_header.workspace_id = {userWorkSpaceID()}
-#     ;", .con = conn)
-#
-#     query_result <- dbGetQuery(conn, select_query)
-#
-#     reactive_df_study_exp(query_result)
-#   }
-# })
-
-
-
 observeEvent(input$basic_advance_tabs, {
   if (input$basic_advance_tabs == "basic_qc") {
     updateRadioGroupButtons(session, "advanced_qc_component", selected = character(0))
   }
-  # if (input$basic_advance_tabs == "advance_qc") {
-  #   updateRadioGroupButtons(session, "qc_component", selected = character(0))
-  # }
-  # if (input$basic_advance_tabs == "Data") {
-  #   updateRadioGroupButtons(session, "qc_component", selected = character(0))
-  #   updateRadioGroupButtons(session, "advanced_qc_component", selected = character(0))
-  # }
+
 })
 
 observeEvent(input$advanced_qc_component, {
@@ -836,141 +712,7 @@ observeEvent(input$qc_component, {
     # If switching away, destroy any existing bead module
     try(destroyModule(paste0("bead_count_mod_", reload_bead_count)), silent = TRUE)
     output$bead_count_module_ui <- renderUI({ NULL })
-  #  gc(verbose = TRUE)
   }
-
-  # ----- Standard Curve Module -----
-  # if (input$qc_component == "Standard Curve" &&
-  #     input$readxMap_study_accession != "" &&
-  #     input$readxMap_study_accession != "Click here" &&
-  #     input$readxMap_experiment_accession != "" &&
-  #     input$readxMap_experiment_accession != "Click here") {
-  #
-  #   # Destroy previous module (if exists)
-  #   prev_sc_mod_id <- paste0("standard_curve_fit_mod_", reload_sc_fit_mod_count)
-  #   try(destroyModule(prev_sc_mod_id), silent = TRUE)
-  #
-  #   # Increment counter and build new ID
-  #   reload_sc_fit_mod_count <<- reload_sc_fit_mod_count + 1
-  #   new_sc_mod_id <- paste0("standard_curve_fit_mod_", reload_sc_fit_mod_count)
-  #
-  #   # Render UI and load module
-  #   output$sc_fit_module_ui <- renderUI({
-  #     destroyableStandardCurveFittingModuleUI(new_sc_mod_id)
-  #   })
-  #
-  #   destroyableStandardCurveFittingServer(
-  #     id = new_sc_mod_id,
-  #     selected_study = reactive(input$readxMap_study_accession),
-  #     selected_experiment = reactive(input$readxMap_experiment_accession),
-  #     currentuser()
-  #   )
-  #
-  # } else {
-  #   # If switching away, destroy any existing SC module
-  #   try(destroyModule(paste0("standard_curve_fit_mod_", reload_sc_fit_mod_count)), silent = TRUE)
-  #   output$sc_fit_module_ui <- renderUI({ NULL })
-  #  # gc(verbose = TRUE)
-  # }
-  # ----- Standard Curve Summary Module -----
-  # if (input$qc_component == "Standard Curve Summary" &&
-  #     input$readxMap_study_accession != "" &&
-  #     input$readxMap_study_accession != "Click here" &&
-  #     input$readxMap_experiment_accession != "" &&
-  #     input$readxMap_experiment_accession != "Click here") {
-  #
-  #   # Destroy previous module (if exists)
-  #   prev_sc_summary_mod_id <- paste0("standard_curve_sum_mod_", reload_sc_summary_mod_count)
-  #   try(destroyModule(prev_sc_summary_mod_id), silent = TRUE)
-  #
-  #   # Increment counter and build new ID
-  #   reload_sc_summary_mod_count <<- reload_sc_summary_mod_count + 1
-  #   new_sc_sum_mod_id <- paste0("standard_curve_sum_mod_", reload_sc_summary_mod_count)
-  #
-  #   # Render UI and load module
-  #   output$sc_summary_module_ui <- renderUI({
-  #     destroyableStandardCurveSummaryModuleUI(new_sc_sum_mod_id)
-  #   })
-  #
-  #   destroyableStandardCurveSummaryModuleServer(
-  #     id = new_sc_sum_mod_id,
-  #     selected_study = reactive(input$readxMap_study_accession),
-  #     selected_experiment = reactive(input$readxMap_experiment_accession),
-  #     currentuser()
-  #   )
-  #
-  # } else {
-  #   # If switching away, destroy any existing SC a module
-  #   try(destroyModule(paste0("standard_curve_sum_mod_", reload_sc_summary_mod_count)), silent = TRUE)
-  #   output$sc_summary_module_ui <- renderUI({ NULL })
-  #   gc(verbose = TRUE)
-  # }
-
-  # if (input$qc_component == "Test" &&
-  #     input$readxMap_study_accession != "" &&
-  #     input$readxMap_study_accession != "Click here" &&
-  #     input$readxMap_experiment_accession != "" &&
-  #     input$readxMap_experiment_accession != "Click here") {
-  #
-  #   # Destroy previous module (if exists)
-  #   prev_sc_summary_mod_id <- paste0("subgroup_mod_", reload_sg_count)
-  #   try(destroyModule(prev_sc_summary_mod_id), silent = TRUE)
-  #
-  #   # Increment counter and build new ID
-  #   reload_sg_count <<- reload_sg_count + 1
-  #   new_sc_sum_mod_id <- paste0("subgroup_mod_", reload_sg_count)
-  #
-  #   # Render UI and load module
-  #   output$sg_module_ui <- renderUI({
-  #     destroyableSubgroupDetectionModuleUI(new_sc_sum_mod_id)
-  #   })
-  #
-  #   destroyableSubgroupDetectionServer(
-  #     id = new_sc_sum_mod_id,
-  #     selected_study = reactive(input$readxMap_study_accession),
-  #     selected_experiment = reactive(input$readxMap_experiment_accession),
-  #     currentuser()
-  #   )
-  #
-  # } else {
-  #   # If switching away, destroy any existing SC a module
-  #   try(destroyModule(paste0("subgroup_mod_", reload_sg_count)), silent = TRUE)
-  #   output$sg_module_ui <- renderUI({ NULL })
-  #   gc(verbose = TRUE)
-  # }
-
-  # if (input$advanced_qc_component == "Dilutional Linearity" &&
-  #     input$readxMap_study_accession != "" &&
-  #     input$readxMap_study_accession != "Click here" &&
-  #     input$readxMap_experiment_accession != "" &&
-  #     input$readxMap_experiment_accession != "Click here") {
-  #
-  #   # Destroy previous module (if exists)
-  #   prev_dil_lin_id <- paste0("dil_lin_mod_", reload_dil_lin_count)
-  #   try(destroyModule(prev_dil_lin_id), silent = TRUE)
-  #
-  #   # Increment counter and build new ID
-  #   reload_dil_lin_count <<- reload_dil_lin_count + 1
-  #   new_dil_lin_id <- paste0("dil_lin_mod_", reload_dil_lin_count)
-  #
-  #   # Render UI and load module
-  #   output$dilutional_linearity_mod_ui <- renderUI({
-  #     destroyableDilutionalLinearityModuleUI(new_dil_lin_id)
-  #   })
-  #
-  #   destroyableDilutionalLinearityServer(
-  #     id = new_dil_lin_id,
-  #     selected_study = reactive(input$readxMap_study_accession),
-  #     selected_experiment = reactive(input$readxMap_experiment_accession),
-  #     currentuser()
-  #   )
-  #
-  # } else {
-  #   # If switching away, destroy any existing SC a module
-  #   try(destroyModule(paste0("dil_lin_mod_", reload_dil_lin_count)), silent = TRUE)
-  #   output$dilutional_linearity_mod_ui <- renderUI({ NULL })
-  # }
-
   gc(verbose = TRUE)
 })
 
@@ -1040,30 +782,6 @@ refreshTabUI <- function(tabName) {
   # Update counters
   tabRefreshCounter(current_counters)
 }
-
-# observeEvent(input$main_tabs, {
-#   currentTab <- input$main_tabs
-#
-#   # Reset values when moving away from Import or View Files tabs
-#   if (!is.null(previousTab())) {
-#     if (previousTab() == "import_tab" && currentTab != "import_tab") {
-#       reset_import_values()
-#     }
-#     if (previousTab() == "view_files_tab" && currentTab != "view_files_tab") {
-#       reset_view_values()
-#     }
-#   }
-#
-#   # Refresh current tab
-#   refreshTabUI(currentTab)
-#   previousTab(currentTab)
-# }, ignoreInit = TRUE)
-
-# # Create a reset function for view values
-# reset_view_values <- function() {
-#   updateSelectInput(session, "readxMap_study_accession", selected = "Click here")
-#   updateSelectInput(session, "readxMap_experiment_accession", selected = "Click here")
-# }
 
 output$manage_project_ui <- renderUI({
   if (input$main_tabs != "home_page") {
