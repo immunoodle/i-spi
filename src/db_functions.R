@@ -612,6 +612,15 @@ select_antigen_plate <- function(loaded_data,
                                              loaded_data$standards$antigen == antigen &
                                              loaded_data$standards$plate == plate &
                                              loaded_data$standards$sample_dilution_factor == sample_dilution_factor,]
+  # Guard against empty plate_standard data
+  if (is.null(plate_standard) || nrow(plate_standard) == 0) {
+    warning(paste("No standard curve data found for:",
+                  "source =", source,
+                  ", antigen =", antigen,
+                  ", plate =", plate,
+                  ", sample_dilution_factor =", sample_dilution_factor))
+    return(NULL)
+  }
 
   plate_blanks <- loaded_data$blanks[loaded_data$blanks$antigen == antigen &
                                        loaded_data$blanks$plate == plate &

@@ -160,7 +160,7 @@ observeEvent(list(
           loaded_data)
 
 
-      select_antigen_plate(
+      result <- select_antigen_plate(
         loaded_data = loaded_data,
         study_accession = selected_study,
         experiment_accession = selected_experiment,
@@ -173,6 +173,8 @@ observeEvent(list(
             loaded_data$antigen_constraints$antigen == input$sc_antigen_select,
           ]
       )
+      req(result)
+      result
     })
 
 

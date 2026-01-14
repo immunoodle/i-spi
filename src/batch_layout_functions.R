@@ -2560,7 +2560,7 @@ prepare_batch_header <- function(metadata_batch) {
   names(metadata_batch)[names(metadata_batch) == "experiment_name"] <- "experiment_accession"
   metadata_batch$assay_response_variable <- "mfi"
   metadata_batch$assay_independent_variable <- "concentration"
-  metadata_batch$sample_dilution_factor <- unique(check_df$sample_dilution_factor[!is.na(check_df$sample_dilution_factor)])[1]
+  # metadata_batch$sample_dilution_factor <- unique(check_df$sample_dilution_factor[!is.na(check_df$sample_dilution_factor)])[1]
 
   # Debug output
   cat("\n=== prepare_batch_header DEBUG ===\n")

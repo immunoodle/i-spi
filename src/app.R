@@ -4,7 +4,7 @@
 source("global.R", local = TRUE)
 
 #Set to 1 for local and do not push in prod
-# Sys.setenv(LOCAL_DEV = "1")
+#Sys.setenv(LOCAL_DEV = "1")
 local_email_user <- "mscotzens@gmail.com"
 
 # Source authentication configuration (Step 1)
@@ -100,7 +100,7 @@ header <- dashboardHeader(
 )
 
  sidebar <- dashboardSidebar(    useShinyjs(),
-                                 useShinyalert(),
+                                 useShinyalert(force = TRUE),
                                  shinyjs::hidden(actionButton("execute_delete_btn", "")),
                                  uiOutput("userpanel"))
 
