@@ -2567,43 +2567,57 @@ WHERE study_accession = '{study_accession}'
 # }
 
 prepare_lm_sample_data <- function(study_accession, experiment_accession, is_log_mfi_axis, response_type) {
-  query_samples <- glue::glue("SELECT xmap_sample_id, study_accession, experiment_accession, plate_id, timeperiod, patientid, well, stype, sampleid, id_imi, agroup, dilution, pctaggbeads, samplingerrors, antigen, antibody_mfi, antibody_n, antibody_name, feature, gate_class, antibody_au, antibody_au_se, norm_mfi, in_linear_region, gate_class_loq, in_quantifiable_range, gate_class_linear_region, quality_score
-    	FROM madi_results.xmap_sample
-    	WHERE study_accession = '{study_accession}'
-    	AND experiment_accession = '{experiment_accession}';")
+  # query_samples <- glue::glue("SELECT xmap_sample_id, study_accession, experiment_accession, plate_id, timeperiod, patientid, well, stype, sampleid, id_imi, agroup, dilution, pctaggbeads, samplingerrors, antigen, antibody_mfi, antibody_n, antibody_name, feature, gate_class, antibody_au, antibody_au_se, norm_mfi, in_linear_region, gate_class_loq, in_quantifiable_range, gate_class_linear_region, quality_score
+  #   	FROM madi_results.xmap_sample
+  #   	WHERE study_accession = '{study_accession}'
+  #   	AND experiment_accession = '{experiment_accession}';")
+  query_samples <- glue::glue("
+                  SELECT se.best_sample_se_all_id, se.predicted_concentration, se.study_accession, se.experiment_accession,
+                  se.timeperiod, se.patientid, se.well, se.stype, se.sampleid, se.agroup, se.pctaggbeads, se.samplingerrors, se.antigen,
+                  se.antibody_n, se.plateid, se.plate, se.sample_dilution_factor,
+                  se.assay_response_variable, se.assay_independent_variable, se.dilution, se.overall_se, se.assay_response, se.norm_assay_response, se.se_concentration,
+                  se.au, se.pcov, se.source, se.gate_class_loq, se.gate_class_lod, se.gate_class_pcov,
+                  se.uid, se.best_glance_all_id, g.is_log_response
+                  FROM madi_results.best_sample_se_all se
+                  LEFT JOIN madi_results.best_glance_all g
+                      ON se.best_glance_all_id = g.best_glance_all_id
+                  WHERE se.study_accession = '{study_accession}'
+                  AND se.experiment_accession = '{experiment_accession}';")
 
   sample_data <- dbGetQuery(conn, query_samples)
 
-  sample_data <- sample_data[sample_data$gate_class != "Not Evaluated" & sample_data$gate_class_linear_region != "Not Evaluated"
-                             & sample_data$gate_class_loq != "Not Evaluated",]
+  # sample_data <- sample_data[sample_data$gate_class != "Not Evaluated" & sample_data$gate_class_linear_region != "Not Evaluated"
+  #                            & sample_data$gate_class_loq != "Not Evaluated",]
 
-  sample_data <- sample_data[sample_data$gate_class == "Acceptable",]
+  sample_data <- sample_data[!is.na(sample_data$gate_class_lod) & !is.na(sample_data$gate_class_loq),]
 
-  sample_data$low_plate <- tolower(sample_data$plate_id)  # Lowercase
+  sample_data <- sample_data[sample_data$gate_class_lod == "Acceptable",]
 
-  sample_data$plateid <- str_split_i(sample_data$low_plate, "\\\\",-1)
-  #table(sample_data$plateid)
-  sample_data$plateid <- str_replace_all(sample_data$plateid, fixed(" "),"_")
-
-  sample_data$plateid <- str_replace_all(sample_data$plateid, fixed(".."),"_")
-  sample_data$plateid <- str_replace_all(sample_data$plateid, fixed("."),"_")
-  sample_data$plateid <- str_replace_all(sample_data$plateid, fixed("plate_"),"plate")
-  sample_data$plateid <- str_replace_all(sample_data$plateid, fixed("plaque"),"plate")
-  sample_data$plateid <- str_replace_all(sample_data$plateid, fixed("plate_"),"plate")
-  # table(sample_data$plateid)
-
-
-  sample_data$plate  <- ifelse(regexpr('plate', sample_data$plateid) > 0,
-                               str_replace_all(sample_data$plateid, fixed("plate_"),"plate"),
-                               ifelse(regexpr('_pt', sample_data$plateid) > 0,
-                                      str_replace_all(sample_data$plateid, fixed("_pt"),"_plate"),
-                                      sample_data$plateid
-                               )
-  )
-  # table(sample_data$plate)
-  #  new_filenames <- sub("(?<=pt\\d+)_\\d+x", "", filenames, perl = TRUE)
-  sample_data$plate <- sub("(plate\\d+).*", "\\1", sample_data$plate)
-  sample_data$plate <- str_split_i(sample_data$plate, "_",-1)
+  # sample_data$low_plate <- tolower(sample_data$plate_id)  # Lowercase
+  #
+  # sample_data$plateid <- str_split_i(sample_data$low_plate, "\\\\",-1)
+  # #table(sample_data$plateid)
+  # sample_data$plateid <- str_replace_all(sample_data$plateid, fixed(" "),"_")
+  #
+  # sample_data$plateid <- str_replace_all(sample_data$plateid, fixed(".."),"_")
+  # sample_data$plateid <- str_replace_all(sample_data$plateid, fixed("."),"_")
+  # sample_data$plateid <- str_replace_all(sample_data$plateid, fixed("plate_"),"plate")
+  # sample_data$plateid <- str_replace_all(sample_data$plateid, fixed("plaque"),"plate")
+  # sample_data$plateid <- str_replace_all(sample_data$plateid, fixed("plate_"),"plate")
+  # # table(sample_data$plateid)
+  #
+  #
+  # sample_data$plate  <- ifelse(regexpr('plate', sample_data$plateid) > 0,
+  #                              str_replace_all(sample_data$plateid, fixed("plate_"),"plate"),
+  #                              ifelse(regexpr('_pt', sample_data$plateid) > 0,
+  #                                     str_replace_all(sample_data$plateid, fixed("_pt"),"_plate"),
+  #                                     sample_data$plateid
+  #                              )
+  # )
+  # # table(sample_data$plate)
+  # #  new_filenames <- sub("(?<=pt\\d+)_\\d+x", "", filenames, perl = TRUE)
+  # sample_data$plate <- sub("(plate\\d+).*", "\\1", sample_data$plate)
+  # sample_data$plate <- str_split_i(sample_data$plate, "_",-1)
   # table(sample_data$plate)
   #table(sample_data$dilution, sample_data$plate)
 
@@ -2611,19 +2625,19 @@ prepare_lm_sample_data <- function(study_accession, experiment_accession, is_log
 
   distinct_samples <- distinct(sample_data, plate, dilution, antigen, patientid, timeperiod, .keep_all = TRUE)
 
-  if (is_log_mfi_axis)  {
-    distinct_samples$antibody_mfi <- log10(distinct_samples$antibody_mfi)
-    # distinct_samples$antibody_au <- log10(distinct_samples$antibody_au)
-  }
-  if (response_type == "mfi") {
-    t_sample_data <- pivot_wider(data = distinct_samples, id_cols = c("antigen","patientid", "timeperiod"), names_from = c("plate", "dilution"),values_from = "antibody_mfi")
+#   if (is_log_mfi_axis)  {
+#     distinct_samples$antibody_mfi <- log10(distinct_samples$antibody_mfi)
+#     # distinct_samples$antibody_au <- log10(distinct_samples$antibody_au)
+#   }
+  if (response_type == "raw_assay_response") {
+    t_sample_data <- pivot_wider(data = distinct_samples, id_cols = c("antigen","patientid", "timeperiod"), names_from = c("plate", "dilution"),values_from = "assay_response")
   } else if (response_type == "au") {
-    t_sample_data <- pivot_wider(data = distinct_samples, id_cols = c("antigen","patientid", "timeperiod"), names_from = c("plate", "dilution"),values_from = "antibody_au")
+    t_sample_data <- pivot_wider(data = distinct_samples, id_cols = c("antigen","patientid", "timeperiod"), names_from = c("plate", "dilution"),values_from = "au")
   }
 
-  t_sample_data_gc <- pivot_wider(data = distinct_samples, id_cols = c("antigen","patientid", "timeperiod"), names_from = c("plate", "dilution"), names_prefix = "gc_",values_from = "gate_class")
+  t_sample_data_gc <- pivot_wider(data = distinct_samples, id_cols = c("antigen","patientid", "timeperiod"), names_from = c("plate", "dilution"), names_prefix = "gc_",values_from = "gate_class_lod")
 
-  t_sample_data_gc_linear <- pivot_wider(data = distinct_samples, id_cols = c("antigen","patientid", "timeperiod"), names_from = c("plate", "dilution"), names_prefix = "gc_linear_",values_from = "gate_class_linear_region")
+  t_sample_data_gc_linear <- pivot_wider(data = distinct_samples, id_cols = c("antigen","patientid", "timeperiod"), names_from = c("plate", "dilution"), names_prefix = "gc_linear_",values_from = "gate_class_loq") # gate_class_linear region
 
   t_sample_data <- merge(t_sample_data, t_sample_data_gc, all.x = T, by = c("antigen", "patientid", "timeperiod"))
   t_sample_data <-  merge(t_sample_data, t_sample_data_gc_linear, all.x = T, by = c("antigen", "patientid", "timeperiod"))
@@ -2716,34 +2730,84 @@ fit_model_xy <- function(sub_df, x, y) {
   ))
 
 }
+#
+# fit_mfi_model <- function(sub_df) {
+#   mod <- lm(y_mfi ~ x_mfi, data = sub_df[sub_df$ecs_group == "usual",])
+#   tidy_out <- tidy(mod)
+#   glance_out <- glance(mod)
+#   new_x <- seq(min(sub_df$x_mfi, na.rm = TRUE), max(sub_df$x_mfi, na.rm = TRUE), length.out = 100)
+#   pred_df <- data.frame(x_mfi = new_x)
+#   pred <- predict(mod, newdata = pred_df, interval = "confidence")
+#   pred_df <- cbind(pred_df, as.data.frame(pred))
+#
+#
+#   est_intercept <- as.numeric(tidy_out[tidy_out$term == "(Intercept)", "estimate"])
+#   est_slope <- as.numeric(tidy_out[tidy_out$term == "x_mfi", "estimate"])
+#
+#   # if (!is.na(est_slope)) {
+#   sub_df$new_y <- (sub_df$y_mfi - est_intercept) / est_slope
+#
+#   fit_data <- data.frame(new_y = sub_df$new_y, x_mfi = sub_df$x_mfi, ecs_group = sub_df$ecs_group)
+#   fit_data <- na.omit(fit_data)
+#   # model_corr <- lm(new_y ~ sub_df$x_au)
+#   model_corr <- lm(new_y ~ x_mfi, data = fit_data[fit_data$ecs_group == "usual",])
+#   model_corr_tidy <- tidy(model_corr)
+#   model_corr_glance <- glance(model_corr)
+#   pred_corr_df <- data.frame(x_mfi = new_x)
+#   pred_corr <- predict(model_corr, newdata = pred_corr_df, interval = "confidence")
+#   pred_corr_df <- cbind(pred_corr_df, as.data.frame(pred_corr))
+#   #  has_corrected_model <- TRUE
+#   # }
+#
+#   return(list(
+#     tidy = tidy_out,
+#     glance = glance_out,
+#     predict = pred_df,
+#     model_corr_tidy = model_corr_tidy,
+#     model_corr_glance = model_corr_glance,
+#     predict_corr = pred_corr_df,
+#     data_with_new_y = sub_df
+#     # has_corrected_model = has_corrected_model
+#
+#   ))
+#
+# }
+fit_raw_assay_response_model <- function(sub_df) {
 
-fit_mfi_model <- function(sub_df) {
-  mod <- lm(y_mfi ~ x_mfi, data = sub_df[sub_df$ecs_group == "usual",])
+  mod <- lm(y_assay_response ~ x_assay_response,
+            data = sub_df[sub_df$ecs_group == "usual",])
+
   tidy_out <- tidy(mod)
   glance_out <- glance(mod)
-  new_x <- seq(min(sub_df$x_mfi, na.rm = TRUE), max(sub_df$x_mfi, na.rm = TRUE), length.out = 100)
-  pred_df <- data.frame(x_mfi = new_x)
+
+  new_x <- seq(min(sub_df$x_assay_response, na.rm = TRUE),
+               max(sub_df$x_assay_response, na.rm = TRUE),
+               length.out = 100)
+
+  pred_df <- data.frame(x_assay_response = new_x)
   pred <- predict(mod, newdata = pred_df, interval = "confidence")
   pred_df <- cbind(pred_df, as.data.frame(pred))
 
+  est_intercept <- tidy_out$estimate[tidy_out$term == "(Intercept)"]
+  est_slope     <- tidy_out$estimate[tidy_out$term == "x_assay_response"]
 
-  est_intercept <- as.numeric(tidy_out[tidy_out$term == "(Intercept)", "estimate"])
-  est_slope <- as.numeric(tidy_out[tidy_out$term == "x_mfi", "estimate"])
+  sub_df$new_y <- (sub_df$y_assay_response - est_intercept) / est_slope
 
-  # if (!is.na(est_slope)) {
-  sub_df$new_y <- (sub_df$y_mfi - est_intercept) / est_slope
+  fit_data <- na.omit(data.frame(
+    new_y = sub_df$new_y,
+    x_assay_response = sub_df$x_assay_response,
+    ecs_group = sub_df$ecs_group
+  ))
 
-  fit_data <- data.frame(new_y = sub_df$new_y, x_mfi = sub_df$x_mfi, ecs_group = sub_df$ecs_group)
-  fit_data <- na.omit(fit_data)
-  # model_corr <- lm(new_y ~ sub_df$x_au)
-  model_corr <- lm(new_y ~ x_mfi, data = fit_data[fit_data$ecs_group == "usual",])
+  model_corr <- lm(new_y ~ x_assay_response,
+                   data = fit_data[fit_data$ecs_group == "usual",])
+
   model_corr_tidy <- tidy(model_corr)
   model_corr_glance <- glance(model_corr)
-  pred_corr_df <- data.frame(x_mfi = new_x)
+
+  pred_corr_df <- data.frame(x_assay_response = new_x)
   pred_corr <- predict(model_corr, newdata = pred_corr_df, interval = "confidence")
   pred_corr_df <- cbind(pred_corr_df, as.data.frame(pred_corr))
-  #  has_corrected_model <- TRUE
-  # }
 
   return(list(
     tidy = tidy_out,
@@ -2753,16 +2817,33 @@ fit_mfi_model <- function(sub_df) {
     model_corr_glance = model_corr_glance,
     predict_corr = pred_corr_df,
     data_with_new_y = sub_df
-    # has_corrected_model = has_corrected_model
-
   ))
-
 }
 
 # Preform dilutional linearity regression and checks if there are more than 1 unique dilution
 dil_lin_regress <- function(distinct_samples, response_type, exclude_conc_samples) {
+  # cat("NAMES of Distinct Samples")
+  # print(names(distinct_samples))
   if (length(unique(distinct_samples$dilution)) > 1) {
-  distinct_samples <- distinct_samples[, c("study_accession", "experiment_accession", "antigen", "plate", "dilution", "antibody_mfi", "antibody_au", "patientid", "timeperiod", "gate_class_linear_region", "gate_class", "gate_class_loq", "quality_score")]
+ # distinct_samples <- distinct_samples[, c("study_accession", "experiment_accession", "antigen", "plate", "dilution", "antibody_mfi", "antibody_au", "patientid", "timeperiod", "gate_class_linear_region", "gate_class", "gate_class_loq", "quality_score")]
+  distinct_samples <- distinct_samples[, c(
+    "study_accession",
+    "experiment_accession",
+    "antigen",
+    "plate",
+    "dilution",
+    "au",
+    "assay_response",
+    "assay_response_variable",
+    "pcov",
+    "patientid",
+    "timeperiod",
+    "gate_class_loq",
+    "gate_class_lod",
+    "gate_class_pcov",
+    "is_log_response"
+  )]
+
 
   dilutions <- sort(unique(distinct_samples$dilution))
   middle_dilution <- dilutions[ceiling(length(dilutions) / 2)]
@@ -2770,25 +2851,42 @@ dil_lin_regress <- function(distinct_samples, response_type, exclude_conc_sample
   x_dilution_df <- distinct_samples[distinct_samples$dilution == middle_dilution,]
   y_dilution_df <- distinct_samples[distinct_samples$dilution != middle_dilution,]
 
-  colnames(x_dilution_df) <- c("study_accession", "experiment_accession", "antigen", "plate", "x_dilution", "x_mfi", "x_au", "patientid", "timeperiod", "x_gate_class_linear_region", "x_gate_class", "x_gate_class_loq", "x_quality_score")
+  # cat("x dilution df structure")
+  # print(str(x_dilution_df))
+  # cat("y_dilution_df structure")
+  # print(str(y_dilution_df))
 
-  colnames(y_dilution_df) <- c("study_accession", "experiment_accession", "antigen", "plate", "y_dilution", "y_mfi", "y_au", "patientid", "timeperiod", "y_gate_class_linear_region", "y_gate_class", "y_gate_class_loq", "y_quality_score")
-  print(head(y_dilution_df))
+  # colnames(x_dilution_df) <- c("study_accession", "experiment_accession", "antigen", "plate", "x_dilution",
+  #                              "x_mfi", "x_au", "patientid", "timeperiod", "x_gate_class_linear_region",
+  #                              "x_gate_class", "x_gate_class_loq", "x_quality_score")
+  colnames(x_dilution_df) <- c("study_accession", "experiment_accession", "antigen", "plate", "x_dilution",
+                               "x_au", "x_assay_response", "x_assay_response_variable", "x_pcov", "patientid", "timeperiod", "x_gate_class_loq",
+                               "x_gate_class_lod", "x_gate_class_pcov", "x_is_log_response")
+
+  # colnames(y_dilution_df) <- c("study_accession", "experiment_accession", "antigen",
+  #                              "plate", "y_dilution", "y_mfi", "y_au", "patientid",
+  #                              "timeperiod", "y_gate_class_linear_region", "y_gate_class", "y_gate_class_loq", "y_quality_score")
+
+  colnames(y_dilution_df)  <- c("study_accession", "experiment_accession", "antigen", "plate", "y_dilution",
+       "y_au", "y_assay_response", "y_assay_response_variable", "y_pcov", "patientid", "timeperiod", "y_gate_class_loq",
+       "y_gate_class_lod", "y_gate_class_pcov", "y_is_log_response")
+
+ # print(head(y_dilution_df))
   dilution_df <- merge(x_dilution_df, y_dilution_df, by = c("study_accession", "experiment_accession", "antigen", "plate", "patientid", "timeperiod"), all.x = T)
 
   # Keep all original data including too concentrated samples
-  cat("Excluding concentrated samples")
-  print(exclude_conc_samples)
+  # cat("Excluding concentrated samples")
+  # print(exclude_conc_samples)
 
  # dilution_df_full <<- dilution_df
 
   dilution_df_modeling <- dilution_df
-  print("first df modeling ")
-  print(head(dilution_df_modeling))
+  # print("first df modeling ")
+  # print(head(dilution_df_modeling))
   if (exclude_conc_samples) {
     dilution_df_modeling$ecs_group <- case_when(
-      dilution_df_modeling$x_gate_class_linear_region == "Too Concentrated" ~ "Too Concentrated",
-      dilution_df_modeling$y_gate_class_linear_region == "Too Concentrated" ~ "Too Concentrated",
+      dilution_df_modeling$x_gate_class_loq == "Too Concentrated" ~ "Too Concentrated",
+      dilution_df_modeling$y_gate_class_loq == "Too Concentrated" ~ "Too Concentrated",
       .default = "usual"
     )
     # dilution_df_modeling <- dilution_df_full[dilution_df_full$x_gate_class_linear_region != "Too Concentrated", ]
@@ -2802,8 +2900,8 @@ dil_lin_regress <- function(distinct_samples, response_type, exclude_conc_sample
   # filtered data
   if (response_type == "au") {
     dilution_df_modeling <-dilution_df_modeling[!is.na(dilution_df_modeling$x_au) & !is.na(dilution_df_modeling$y_au), ]
-  } else if (response_type == "mfi") {
-    dilution_df_modeling <-dilution_df_modeling[!is.na(dilution_df_modeling$x_mfi) & !is.na(dilution_df_modeling$y_mfi), ]
+  } else if (response_type == "raw_assay_response") {
+    dilution_df_modeling <-dilution_df_modeling[!is.na(dilution_df_modeling$x_assay_response) & !is.na(dilution_df_modeling$y_assay_response), ]
   }
 
   #x_dilution_df <- x_dilution_df[, c("study_accession", "experiment_accession", "antigen", "plate", "patientid", "timeperiod", "")]
@@ -2847,7 +2945,7 @@ dil_lin_regress <- function(distinct_samples, response_type, exclude_conc_sample
 
  # fit_model_xy <- function(sub_df, x, y)
   if (response_type == "au") {
-    print(head(dilution_df_modeling))
+    #print(head(dilution_df_modeling))
     # x <- "x_au"
     # y <- "y_au"
     safe_fit_model <- safely(fit_model)
@@ -2864,15 +2962,15 @@ dil_lin_regress <- function(distinct_samples, response_type, exclude_conc_sample
       ) %>%
       filter(!map_lgl(model_results, is.null))
 
-  } else if (response_type == "mfi") {
+  } else if (response_type == "raw_assay_response") {
     # x <- "x_mfi"
     # y <- "y_mfi"
-    safe_fit_mfi_model <- safely(fit_mfi_model)
+    safe_fit_raw_assay_response_model <- safely(fit_raw_assay_response_model)
     results <- dilution_df_modeling %>%
       group_by(plate, y_dilution, antigen) %>%
       nest() %>%
       mutate(
-        model_out = map(data, safe_fit_mfi_model),          # catch errors safely
+        model_out = map(data, safe_fit_raw_assay_response_model),          # catch errors safely
         model_results = map(model_out, "result")       # extract result
       ) %>%
       filter(!map_lgl(model_results, is.null))
@@ -2887,7 +2985,7 @@ dil_lin_regress <- function(distinct_samples, response_type, exclude_conc_sample
     select(plate, y_dilution, antigen, data_with_new_y) %>%
     unnest(data_with_new_y)
 
-  print(summary(by_plate_dil_antigen))
+  #print(summary(by_plate_dil_antigen))
   #print(head(by_plate_dil_antigen))
   # by_plate_dil_antigen <- by_plate_dil_antigen %>%
   #   left_join(dilution_df_modeling, by = c("plate", "y_dilution", "antigen")) %>%
@@ -2901,9 +2999,9 @@ dil_lin_regress <- function(distinct_samples, response_type, exclude_conc_sample
 
   # cat("results")
   # print(results)
-  cat("model_out\n")
+ # cat("model_out\n")
   #print(results$model_out[[1]])
-  cat("model_results\n")
+ # cat("model_results\n")
  # print(results$model_results[[1]])
 
   tidy_results <- results %>%
@@ -2986,28 +3084,39 @@ plot_single_regres <- function(distinct_samples, dil_lin_regress_list, plate, an
 
   observed_data <- dil_lin_regress_list$observed_data
 
- # observed_data_v <<- observed_data
 
   observed_data <- observed_data[observed_data$antigen == antigen &
                                    observed_data$plate == plate &
                                    observed_data$y_dilution == y_dil,]
 
-  observed_data$xy_status <-  as.factor(paste(observed_data$x_gate_class_linear_region, observed_data$y_gate_class_linear_region, sep = " / "))
+  observed_data$xy_status <-  as.factor(paste(observed_data$x_gate_class_loq, observed_data$y_gate_class_loq, sep = " / "))
 
-  x_label <- if (response_type == "mfi") {
-    if (is_log_mfi_axis) {
-      paste0("log10 MFI (Dilution ", observed_data$x_dilution, ")")
+  # capture joined in log/not logged status from dataset
+  # cat("Observed data\n")
+  # print(names(observed_data))
+  is_log_response <- isTRUE(unique(observed_data$y_is_log_response)[1])
+  #print(is_log_response)
+  # assay_response_variable <- unique(observed_data$y_assay_response_variable)[1]
+  vals <- unique(trimws(observed_data$y_assay_response_variable))
+  vals <- vals[!is.na(vals) & vals != ""]
+
+  assay_response_variable <- if (length(vals) == 0) "Assay Response" else vals[1]
+
+
+  x_label <- if (response_type == "raw_assay_response") {
+    if (is_log_response) {
+      paste0("log<sub>10 </sub>", assay_response_variable, " (Dilution ", observed_data$x_dilution, ")")
     } else {
-      paste0("MFI (Dilution ", observed_data$x_dilution, ")")
+      paste0(assay_response_variable, " (Dilution ", observed_data$x_dilution, ")")
     }
   } else if (response_type == "au") {
     paste0("AU (Dilution ", observed_data$x_dilution, ")")
   }
-  y_label <- if (response_type == "mfi") {
-    if (is_log_mfi_axis) {
-      paste0("log10 MFI (Dilution ", observed_data$y_dilution, ")")
+  y_label <- if (response_type == "raw_assay_response") {
+    if (is_log_response) {
+      paste0("log<sub>10 </sub>", assay_response_variable, " (Dilution ", observed_data$y_dilution, ")")
     } else {
-      paste0("MFI (Dilution ", observed_data$y_dilution, ")")
+      paste0(assay_response_variable, " (Dilution ", observed_data$y_dilution, ")")
     }
   } else if (response_type == "au") {
     paste0("AU (Dilution ", observed_data$y_dilution, ")")
@@ -3020,8 +3129,8 @@ plot_single_regres <- function(distinct_samples, dil_lin_regress_list, plate, an
       "Timpoint: ", observed_data$timeperiod, "<br>",
       x_label, ": ", observed_data$x_au, "<br>",
       y_label, ": ", observed_data$new_y, "<br>",
-      "Concentration Status at ", observed_data$x_dilution, ": ", observed_data$x_gate_class_linear_region, "<br>",
-      "Concentration Status at ", observed_data$y_dilution, ": ", observed_data$y_gate_class_linear_region
+      "Concentration Status at ", observed_data$x_dilution, ": ", observed_data$x_gate_class_loq, "<br>",
+      "Concentration Status at ", observed_data$y_dilution, ": ", observed_data$y_gate_class_loq
     )
   }else {
     observed_data$hover_text <- paste0(
@@ -3029,8 +3138,8 @@ plot_single_regres <- function(distinct_samples, dil_lin_regress_list, plate, an
       "Timpoint: ", observed_data$timeperiod, "<br>",
       x_label, ": ", observed_data$x_au, "<br>",
       y_label, ": ", observed_data$y_au, "<br>",
-      "Concentration Status at ", observed_data$x_dilution, ": ", observed_data$x_gate_class_linear_region, "<br>",
-      "Concentration Status at ", observed_data$y_dilution, ": ", observed_data$y_gate_class_linear_region
+      "Concentration Status at ", observed_data$x_dilution, ": ", observed_data$x_gate_class_loq, "<br>",
+      "Concentration Status at ", observed_data$y_dilution, ": ", observed_data$y_gate_class_loq
     )
   }
 
@@ -3105,19 +3214,19 @@ plot_single_regres <- function(distinct_samples, dil_lin_regress_list, plate, an
       observed_data$hover_text <- paste0(
         "Subject Accession: ", observed_data$patientid, "<br>",
         "Timpoint: ", observed_data$timeperiod, "<br>",
-        x_label, ": ", observed_data$x_mfi, "<br>",
+        x_label, ": ", observed_data$x_assay_response, "<br>",
         y_label, ": ", observed_data$new_y, "<br>",
-        "Concentration Status at ", observed_data$x_dilution, ": ", observed_data$x_gate_class_linear_region, "<br>",
-        "Concentration Status at ", observed_data$y_dilution, ": ", observed_data$y_gate_class_linear_region
+        "Concentration Status at ", observed_data$x_dilution, ": ", observed_data$x_gate_class_loq, "<br>",
+        "Concentration Status at ", observed_data$y_dilution, ": ", observed_data$y_gate_class_loq
       )
     }else {
       observed_data$hover_text <- paste0(
         "Subject Accession: ", observed_data$patientid, "<br>",
         "Timpoint: ", observed_data$timeperiod, "<br>",
-        x_label, ": ", observed_data$x_mfi, "<br>",
-        y_label, ": ", observed_data$y_mfi, "<br>",
-        "Concentration Status at ", observed_data$x_dilution, ": ", observed_data$x_gate_class_linear_region, "<br>",
-        "Concentration Status at ", observed_data$y_dilution, ": ", observed_data$y_gate_class_linear_region
+        x_label, ": ", observed_data$x_assay_response, "<br>",
+        y_label, ": ", observed_data$y_assay_response, "<br>",
+        "Concentration Status at ", observed_data$x_dilution, ": ", observed_data$x_gate_class_loq, "<br>",
+        "Concentration Status at ", observed_data$y_dilution, ": ", observed_data$y_gate_class_loq
       )
     }
 
@@ -3133,7 +3242,7 @@ plot_single_regres <- function(distinct_samples, dil_lin_regress_list, plate, an
     #              marker = list(color = "black"))
     #
     p <- p %>%
-      add_ribbons(data = pred, x = ~x_mfi, ymin = ~lwr, ymax = ~upr,
+      add_ribbons(data = pred, x = ~x_assay_response, ymin = ~lwr, ymax = ~upr,
                   line = list(color = "transparent"),
                   fillcolor = "lightgrey",
                   name = '95% CI',
@@ -3145,7 +3254,7 @@ plot_single_regres <- function(distinct_samples, dil_lin_regress_list, plate, an
         p <- p %>%
           add_trace(
             data = group_data,
-            x = ~x_mfi,
+            x = ~x_assay_response,
             y = ~new_y,
             type = 'scatter',
             mode = 'markers',
@@ -3158,8 +3267,8 @@ plot_single_regres <- function(distinct_samples, dil_lin_regress_list, plate, an
         p <- p %>%
           add_trace(
             data = group_data,
-            x = ~x_mfi,
-            y = ~y_mfi,
+            x = ~x_assay_response,
+            y = ~y_assay_response,
             type = 'scatter',
             mode = 'markers',
             marker = list(color = concentration_colors[[gc]], size = 6),
@@ -3172,11 +3281,11 @@ plot_single_regres <- function(distinct_samples, dil_lin_regress_list, plate, an
 
 
     p <- p %>%
-      add_lines(data = pred, x = ~x_mfi, y = ~fit,
+      add_lines(data = pred, x = ~x_assay_response, y = ~fit,
                 line = list(color = 'darkred'),
                 name = 'Linear Fit')
 
-    identity_range <- range(c(pred$x_mfi, pred$fit), na.rm = TRUE)
+    identity_range <- range(c(pred$x_assay_response, pred$fit), na.rm = TRUE)
 
     p <- p %>%  add_trace(
       x = identity_range,
