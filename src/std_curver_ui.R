@@ -19,15 +19,11 @@ observeEvent(list(
       verbose = FALSE
       model_names <- c("Y5", "Yd5", "Y4", "Yd4", "Ygomp4")
       param_group = "standard_curve_options"
-
-      # cat("conn exists? ", exists("conn"), "\n")
-      # str(conn)
-
+      allowed_constraint_methods = c("default","user_defined","range_of_blanks", "geometric_mean_of_blanks")
 
       loaded_data <- pull_data(study_accession = selected_study, experiment_accession = selected_experiment, conn = conn)
 
-      # cat("after loaded data")
-      # print(str(loaded_data))
+
       response_var <- loaded_data$response_var
       indep_var <-  loaded_data$indep_var
 
@@ -39,34 +35,41 @@ observeEvent(list(
                                              param_user = currentuser(),
                                              param_group =param_group, conn = conn)
 
-      # cat("study_params")
-      # print(str(study_params))
-
-
 
       output$std_curver_ui <- renderUI({
         tagList(
-          fluidRow(
-            column(3, uiOutput("sc_plate_selector")),
-            column(3, uiOutput("sample_dilution_factor_selector")),
-            column(3, uiOutput("sc_antigen_selector")),
-            column(3, uiOutput("sc_source_selector"))
+          div(
+            style = "background-color: #f0f8ff; border: 1px solid #4a90e2;
+                              padding: 10px; margin-bottom: 15px; border-radius: 5px;",
+            tags$h4("Current Standard Curve Context", style = "margin-top: 0; color: #2c5aa0;"),
+            uiOutput("standard_curve_context"),
           ),
-          fluidRow(
-            column(3, actionButton("show_comparisions", "Show Model Comparisons")),
-            column(3, downloadButton("download_best_fit_parameter_estimates", "Download Parameter Estimates for Selected Fit")),
-            column(3, downloadButton("download_samples_above_ulod", "Download Samples above the Upper Limit of Detection")),
-            column(3, downloadButton("download_samples_below_llod", "Download Samples below the Lower Limit of Detection"))
-          ),
-          #verbatimTextOutput("print_list"),
-          fluidRow(
-            column(3,uiOutput("is_display_log_response")),
-            column(3, uiOutput("is_display_log_independent_variable"))
-          ),
-          plotlyOutput("standard_curve", width = "75vw", height = "800px"),
-          # # div(class = "table-container",tableOutput("parameter_estimates")),
-          div(class = "table-container",tableOutput("summary_statistics")),
-          actionButton("run_batch_fit", "Calculate Standard Curves for all Experiments")
+          conditionalPanel(
+            condition = "output.can_fit_standard_curve == true",
+
+              fluidRow(
+                column(3, uiOutput("sc_plate_selector")),
+                column(3, uiOutput("sample_dilution_factor_selector")),
+                column(3, uiOutput("sc_antigen_selector")),
+                column(3, uiOutput("sc_source_selector"))
+              ),
+              fluidRow(
+                column(3, actionButton("show_comparisions", "Show Model Comparisons")),
+                column(3, downloadButton("download_best_fit_parameter_estimates", "Download Parameter Estimates for Selected Fit")),
+                column(3, downloadButton("download_samples_above_ulod", "Download Samples above the Upper Limit of Detection")),
+                column(3, downloadButton("download_samples_below_llod", "Download Samples below the Lower Limit of Detection"))
+              ),
+              #verbatimTextOutput("print_list"),
+              fluidRow(
+                column(3,uiOutput("is_display_log_response")),
+                column(3, uiOutput("is_display_log_independent_variable"))
+              ),
+              plotlyOutput("standard_curve", width = "75vw", height = "800px"),
+              # # div(class = "table-container",tableOutput("parameter_estimates")),
+              div(class = "table-container",tableOutput("summary_statistics")),
+              actionButton("run_batch_fit", "Calculate Standard Curves for all Experiments")
+
+          )
           # div(class = "table-container",tableOutput("samples_above_ulod")),
           # div(class = "table-container",tableOutput("samples_below_llod"))
 
@@ -82,6 +85,143 @@ observeEvent(list(
       })
 
  #   }
+
+
+
+    output$standard_curve_context <- renderUI({
+      standards_n <- nrow(loaded_data$standards[loaded_data$standards$experiment_accession == selected_experiment,])
+      blanks_n <- nrow(loaded_data$blanks[loaded_data$blanks$experiment_accession == selected_experiment,])
+      blank_option <- study_params$blank_option
+      constraints_methods <- unique(loaded_data$antigen_constraints$l_asy_constraint_method)
+      invalid_constraints <- setdiff(constraints_methods, allowed_constraint_methods)
+
+      standards_missing   <- standards_n == 0
+      blanks_missing <- blanks_n == 0
+      constraints_invalid <- length(invalid_constraints) > 0
+      blank_required  <- blank_option != "ignored" # blank is required for all options except ignored.
+      blank_blocking  <- blanks_missing && blank_required
+
+      blank_labels <- c(
+        ignored        = "Ignored",
+        included       = "Included",
+        subtracted_1x  = "Subtracted 1 × Geometric Mean",
+        subtracted_3x  = "Subtracted 3 × Geometric Mean",
+        subtracted_5x  = "Subtracted 5 × Geometric Mean",
+        subtracted_10x = "Subtracted 10 × Geometric Mean"
+      )
+
+      blank_label <- blank_labels[[blank_option]]
+
+
+      reasons <- c()
+
+      if (standards_missing) {
+        reasons <- c(reasons, glue::glue("{standards_n} standards found in {selected_experiment}."))
+      }
+
+      if (constraints_invalid) {
+        reasons <- c(reasons, glue::glue(
+          "Invalid constraint methods: {paste(invalid_constraints, collapse=', ')}"
+        ))
+      }
+
+      if (blank_blocking) {
+        reasons <- c(reasons, glue::glue(
+          "Blank control is set to {blank_label} in the study settings but {blanks_n} blanks found."
+        ))
+      }
+
+      # conditional note to show next to blank when it is ok to have 0 blanks
+      blank_note <- if (!blank_blocking) {
+        glue::glue(" (ok since blank control is currently set to {blank_label} in study settings.)")
+      } else {
+        ""
+      }
+
+      # If any blocking reasons exist, show blocking message
+      if (length(reasons) > 0) {
+
+        return(HTML(glue::glue(
+          "Standard curve fitting cannot proceed for {selected_experiment}.<br><br>",
+          " Unmet requirements:<br>",
+          "{paste(paste0('&nbsp;- ', reasons), collapse = '<br>')}<br><br>",
+          "Details:<br>",
+          "- Standards: {standards_n}<br>",
+          "- Blanks: {blanks_n}{blank_note}<br>",
+          "- Constraint method(s) found in {selected_experiment}: {paste(constraints_methods, collapse=', ')}<br>",
+          "- Constraint method(s) valid: {ifelse(constraints_invalid, 'no', 'yes')}"
+        )))
+      }
+
+      # Success case (none blocking)
+      return(HTML(glue::glue(
+        "{standards_n} standards found for {selected_experiment}.<br>",
+        "{blanks_n} blanks found for {selected_experiment}.<br>",
+        "Constraint method(s) found in {selected_experiment}: {paste(constraints_methods, collapse=', ')}<br>",
+        "Constraint method(s) valid: {ifelse(constraints_invalid, 'no', 'yes')}<br>",
+        "Current Blank Option selected (in study settings): {blank_label}<br><br>",
+        "Standard curve fitting may proceed."
+      )))
+    })
+
+    # reactive and exported output for conditional Panel
+    can_fit_standard_curve <- reactive({
+      standards_n <- nrow(loaded_data$standards[loaded_data$standards$experiment_accession == selected_experiment,])
+      blanks_n <- nrow(loaded_data$blanks[loaded_data$blanks$experiment_accession == selected_experiment,])
+      blank_option <- study_params$blank_option
+      constraints_methods <- unique(loaded_data$antigen_constraints$l_asy_constraint_method)
+      invalid_constraints <- setdiff(constraints_methods, allowed_constraint_methods)
+
+      standards_missing   <- standards_n == 0
+      blanks_missing      <- blanks_n == 0
+      constraints_invalid <- length(invalid_constraints) > 0
+      blank_required      <- blank_option != "ignored"
+      blank_blocking      <- blanks_missing && blank_required
+
+      # accumulate reasons
+      reasons <- c()
+      if (standards_missing)
+        reasons <- c(reasons, glue::glue("{standards_n} standards found in {selected_experiment}."))
+
+      if (constraints_invalid)
+        reasons <- c(reasons, glue::glue("Invalid constraint methods: {paste(invalid_constraints, collapse=', ')}"))
+
+      if (blank_blocking)
+        reasons <- c(reasons, glue::glue("Blanking is '{blank_option}' but {blanks_n} blanks found."))
+
+      !(length(reasons) > 0)
+
+    })
+    output$can_fit_standard_curve <- reactive({
+      standards_n <- nrow(loaded_data$standards[loaded_data$standards$experiment_accession == selected_experiment,])
+      blanks_n <- nrow(loaded_data$blanks[loaded_data$blanks$experiment_accession == selected_experiment,])
+      blank_option <- study_params$blank_option
+      constraints_methods <- unique(loaded_data$antigen_constraints$l_asy_constraint_method)
+      invalid_constraints <- setdiff(constraints_methods, allowed_constraint_methods)
+
+      standards_missing   <- standards_n == 0
+      blanks_missing      <- blanks_n == 0
+      constraints_invalid <- length(invalid_constraints) > 0
+      blank_required      <- blank_option != "ignored"
+      blank_blocking      <- blanks_missing && blank_required
+
+      # accumulate reasons
+      reasons <- c()
+      if (standards_missing)
+        reasons <- c(reasons, glue::glue("{standards_n} standards found."))
+
+      if (constraints_invalid)
+        reasons <- c(reasons, glue::glue("Invalid constraint methods: {paste(invalid_constraints, collapse=', ')}"))
+
+      if (blank_blocking)
+        reasons <- c(reasons, glue::glue("Blanking is '{blank_option}' but {blanks_n} blanks found."))
+
+      !(length(reasons) > 0)
+
+    })
+    outputOptions(output, "can_fit_standard_curve", suspendWhenHidden = FALSE)
+
+
 
 
     output$sc_plate_selector <- renderUI({

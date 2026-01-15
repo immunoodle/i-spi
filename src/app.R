@@ -5,7 +5,8 @@ source("global.R", local = TRUE)
 
 #Set to 1 for local and do not push in prod
 #Sys.setenv(LOCAL_DEV = "1")
-local_email_user <- "mscotzens@gmail.com"
+
+local_email_user <- "seamus.owen.stein@dartmouth.edu"
 
 # Source authentication configuration (Step 1)
 # Defines DEX_*, APP_REDIRECT_URI, OIDC_SCOPES, endpoints, get_jwks(), `%||%`, dex_client
