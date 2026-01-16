@@ -858,130 +858,130 @@ format_assay_terms <- function(x) {
 plot_patient_dilution_series  <- function(sample_data, selectedAntigen, selectedPatient,selectedTimepoints, selectedDilutions) {
 
 
-    sample_data <- sample_data[sample_data$antigen %in% selectedAntigen, ]
-    sample_data <- sample_data[sample_data$patientid %in% selectedPatient,]
-    sample_data <- sample_data[sample_data$timeperiod %in% selectedTimepoints,]
-    sample_data <- sample_data[sample_data$dilution %in% selectedDilutions,]
+  sample_data <- sample_data[sample_data$antigen %in% selectedAntigen, ]
+  sample_data <- sample_data[sample_data$patientid %in% selectedPatient,]
+  sample_data <- sample_data[sample_data$timeperiod %in% selectedTimepoints,]
+  sample_data <- sample_data[sample_data$dilution %in% selectedDilutions,]
 
-    sample_data$dilution_fraction <- 1 / sample_data$dilution
+  sample_data$dilution_fraction <- 1 / sample_data$dilution
 
-    sample_data <- sample_data[order(sample_data$dilution), ]
+  sample_data <- sample_data[order(sample_data$dilution), ]
 
-    #sample_data_v <<- sample_data
-    # antigens <- unique(sample_data$antigen)
-    # timeperiods <- unique(sample_data$timeperiod)
-    # patientids <- unique(sample_data$patientid)
-   # fig <- plot_ly()
+  #sample_data_v <<- sample_data
+  # antigens <- unique(sample_data$antigen)
+  # timeperiods <- unique(sample_data$timeperiod)
+  # patientids <- unique(sample_data$patientid)
+  # fig <- plot_ly()
 
-    #selectedTimepoints <<- selectedTimepoints
-    line_types_visit <- c("solid", "dash", "dot", "dashdot")
-    line_types_assigned <- line_types_visit[1:length(selectedTimepoints)]  # Use only the first n timepoint line types
-    named_line_types <- setNames(line_types_assigned, selectedTimepoints)
+  #selectedTimepoints <<- selectedTimepoints
+  line_types_visit <- c("solid", "dash", "dot", "dashdot")
+  line_types_assigned <- line_types_visit[1:length(selectedTimepoints)]  # Use only the first n timepoint line types
+  named_line_types <- setNames(line_types_assigned, selectedTimepoints)
 
-    # symbol map for all possible gate classes
-    gate_class_symbol_map <- c("Between_Limits" = "circle", "Below_Lower_Limit" = "diamond", "Above_Upper_Limit" = "square")
+  # symbol map for all possible gate classes
+  gate_class_symbol_map <- c("Between_Limits" = "circle", "Below_Lower_Limit" = "diamond", "Above_Upper_Limit" = "square")
 
-    # keep track of the maximum au
-    max_au <- max(sample_data$au)
-    pad <- 0.05 * max_au   # 5% padding
+  # # keep track of the maximum au
+  # max_au <- max(sample_data$au)
+  # pad <- 0.05 * max_au   # 5% padding
 
-    sample_data <- sample_data %>% group_by(patientid)
-
-
-    #sample_data_v <<- sample_data
-    sample_data$class_flag <- ifelse(
-      trimws(tolower(sample_data$Classification)) == "pass classification",
-      TRUE, FALSE
-    )
-    sample_data$class_flag <- factor(sample_data$class_flag, levels = c(FALSE, TRUE),
-                                     labels = c("Does Not Pass", "Pass"))
-
-     # named_colors <- c("Pass Classification" = "#0067a5", "Does Not Pass Classification" = "#be0032")
-    # sample_data$color <- named_colors[sample_data$Classification]
-
-    assay_response_variable <- format_assay_terms(unique(sample_data$assay_response_variable))
-    assay_independent_variable <- format_assay_terms(unique(sample_data$assay_independent_variable))
-
-    # format in dataset
-    sample_data$assay_response_variable <- format_assay_terms(sample_data$assay_response_variable)
-    sample_data$assay_independent_variable <- format_assay_terms(sample_data$assay_independent_variable)
-
-   if (unique(sample_data$is_log_x)) {
-     is_log_concentration_text <- "Log <sub>10</sub>"
-   } else {
-     is_log_concentration_text <- ""
-   }
+  sample_data <- sample_data %>% group_by(patientid, timeperiod)
 
 
-    linetype <- named_line_types[sample_data$timeperiod]
+  #sample_data_v <<- sample_data
+  sample_data$class_flag <- ifelse(
+    trimws(tolower(sample_data$Classification)) == "pass classification",
+    TRUE, FALSE
+  )
+  sample_data$class_flag <- factor(sample_data$class_flag, levels = c(FALSE, TRUE),
+                                   labels = c("Does Not Pass", "Pass"))
 
-    iq_text <- if ("pass_limits_of_quantification" %in% names(sample_data)) {
-      paste0("<br>In Quantifiable Region: ", sample_data$pass_limits_of_quantification)
-    } else {
-      paste0("<br> Quantifiable Region Gate Class: ", sample_data$gate_class_loq)
-    }
+  # named_colors <- c("Pass Classification" = "#0067a5", "Does Not Pass Classification" = "#be0032")
+  # sample_data$color <- named_colors[sample_data$Classification]
 
+  assay_response_variable <- format_assay_terms(unique(sample_data$assay_response_variable))
+  assay_independent_variable <- format_assay_terms(unique(sample_data$assay_independent_variable))
 
+  # format in dataset
+  sample_data$assay_response_variable <- format_assay_terms(sample_data$assay_response_variable)
+  sample_data$assay_independent_variable <- format_assay_terms(sample_data$assay_independent_variable)
 
-      fig <- plot_ly()
-
-          fig <- fig %>%
-
-            add_trace(
-              data = sample_data,
-              x = ~jitter(predicted_concentration),
-              y = ~au,
-              type = 'scatter',
-              mode = 'lines+markers',  # Lines and markers for connecting patient id
-             # group = ~patientid,
-             # marker = list(color = ~class_flag),#list(color = ~I(color)),#list(color = named_colors[sample_data$Classification]), # Assign in linear region color per point
-             color = ~class_flag,
-             colors = c("Does Not Pass" = "#be0032", "Pass" = "#0067a5"),#symbol = ~marker_symbol),  # symbol is gate class
-             line = list(color = "grey", dash = linetype),    # Assign grey color for a line and line type is the timeperiod. named_line_types[timeperiod]
-             hoverinfo = 'text',
-             text = ~paste0("Subject: ", patientid, "<br>Antigen: ",antigen, "<br>Visit: ",timeperiod,
-                            "<br>Dilution Factor: ", dilution,
-                            "<br> Dilution Fraction: ",dilution_fraction,
-                            "<br>",assay_independent_variable,": ", predicted_concentration,
-                            "<br>AU: ", au,
-                            "<br>",assay_response_variable, ": ", assay_response,
-                             iq_text,
-                            "<br> LOD Gate Class: ", gate_class_lod,
-                            "<br> Pass Classification: ", as.character(class_flag))
-             )
-
-
-
-
-    fig <- fig %>%
-      layout(
-        title = paste("Plate", assay_independent_variable, "Series"),
-        xaxis = list(title = paste0(is_log_concentration_text, " Plate ", assay_independent_variable), type = "log"),
-        yaxis = list(title = "Arbitrary Units", range = c(0, max_au + pad)),
-
-        showlegend = TRUE,
-        legend = list(title = list(text = "Classification Status")),
-        annotations = list(
-
-          list(
-            x = 0.5,
-            y = -0.30,
-            xref = "paper",
-            yref = "paper",
-            text = paste(
-              "The highest concentration values (Arbitrary Units) correspond to samples with", toupper(assay_response_variable), "values above the upper asymptote of the standard curve."
-            ),
-            showarrow = FALSE,
-            font = list(size = 12),
-            align = "center"
-          )
-        ),
-
-        margin = list(b = 90)
-      )
-
-    fig
+  if (unique(sample_data$is_log_x)) {
+    is_log_concentration_text <- "Log <sub>10</sub>"
+  } else {
+    is_log_concentration_text <- ""
   }
+
+
+  linetype <- named_line_types[sample_data$timeperiod]
+
+  iq_text <- if ("pass_limits_of_quantification" %in% names(sample_data)) {
+    paste0("<br>In Quantifiable Region: ", sample_data$pass_limits_of_quantification)
+  } else {
+    paste0("<br> Quantifiable Region Gate Class: ", sample_data$gate_class_loq)
+  }
+
+
+  fig <- plot_ly()
+
+  fig <- fig %>%
+
+    add_trace(
+      data = sample_data,
+      x = ~jitter(dilution_fraction),
+      y = ~au,
+      type = 'scatter',
+      mode = 'lines+markers',  # Lines and markers for connecting patient id
+      # group = ~patientid,
+      # marker = list(color = ~class_flag),#list(color = ~I(color)),#list(color = named_colors[sample_data$Classification]), # Assign in linear region color per point
+      color = ~class_flag,
+      colors = c("Does Not Pass" = "#be0032", "Pass" = "#0067a5"),#symbol = ~marker_symbol),  # symbol is gate class
+      line = list(color = "grey", dash = linetype),    # Assign grey color for a line and line type is the timeperiod. named_line_types[timeperiod]
+      hoverinfo = 'text',
+      text = ~paste0("Subject: ", patientid, "<br>Antigen: ",antigen, "<br>Visit: ",timeperiod,
+                     "<br>Dilution Factor: ", dilution,
+                     "<br> Dilution Fraction: ",dilution_fraction,
+                     "<br>",assay_independent_variable,": ", predicted_concentration,
+                     "<br>AU: ", au,
+                     "<br>",assay_response_variable, ": ", assay_response,
+                     iq_text,
+                     "<br> LOD Gate Class: ", gate_class_lod,
+                     "<br> Pass Classification: ", as.character(class_flag))
+    )
+
+
+
+
+  fig <- fig %>%
+    layout(
+      title = paste("Sample Concentrations Predicted from Plate Dilution Series"),
+      xaxis = list(title = "Plate Dilution Fraction", type = "log"),
+      yaxis = list(title = "Sample Concentration", #range = c(1, max_au + pad),
+                   type = "log"),
+
+      showlegend = TRUE,
+      legend = list(title = list(text = "Classification Status")),
+      annotations = list(
+
+        list(
+          x = 0.5,
+          y = -0.30,
+          xref = "paper",
+          yref = "paper",
+          text = paste(
+            "The highest concentration values (Arbitrary Units) correspond to samples with", toupper(assay_response_variable), "values above the upper asymptote of the standard curve."
+          ),
+          showarrow = FALSE,
+          font = list(size = 12),
+          align = "center"
+        )
+      ),
+
+      margin = list(b = 90)
+    )
+
+  fig
+}
 
 
 # plot_dilutional_linearity <- function(sample_data, selectedAntigen, selectedPatient,selectedTimepoints, selectedDilutions) {

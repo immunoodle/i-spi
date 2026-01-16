@@ -122,51 +122,114 @@ observeEvent(list(
                  ), # end bsCollapse
                  mainPanel(
                    uiOutput("parameter_dependencies"),
-                   br(),
-                   grVizOutput("decision_tree", width = "75vw"),
-                   br(),
-                   uiOutput("linear_message"),
-                   uiOutput("quantifiable_message"),
-                   uiOutput("gate_message"),
-                   br(),
-                   plotlyOutput("dilution_summary_barplot", width = "75vw"),
-                   br(),
-                   uiOutput("download_dilution_contingency_summary"),
-                   br(),
-                  # tableOutput("view_classified_merged"),
-                  # br(),
-                   fluidRow(column(6, uiOutput("dilution_selector_UI")),
-                            column(6, uiOutput("antigen_selector_UI"))),
-                   div(style = "overflow-x: auto; width: 75vw;",
-                   DT::dataTableOutput("margin_table_antigen")),
-                   div(style = "width: 75vw;", uiOutput("color_legend")),
-                   uiOutput("download_classified_sample_UI"),
-                   br(),
-                bsCollapse(
-                  id = "da_subject_level_inspection",
-                  bsCollapsePanel(
-                    title = "Subject Level Inspection",
-                    select_group_ui(
-                      id = "da_filters",
-                      params = list(list(inputId = "n_pass_dilutions", label = "Number of Passing Dilutions", multiple = F),
-                                    list(inputId = "concentration_status", label = "Select Concentration Status", multiple = F),
-                                    timeperiod = list(inputId = "timeperiod", label = "Select Timepoint", multiple = F))
-                    ),
-                    uiOutput("passing_subject_selection"),
-                    plotlyOutput("patient_dilution_series_plot", width = "75vw"),
-                    style = "primary"
-                  )
-                ),
-                  bsCollapse(
-                    id = "da_datasets",
-                    bsCollapsePanel(
-                      title = "Dilution Analysis Output Dataset",
-                     DT::dataTableOutput("final_average_au_table"),
-                      br(),
-                      downloadButton("download_average_au_table_UI", label = "Download Processed Dilution Data"),
-                      style = "primary"
-                    )
-                  )
+                   tabsetPanel(
+
+                     # ==== TAB 1: QUALITY CLASSIFICATION ====
+                     tabPanel(
+                       title = "Quality Classification",
+
+                       br(),
+                       grVizOutput("decision_tree", width = "75vw"),
+                       br(),
+                       uiOutput("linear_message"),
+                       uiOutput("quantifiable_message"),
+                       uiOutput("gate_message"),
+                       br(),
+                       plotlyOutput("dilution_summary_barplot", width = "75vw"),
+                       br(),
+                       uiOutput("download_dilution_contingency_summary"),
+                       br(),
+
+                       fluidRow(
+                         column(6, uiOutput("dilution_selector_UI")),
+                         column(6, uiOutput("antigen_selector_UI"))
+                       ),
+
+                       div(style = "overflow-x: auto; width: 75vw;",
+                           DT::dataTableOutput("margin_table_antigen")
+                       ),
+
+                       div(style = "width: 75vw;", uiOutput("color_legend")),
+                       uiOutput("download_classified_sample_UI"),
+                       br()
+                     ),
+
+                     # ==== TAB 2: SUBJECT LEVEL INSPECTION ====
+                     tabPanel(
+                       title = "Subject Level Inspection",
+
+                       select_group_ui(
+                         id = "da_filters",
+                         params = list(
+                           list(inputId = "n_pass_dilutions", label = "Number of Passing Dilutions", multiple = FALSE),
+                           list(inputId = "concentration_status", label = "Select Concentration Status", multiple = FALSE),
+                           timeperiod = list(inputId = "timeperiod", label = "Select Timepoint", multiple = FALSE)
+                         )
+                       ),
+
+                       uiOutput("passing_subject_selection"),
+                       plotlyOutput("patient_dilution_series_plot", width = "75vw")
+                     ),
+
+                     # ==== TAB 3: DILUTION OUTPUT DATA ====
+                     tabPanel(
+                       title = "Dilution Analysis Output Dataset",
+
+                       DT::dataTableOutput("final_average_au_table"),
+                       br(),
+                       downloadButton("download_average_au_table_UI",
+                                      label = "Download Processed Dilution Data")
+                     )
+                   )
+
+                #    br(),
+                #    grVizOutput("decision_tree", width = "75vw"),
+                #    br(),
+                #    uiOutput("linear_message"),
+                #    uiOutput("quantifiable_message"),
+                #    uiOutput("gate_message"),
+                #    br(),
+                #    plotlyOutput("dilution_summary_barplot", width = "75vw"),
+                #    br(),
+                #    uiOutput("download_dilution_contingency_summary"),
+                #    br(),
+                #   # tableOutput("view_classified_merged"),
+                #   # br(),
+                #    fluidRow(column(6, uiOutput("dilution_selector_UI")),
+                #             column(6, uiOutput("antigen_selector_UI"))),
+                #    div(style = "overflow-x: auto; width: 75vw;",
+                #    DT::dataTableOutput("margin_table_antigen")),
+                #    div(style = "width: 75vw;", uiOutput("color_legend")),
+                #    uiOutput("download_classified_sample_UI"),
+                #    br(),
+                # bsCollapse(
+                #   id = "da_subject_level_inspection",
+                #   bsCollapsePanel(
+                #     title = "Subject Level Inspection",
+                #     select_group_ui(
+                #       id = "da_filters",
+                #       params = list(list(inputId = "n_pass_dilutions", label = "Number of Passing Dilutions", multiple = F),
+                #                     list(inputId = "concentration_status", label = "Select Concentration Status", multiple = F),
+                #                     timeperiod = list(inputId = "timeperiod", label = "Select Timepoint", multiple = F))
+                #     ),
+                #     uiOutput("passing_subject_selection"),
+                #     plotlyOutput("patient_dilution_series_plot", width = "75vw"),
+                #     style = "primary"
+                #   )
+                # ),
+                #   bsCollapse(
+                #     id = "da_datasets",
+                #     bsCollapsePanel(
+                #       title = "Dilution Analysis Output Dataset",
+                #      DT::dataTableOutput("final_average_au_table"),
+                #       br(),
+                #       downloadButton("download_average_au_table_UI", label = "Download Processed Dilution Data"),
+                #       style = "primary"
+                #     )
+                #   )
+                #
+
+
                 # bsCollapse(
                 #   id = "da_linearity",
                 #   bsCollapsePanel(
@@ -728,7 +791,8 @@ observeEvent(list(
                   label = "Select Subjects",
                   choices = choices_string,
                   multiple = T,
-                  selected = choices_string
+                  selected = choices_string,
+                  width = "75vw"
       )
 
     })
