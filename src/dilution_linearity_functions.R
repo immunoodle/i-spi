@@ -37,6 +37,144 @@ fetch_standard_curves_dilution <- function(study_accession, experiment_accession
   result_df <- dbGetQuery(conn, query)
 
 }
+
+# Helper: map a node name → the column that stores its
+node_to_col <- function(node) {
+  if (node == "limits_of_detection") {
+    return("gate_class_lod")
+  } else if (node == "limits_of_quantification") {
+    return("gate_class_loq")
+  }
+  #stop(glue("Unsupported node: {node}"))
+}
+
+
+# -------------------------------------------------
+calculate_sample_concentration_status_new <- function(
+    conn,                # DBI connection object
+    study_accession,
+    experiment_accession,
+    node_order = c("limits_of_quantification")   # any permutation of the two nodes
+) {
+
+  query_samples <- glue::glue("
+                  SELECT se.best_sample_se_all_id, se.predicted_concentration, se.study_accession, se.experiment_accession,
+                  se.timeperiod, se.patientid, se.well, se.stype, se.sampleid, se.agroup, se.pctaggbeads, se.samplingerrors, se.antigen,
+                  se.antibody_n, se.plateid, se.plate, se.sample_dilution_factor,
+                  se.assay_response_variable, se.assay_independent_variable, se.dilution, se.overall_se, se.assay_response, se.norm_assay_response, se.se_concentration,
+                  se.au, se.pcov, se.source, se.gate_class_loq, se.gate_class_lod, se.gate_class_pcov,
+                  se.uid, se.best_glance_all_id, g.is_log_response, g.is_log_x
+                  FROM madi_results.best_sample_se_all se
+                  LEFT JOIN madi_results.best_glance_all g
+                      ON se.best_glance_all_id = g.best_glance_all_id
+                  WHERE se.study_accession = '{study_accession}'
+                  AND se.experiment_accession = '{experiment_accession}';")
+
+  df <- dbGetQuery(conn, query_samples)
+
+  # -----------------------------------------------------------------
+  # 2  NA‑filter **per node** (remove rows that do not have a QC flag
+  #     for any node that is part of the workflow)  AND create pass flags
+  # -----------------------------------------------------------------
+  for (node in node_order) {
+    col_name  <- node_to_col(node)                 # real column name in the DB
+    safe_name <- make.names(node)                   # e.g. "limits_of_detection"
+    flag_name <- paste0("pass_", safe_name)         # e.g. "pass_limits_of_detection"
+
+    # (i)  Drop rows where the QC column is missing (NA)
+    df <- df %>% filter(!is.na(.data[[col_name]]))
+
+    # (ii) Create a logical flag: TRUE only when the value equals "Acceptable"
+    df[[flag_name]] <- df[[col_name]] == "Acceptable"
+  }
+
+  # -----------------------------------------------------------------
+  # 3  Overall pass/fail = AND of all the per‑node pass flags
+  # -----------------------------------------------------------------
+  pass_cols <- paste0("pass_", make.names(node_order))
+  df$overall_pass <- apply(df[pass_cols], 1, all, na.rm = FALSE)
+
+  # # -----------------------------------------------------------------
+  # # 4  concentration_status = raw value of the *last* node in node_order
+  # # -----------------------------------------------------------------
+  # last_node <- tail(node_order, 1)
+  # last_col  <- node_to_col(last_node)
+  # df$concentration_status <- df[[last_col]]
+
+  # -----------------------------------------------------------------
+  # 4 Build `concentration_status`
+  #     - If the sample passed all nodes → keep the value of the last node
+  #       (which will be “Acceptable”).
+  #     - If the sample failed any node → use the **first** node that is
+  #       not Acceptable and copy its raw gate‑class value.
+  # -----------------------------------------------------------------
+  # Helper: a vector with the real column names in the same order as node_order
+  node_cols <- vapply(node_order, node_to_col, character(1))
+
+  # Initialise with the value of the **last** node (covers the “all pass” case)
+  df$concentration_status <- df[[ tail(node_cols, 1) ]]
+
+  # Identify rows that failed (overall_pass == FALSE)
+  fail_idx <- which(!df$overall_pass)
+
+  if (length(fail_idx) > 0) {
+    # For each failing row, find the *first* node whose pass flag is FALSE
+    for (i in fail_idx) {
+      # which flag is FALSE for this row?
+      false_flags <- which(!df[i, pass_cols])
+      # take the first one (if more than one node failed)
+      first_false <- false_flags[1]
+      # corresponding column name in the original data
+      fail_col <- node_cols[first_false]
+      # copy the raw gate‑class value into concentration_status
+      df$concentration_status[i] <- df[[fail_col]][i]
+    }
+  }
+
+  df$Classification <- ifelse(df$overall_pass,
+                              "Pass Classification",
+                              "Does Not Pass Classification")
+
+  # # -------------------------------------------------
+  # #  Filter per‑node:
+  # #      -drop rows where the required QC column is NA
+  # #      - keep only rows that are "Acceptable" for that node
+  # #    -  Remember the column of the last successful node – that will become
+  # #      the `concentration_status`
+  # # -------------------------------------------------
+  # last_col <- NULL
+  #
+  # for (node in node_order) {
+  #   col_name <- node_to_col(node)               # e.g. "gate_class_lod"
+  #   #(i) Remove rows that are missing the QC flag required for this node
+  #   df <- df %>% filter(!is.na(.data[[col_name]]))
+  #   # (ii) Keep only rows that are "Acceptable" for this node
+  #   df <- df %>% filter(.data[[col_name]] == "Acceptable")
+  #   last_col <- col_name
+  # }
+  #
+  # # -------------------------------------------------
+  # # 4️⃣ Populate `concentration_status`
+  # # -------------------------------------------------
+  # if (is.null(last_col)) {
+  #   df <- df %>% mutate(concentration_status = NA_character_)
+  # } else {
+  #   df <- df %>% mutate(concentration_status = .data[[last_col]])
+  # }
+#
+#   df <- df %>%
+#     mutate(
+#       Classification = ifelse(
+#         concentration_status == "Acceptable",
+#         "Pass Classification",
+#         "Does Not Pass Classification"
+#       )
+#     )
+
+  return(df)
+}
+
+
 ### Read in data and find concentration status
 calculate_sample_concentration_status <- function(study_accession, experiment_accession, node_order) {
   query_samples <- glue::glue("SELECT xmap_sample_id, study_accession, experiment_accession, plate_id, timeperiod, patientid, well, stype, sampleid, id_imi, agroup, dilution, pctaggbeads, samplingerrors, antigen, antibody_mfi, antibody_n, antibody_name, feature, antibody_au, antibody_au_se, norm_mfi, gate_class, in_linear_region, gate_class_linear_region,in_quantifiable_range, gate_class_loq,  quality_score
@@ -702,6 +840,20 @@ classify_sample_data <- function(sample_data, selectedAntigen, selectedPatient =
 
 }
 
+format_assay_terms <- function(x) {
+  lookup <- c(
+    MFI = "MFI",
+    Concentration = "Concentration"
+  )
+
+  # normalize lookup keys for matching
+  names(lookup) <- tolower(names(lookup))
+
+  sapply(x, function(v) {
+    key <- tolower(v)
+    if (key %in% names(lookup)) lookup[[key]] else v
+  }, USE.NAMES = FALSE)
+}
 
 plot_patient_dilution_series  <- function(sample_data, selectedAntigen, selectedPatient,selectedTimepoints, selectedDilutions) {
 
@@ -715,6 +867,7 @@ plot_patient_dilution_series  <- function(sample_data, selectedAntigen, selected
 
     sample_data <- sample_data[order(sample_data$dilution), ]
 
+    #sample_data_v <<- sample_data
     # antigens <- unique(sample_data$antigen)
     # timeperiods <- unique(sample_data$timeperiod)
     # patientids <- unique(sample_data$patientid)
@@ -729,58 +882,94 @@ plot_patient_dilution_series  <- function(sample_data, selectedAntigen, selected
     gate_class_symbol_map <- c("Between_Limits" = "circle", "Below_Lower_Limit" = "diamond", "Above_Upper_Limit" = "square")
 
     # keep track of the maximum au
-    max_au <- max(sample_data$antibody_au)
-    sample_data <- sample_data %>% group_by(patientid)
-    fig <- plot_ly()
+    max_au <- max(sample_data$au)
+    pad <- 0.05 * max_au   # 5% padding
 
-    named_colors <- c("Pass Classification" = "#0067a5", "Does Not Pass Classification" = "#be0032")
-    sample_data$color <- named_colors[sample_data$Classification]
+    sample_data <- sample_data %>% group_by(patientid)
+
+
+    #sample_data_v <<- sample_data
+    sample_data$class_flag <- ifelse(
+      trimws(tolower(sample_data$Classification)) == "pass classification",
+      TRUE, FALSE
+    )
+    sample_data$class_flag <- factor(sample_data$class_flag, levels = c(FALSE, TRUE),
+                                     labels = c("Does Not Pass", "Pass"))
+
+     # named_colors <- c("Pass Classification" = "#0067a5", "Does Not Pass Classification" = "#be0032")
+    # sample_data$color <- named_colors[sample_data$Classification]
+
+    assay_response_variable <- format_assay_terms(unique(sample_data$assay_response_variable))
+    assay_independent_variable <- format_assay_terms(unique(sample_data$assay_independent_variable))
+
+    # format in dataset
+    sample_data$assay_response_variable <- format_assay_terms(sample_data$assay_response_variable)
+    sample_data$assay_independent_variable <- format_assay_terms(sample_data$assay_independent_variable)
+
+   if (unique(sample_data$is_log_x)) {
+     is_log_concentration_text <- "Log <sub>10</sub>"
+   } else {
+     is_log_concentration_text <- ""
+   }
+
 
     linetype <- named_line_types[sample_data$timeperiod]
+
+    iq_text <- if ("pass_limits_of_quantification" %in% names(sample_data)) {
+      paste0("<br>In Quantifiable Region: ", sample_data$pass_limits_of_quantification)
+    } else {
+      paste0("<br> Quantifiable Region Gate Class: ", sample_data$gate_class_loq)
+    }
+
+
+
+      fig <- plot_ly()
 
           fig <- fig %>%
 
             add_trace(
               data = sample_data,
-              x = ~jitter(dilution_fraction),
-              y = ~antibody_au,
+              x = ~jitter(predicted_concentration),
+              y = ~au,
               type = 'scatter',
               mode = 'lines+markers',  # Lines and markers for connecting patient id
-              marker = list(color = ~I(color)),#list(color = named_colors[sample_data$Classification]), # Assign in linear region color per point
-              #symbol = ~marker_symbol),  # symbol is gate class
-              line = list(color = "grey", dash = linetype),    # Assign grey color for a line and line type is the timeperiod. named_line_types[timeperiod]
-              hoverinfo = 'text',
-              text = ~paste("Subject: ", patientid, "<br>Antigen: ",antigen, "<br>Visit: ",timeperiod, "<br>Dilution Factor:", dilution, "<br> Dilution Fraction:",dilution_fraction,
-                            "<br>AU:", antibody_au,
-                            "<br>MFI:", antibody_mfi,
-                            "<br>In Linear Region:", in_linear_region,
-                            "<br> LOD Gate Class:", gate_class,
-                            "<br> Pass Classification:", ifelse(Classification == "Pass Classification", "TRUE", "FALSE"))
-              #name = paste("Antigen:", selectedAntigen, "Subject:", patient, "Visit:", timeperiod)
-            )
+             # group = ~patientid,
+             # marker = list(color = ~class_flag),#list(color = ~I(color)),#list(color = named_colors[sample_data$Classification]), # Assign in linear region color per point
+             color = ~class_flag,
+             colors = c("Does Not Pass" = "#be0032", "Pass" = "#0067a5"),#symbol = ~marker_symbol),  # symbol is gate class
+             line = list(color = "grey", dash = linetype),    # Assign grey color for a line and line type is the timeperiod. named_line_types[timeperiod]
+             hoverinfo = 'text',
+             text = ~paste0("Subject: ", patientid, "<br>Antigen: ",antigen, "<br>Visit: ",timeperiod,
+                            "<br>Dilution Factor: ", dilution,
+                            "<br> Dilution Fraction: ",dilution_fraction,
+                            "<br>",assay_independent_variable,": ", predicted_concentration,
+                            "<br>AU: ", au,
+                            "<br>",assay_response_variable, ": ", assay_response,
+                             iq_text,
+                            "<br> LOD Gate Class: ", gate_class_lod,
+                            "<br> Pass Classification: ", as.character(class_flag))
+             )
 
 
 
 
     fig <- fig %>%
       layout(
-        title = "Plate Dilution Series",
-        xaxis = list(title = "Log <sub>10</sub> Plate Dilution", type = "log"),
-        yaxis = list(title = "Antibody AU", range = c(0, max_au + 10)),
+        title = paste("Plate", assay_independent_variable, "Series"),
+        xaxis = list(title = paste0(is_log_concentration_text, " Plate ", assay_independent_variable), type = "log"),
+        yaxis = list(title = "Arbitrary Units", range = c(0, max_au + pad)),
 
-        showlegend = FALSE,
+        showlegend = TRUE,
+        legend = list(title = list(text = "Classification Status")),
         annotations = list(
 
           list(
             x = 0.5,
-            y = -1,
+            y = -0.30,
             xref = "paper",
             yref = "paper",
             text = paste(
-              "Color represents Passing Classification (blue) or not passing Classification (red). <br>
-               If there are multiple overlapping points the point will appear black.<br>
-              The highest concentration values (Arbitrary Units) correspond to samples with MFI values above the upper asymptote of the standard curve.
-              "
+              "The highest concentration values (Arbitrary Units) correspond to samples with", toupper(assay_response_variable), "values above the upper asymptote of the standard curve."
             ),
             showarrow = FALSE,
             font = list(size = 12),
@@ -788,7 +977,7 @@ plot_patient_dilution_series  <- function(sample_data, selectedAntigen, selected
           )
         ),
 
-        margin = list(b = 200)
+        margin = list(b = 90)
       )
 
     fig
@@ -1218,7 +1407,7 @@ create_decision_tree_tt <- function(truth_table, binary_gate, sufficient_gc_vect
       }
 
       if (node == "quantifiable" && !exclude_quantifiable) {
-        quantifiable_node_name <- paste("Quantifiable:", row$In_Quantifiable_Range)
+        quantifiable_node_name <- paste("In Quantifiable Region:", row$In_Quantifiable_Range)
         if (!quantifiable_node_name %in% names(current_node$children)) {
           quantifiable_node <- current_node$AddChild(quantifiable_node_name)
           quantifiable_node$condition <- function(x) x$in_quantifiable_range == row$In_Quantifiable_Range
@@ -1286,7 +1475,13 @@ parse_leaf_path <- function(s, binary_gc, sufficient_gc_vector) {
   if (binary_gc) {
     df <- data.frame(in_quantifiable_range = NA, gate_class = NA, in_linear_region = NA, Classification = NA)
     for (gc in sufficient_gc_vector) {
-      quantifiable <- ifelse(grepl("Quantifiable", s), sub(".*Quantifiable: (TRUE|FALSE).*", "\\1", s), NA)
+      quantifiable <- ifelse(
+        grepl("In Quantifiable Region", s),
+        sub(".*In Quantifiable Region: (TRUE|FALSE).*", "\\1", s),
+        NA
+      )
+
+     # quantifiable <- ifelse(grepl("Quantifiable", s), sub(".*Quantifiable: (TRUE|FALSE).*", "\\1", s), NA)
       gate_class <- TRUE
       linear <- ifelse(grepl("Linear", s), sub(".*Linear: (TRUE|FALSE).*", "\\1", s), NA)
       classification <- ifelse(grepl("/", s), sub(".*/(.*)", "\\1", s), NA)
@@ -1295,7 +1490,13 @@ parse_leaf_path <- function(s, binary_gc, sufficient_gc_vector) {
     df <- df[-1, ]
     # return(df)
   } else {
-    quantifiable <- ifelse(grepl("Quantifiable", s), sub(".*Quantifiable: (TRUE|FALSE).*", "\\1", s), NA)
+    quantifiable <- ifelse(
+      grepl("In Quantifiable Region", s),
+      sub(".*In Quantifiable Region: (TRUE|FALSE).*", "\\1", s),
+      NA
+    )
+
+   # quantifiable <- ifelse(grepl("Quantifiable", s), sub(".*Quantifiable: (TRUE|FALSE).*", "\\1", s), NA)
     gate_class <- ifelse(grepl("Gate Class", s), sub(".*Gate Class: ([^/]+)(?: TRUE|$).*", "\\1", s), NA)
     linear <- ifelse(grepl("Linear", s), sub(".*Linear: (TRUE|FALSE).*", "\\1", s), NA)
     classification <- ifelse(grepl("/", s), sub(".*/(.*)", "\\1", s), NA)
@@ -1701,7 +1902,7 @@ compute_average_au <- function(classified_sample_linearity) {
 ## Keep all AU
 preserve_all_au <- function(classified_sample_linearity) {
   classified_sample_linearity <- classified_sample_linearity
-  names(classified_sample_linearity)[names(classified_sample_linearity) == "antibody_au"] <- "processed_au"
+  names(classified_sample_linearity)[names(classified_sample_linearity) == "au"] <- "processed_au"
   return(classified_sample_linearity)
 }
 
@@ -1713,19 +1914,19 @@ preserve_all_au <- function(classified_sample_linearity) {
 # Keep Passing AU
 preserve_passing_au <- function(classified_sample) {
   pass_dilution_data <- classified_sample[classified_sample$au_treatment == "passing_au", ]
-  names(pass_dilution_data)[names(pass_dilution_data) == "antibody_au"] <- "processed_au"
+  names(pass_dilution_data)[names(pass_dilution_data) == "au"] <- "processed_au"
   return(pass_dilution_data)
 }
 
 # Geometric Mean of all AU Measurements
 geometric_mean_all_au_2 <- function(classified_sample) {
-  results <- aggregate(antibody_au ~ antigen + patientid, classified_sample, geom_mean)
+  results <- aggregate(au ~ antigen + patientid, classified_sample, geom_mean)
 
-  names(classified_sample)[names(classified_sample) == "antibody_au"] <- "original_au"
+  names(classified_sample)[names(classified_sample) == "au"] <- "original_au"
 
   result_df <- merge(classified_sample, results, by = c("antigen", "patientid"))
  # result_df <- result_df[!names(result_df) %in% "au.x"]
-  names(result_df)[names(result_df) == "antibody_au"] <- "processed_au"
+  names(result_df)[names(result_df) == "au"] <- "processed_au"
 
   return(result_df)
 }
@@ -1758,12 +1959,12 @@ geometric_mean_passing_au_2 <- function(classified_sample) {
   # Find rows that pass classification
   pass_dilution_data <- classified_sample[classified_sample$au_treatment == "geom_passing_au", ]
 
-  results <- aggregate(antibody_au ~ antigen + patientid, pass_dilution_data, geom_mean)
-  names(pass_dilution_data)[names(pass_dilution_data) == "antibody_au"] <- "original_au"
+  results <- aggregate(au ~ antigen + patientid, pass_dilution_data, geom_mean)
+  names(pass_dilution_data)[names(pass_dilution_data) == "au"] <- "original_au"
 
   result_df <- merge(pass_dilution_data, results, by = c("antigen", "patientid"))
   #result_df <- result_df[!names(result_df) %in% "au.x"]
-  names(result_df)[names(result_df) == "antibody_au"] <- "processed_au"
+  names(result_df)[names(result_df) == "au"] <- "processed_au"
 
   return(result_df)
 }
@@ -1775,7 +1976,7 @@ geometric_mean_passing_au_2 <- function(classified_sample) {
 
 geometric_mean_positive_controls <- function(classified_sample_linearity, positive_controls) {
   positive_controls <- positive_controls
-  most_concentrated_dilution <<- min(positive_controls$dilution)
+  most_concentrated_dilution <- min(positive_controls$dilution)
 
   if (most_concentrated_dilution == 1) {
     au_positive_control <- 1000
@@ -3101,6 +3302,8 @@ plot_single_regres <- function(distinct_samples, dil_lin_regress_list, plate, an
   vals <- vals[!is.na(vals) & vals != ""]
 
   assay_response_variable <- if (length(vals) == 0) "Assay Response" else vals[1]
+  # format the assay response variable to proper case if it is in lookup table
+  assay_response_variable <- format_assay_terms(assay_response_variable)
 
 
   x_label <- if (response_type == "raw_assay_response") {

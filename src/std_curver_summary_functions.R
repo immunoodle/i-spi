@@ -232,15 +232,15 @@ summarize_sc_fits_plotly <- function(best_pred_all, cv_df, best_plate_all, exper
   assay_response_variable <- unique(best_plates_exp_source$assay_response_variable)[1]
   assay_independent_variable <- unique(best_plates_exp_source$assay_independent_variable)[1]
   if (is_log_response) {
-    y_axis_label <- paste("log<sub>10</sub>", assay_response_variable)
+    y_axis_label <- paste("log<sub>10</sub>", format_assay_terms(assay_response_variable))
   } else {
-    y_axis_label <- assay_response_variable
+    y_axis_label <- format_assay_terms(assay_response_variable)
   }
 
   if (is_log_independent) {
-    x_axis_label <- paste("log<sub>10</sub>", assay_independent_variable)
+    x_axis_label <- paste("log<sub>10</sub>", format_assay_terms(assay_independent_variable))
   } else {
-    x_axis_label <- assay_independent_variable
+    x_axis_label <- format_assay_terms(assay_independent_variable)
   }
 
 
