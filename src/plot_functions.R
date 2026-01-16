@@ -245,6 +245,23 @@ plot_model_comparisons <- function(plot_data,
   combined
 }
 
+
+# format terms such as mfi and concentration
+format_assay_terms <- function(x) {
+  lookup <- c(
+    MFI = "MFI",
+    Concentration = "Concentration"
+  )
+
+  # normalize lookup keys for matching
+  names(lookup) <- tolower(names(lookup))
+
+  sapply(x, function(v) {
+    key <- tolower(v)
+    if (key %in% names(lookup)) lookup[[key]] else v
+  }, USE.NAMES = FALSE)
+}
+
 # best fit must contain sample_se
 plot_standard_curve <- function(best_fit,
                                 is_display_log_response,
@@ -291,16 +308,16 @@ plot_standard_curve <- function(best_fit,
   }
   y3_label <- paste(stringr::str_to_title(independent_variable), "Uncertainty (pCoV)")
   if (is_display_log_response) {
-    y_label <- paste("log<sub>10</sub>", response_variable)
+    y_label <- paste("log<sub>10</sub>", format_assay_terms(response_variable))
 
   } else {
-    y_label <- response_variable
+    y_label <- format_assay_terms(response_variable)
   }
 
   if (is_display_log_independent) {
-    x_label <- paste("log<sub>10</sub>", independent_variable)
+    x_label <- paste("log<sub>10</sub>", format_assay_terms(independent_variable))
   } else {
-    x_label <- independent_variable
+    x_label <- format_assay_terms(independent_variable)
   }
   ### ------------------------
   ### 3. MODEL NAME

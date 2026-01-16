@@ -18,39 +18,7 @@ observeEvent(list(
     selected_study <- input$readxMap_study_accession # selected_studyexpplate$study_accession
     selected_experiment <- input$readxMap_experiment_accession #selected_studyexpplate$experiment_accession
 
-    # Load sample data
-    sample_data <- stored_plates_data$stored_sample
-    # Check if selected study, experiment, and sample data are available
-    if (!is.null(selected_study) && length(selected_study) > 0 &&
-        !is.null(selected_experiment) && length(selected_experiment) > 0 &&
-        !is.null(sample_data) && length(sample_data) > 0){
 
-      # Filter sample data
-      sample_data$selected_str <- paste0(sample_data$study_accession, sample_data$experiment_accession)
-      sample_data <- sample_data[sample_data$selected_str == paste0(selected_study, selected_experiment), ]
-
-      # Summarize sample data
-      cat("Viewing sample dat in Dilution Analysis tab ")
-      print(names(sample_data))
-      print(table(sample_data$plateid))
-      print(table(sample_data$antigen))
-      cat("After summarizing sample data in Dilution Analysis tab")
-
-
-      # Rename columns
-
-      sample_data <- dplyr::rename(sample_data, arm_name = agroup)
-      sample_data <- dplyr::rename(sample_data, visit_name = timeperiod)
-
-
-      sample_data$subject_accession <- sample_data$patientid
-
-      sample_data <- dplyr::rename(sample_data, value_reported = mfi)
-
-      arm_choices <- unique(sample_data$arm_name)
-      visits <- unique(sample_data$timeperiod)
-
-    }
 
     standard_data_curve <- stored_plates_data$stored_standard
     if (!is.null(selected_study) && length(selected_study) > 0 &&
@@ -241,13 +209,13 @@ observeEvent(list(
           style = "info"
         )
       ),
-      actionButton("to_study_parameters", label = "Return to Study Parameters")
+      actionButton("to_study_parameters", label = "Return to Change Study Settings")
      )
     })
 
     # Switch tabs when click button
     observeEvent(input$to_study_parameters, {
-      updateTabsetPanel(session, inputId = "study_level_tabs", selected = "Study Parameters")
+      updateTabItems(session, inputId = "study_tabs", selected = "study_settings")
     })
 
 
@@ -423,11 +391,16 @@ observeEvent(list(
 
       node_order_in <- strsplit(study_configuration[study_configuration$param_name == "node_order",]$param_character_value, ",")[[1]]
 
-      gated_data <- calculate_sample_concentration_status(study_accession = selected_study, experiment_accession = selected_experiment, node_order = node_order_in)
+      gated_data_n <- calculate_sample_concentration_status_new(conn = conn,                # DBI connection object
+                                                                study_accession = selected_study,
+                                                                experiment_accession = selected_experiment ,
+                                                                node_order = node_order_in)
+
+      #gated_data <- calculate_sample_concentration_status(study_accession = selected_study, experiment_accession = selected_experiment, node_order = node_order_in)
 
       antigen_family_df <- fetch_antigen_family_df(study_accession = selected_study)
       antigen_family_order_in <- strsplit(study_configuration[study_configuration$param_name == "antigen_family_order",]$param_character_value, ",")[[1]]
-      contigency_summary_dilution <- produce_contigency_summary(gated_data)
+      contigency_summary_dilution <- produce_contigency_summary(gated_data_n)
       summary_dilution_plot(dilution_summary_df = contigency_summary_dilution,
                             antigen_families = antigen_family_df,
                             antigen_family_order = antigen_family_order_in)
@@ -460,7 +433,10 @@ observeEvent(list(
         req(selected_experiment)
         node_order_in <- strsplit(study_configuration[study_configuration$param_name == "node_order",]$param_character_value, ",")[[1]]
 
-        gated_data <- calculate_sample_concentration_status(study_accession = selected_study, experiment_accession = selected_experiment, node_order = node_order_in)
+        gated_data <- calculate_sample_concentration_status_new(conn = conn,
+                                                                study_accession = selected_study,
+                                                                experiment_accession = selected_experiment,
+                                                                node_order = node_order_in)
 
         contigency_summary_dilution <- produce_contigency_summary(gated_data)
 
@@ -479,7 +455,10 @@ observeEvent(list(
       req(study_configuration)
       node_order_in <- strsplit(study_configuration[study_configuration$param_name == "node_order",]$param_character_value, ",")[[1]]
 
-      gated_data <- calculate_sample_concentration_status(study_accession = selected_study, experiment_accession = selected_experiment, node_order = node_order_in)
+      gated_data <- calculate_sample_concentration_status_new(conn = conn,
+                                                              study_accession = selected_study,
+                                                              experiment_accession = selected_experiment,
+                                                              node_order = node_order_in)
 
       # req(summary_gated_data_rv())
     #  req(nrow(summary_gated_data_rv()) > 0)
@@ -508,7 +487,9 @@ observeEvent(list(
         #req(summary_gated_data_rv())
         node_order_in <- strsplit(study_configuration[study_configuration$param_name == "node_order",]$param_character_value, ",")[[1]]
 
-        gated_data <- calculate_sample_concentration_status(study_accession = selected_study, experiment_accession = selected_experiment, node_order = node_order_in)
+        gated_data <- calculate_sample_concentration_status_new(conn = conn,
+                                                                study_accession = selected_study,
+                                                                experiment_accession = selected_experiment, node_order = node_order_in)
 
         antigen_choices <-  unique(gated_data$antigen)
       }
@@ -565,7 +546,8 @@ observeEvent(list(
 
       node_order_in <- strsplit(study_configuration[study_configuration$param_name == "node_order",]$param_character_value, ",")[[1]]
 
-      gated_data <- calculate_sample_concentration_status(study_accession = selected_study, experiment_accession = selected_experiment, node_order = node_order_in)
+      gated_data <- calculate_sample_concentration_status_new(conn = conn,
+                                                              study_accession = selected_study, experiment_accession = selected_experiment, node_order = node_order_in)
       if (nrow(gated_data) == 0) {
         return(NULL)
       }
@@ -785,6 +767,7 @@ observeEvent(list(
       classified_au_data$decision_nodes <- study_configuration[study_configuration$param_name == "node_order",]$param_character_value
       classified_au_data$bkg_method <- study_configuration[study_configuration$param_name == "blank_option",]$param_character_value
 
+
       final_average_table <- data.frame()
       for (au_treatment in unique(classified_au_data$au_treatment)) {
         au_treatment_sub <- classified_au_data[classified_au_data$au_treatment == au_treatment,]
@@ -906,7 +889,7 @@ observeEvent(list(
 
     output$download_average_au_table_UI <-  downloadHandler(
       filename = function() {
-        paste(input$readxMap_study_accession, input$readxMap_experiment_accession, "_sample_data", ".csv", sep = "_")
+        paste(input$readxMap_study_accession, input$readxMap_experiment_accession, "_sample_data_processed", ".csv", sep = "_")
       },
       content = function(file) {
         req(final_average_au_table_rv())
