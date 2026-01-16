@@ -843,18 +843,8 @@ fit_qc_glance <- function(best_fit,
 
   combined_qc_list <- c(loqs, lods, inflection_point, std_error_blank, dydx_inflect = dydx_inflect)
 
-  # Ensure all values in the list are scalar numerics before creating dataframe
-  combined_qc_list <- lapply(combined_qc_list, function(x) {
-    if (is.list(x)) as.numeric(unlist(x))[1] else as.numeric(x)[1]
-  })
-
-  qc_glance <- as.data.frame(combined_qc_list, stringsAsFactors = FALSE)
-
-  # Ensure scalar comparisons
-  uloq_val <- as.numeric(qc_glance$uloq)[1]
-  inflect_val <- as.numeric(qc_glance$inflect_x)[1]
-
-  if (!is.na(uloq_val) && !is.na(inflect_val) && uloq_val < inflect_val) {
+  qc_glance <- as.data.frame(do.call(cbind, combined_qc_list))
+  if (qc_glance$uloq < qc_glance$inflect_x) {
     qc_glance$uloq <- NA_real_
     qc_glance$uloq_y <- NA_real_
   }
@@ -998,28 +988,15 @@ get_loqs <- function(best_d2xy, fit, independent_variable,  verbose = TRUE) {
   # global_max <- if (nrow(max_df) > 0) max_df[which.max(max_df$y), ] else NULL
 
   # all_x <- c(max_df$x,min_df$x)
-  # Handle empty dataframes and ensure scalar values are returned
-  if (nrow(max_df) > 0) {
-    lloq_x <- as.numeric(max_df[which.max(max_df$y), "x"][1])
-  } else {
-    lloq_x <- NA_real_
-  }
-
-  if (nrow(min_df) > 0) {
-    uloq_x <- as.numeric(min_df[which.min(min_df$y), "x"][1])
-  } else {
-    uloq_x <- NA_real_
-  }
+  lloq_x <- max_df[max_df$y == max(max_df$y), "x"]
+  uloq_x <- min_df[min_df$y == min(min_df$y), "x"]
 
   # global_min <- if (nrow(min_df) > 0) min_df[which.min(min_df$y), ] else NULL
 
   y_loq <- tryCatch({
     predict(fit, newdata = setNames(data.frame(x = c(lloq_x, uloq_x)), independent_variable))
-  }, error = function(e) rep(NA_real_, 2))
+  }, error = function(e) rep(NA_real_, length(x_new)))
 
-  # Ensure lloq_y and uloq_y are scalar numeric values
-  lloq_y <- if (length(y_loq) >= 1 && !all(is.na(y_loq))) as.numeric(min(y_loq, na.rm = TRUE)) else NA_real_
-  uloq_y <- if (length(y_loq) >= 1 && !all(is.na(y_loq))) as.numeric(max(y_loq, na.rm = TRUE)) else NA_real_
 
   # print(inflection_point$inflect_x)
   # if (uloq_x < inflection_point$inflect_x) {
@@ -1031,8 +1008,8 @@ get_loqs <- function(best_d2xy, fit, independent_variable,  verbose = TRUE) {
   return(list(
     lloq = lloq_x,
     uloq = uloq_x,
-    lloq_y = lloq_y,
-    uloq_y = uloq_y
+    lloq_y = min(y_loq),
+    uloq_y =  max(y_loq)
   ))
 }
 
@@ -1684,9 +1661,9 @@ condition_inf_rescale <- function(x) {
 }
 
 scale_pcov <- function(data, pcov_at_inflect, pcov_at_loq) {
-  # Scale pcov from [pcov_at_inflect, pcov_at_loq] to [pcov_at_inflect, 50]
+  # Scale pcov from [pcov_at_inflect, pcov_at_loq] to [pcov_at_inflect, 100]
   data$pcov_scaled <- pcov_at_inflect +
-    (data$pcov - pcov_at_inflect) * (50 - pcov_at_inflect) / (pcov_at_loq - pcov_at_inflect)
+    (data$pcov - pcov_at_inflect) * (100 - pcov_at_inflect) / (pcov_at_loq - pcov_at_inflect)
 
   return(data)
 }
@@ -1699,63 +1676,44 @@ pcov_calc <- function(data,
                       x_var,
                       is.samples=TRUE,
                       scale_factor = NULL,
-                      pcov_at_loq = NULL,
-                      pcov_at_inflect = NULL,
                       min_val = NULL,
                       verbose = TRUE) {
   if (nrow(data) == 0) {
     stop("Both 'x' and 'se' must be numeric.")
   }
-  data$pcov <- rep(NA_real_, nrow(data))
+  data$pcov <- rep(NA_real_)
+
   x_cond <- list()
   if (is.samples) {
     x_cond$scale_factor <- scale_factor
     x_cond$min_val <- min_val
+    # x_cond$out <- (data[[x_var]] - min_val) * scale_factor + 1
   } else {
     x_cond <- condition_inf_rescale(data[!is.na(as.numeric(data[[x_var]])) & !is.na(as.numeric(data[[se_var]])), ][[x_var]])
   }
   x_cond$out <- data[[x_var]]
+
   data[!is.na(as.numeric(data[[x_var]])) & !is.na(as.numeric(data[[se_var]])), ]$pcov <-
     data[!is.na(as.numeric(data[[x_var]])) & !is.na(as.numeric(data[[se_var]])), ][[se_var]] ^ 2
 
-  # Calculate pcov_at_loq if not provided
-
-  if (is.null(pcov_at_loq)) {
-    if (!is.na(lloq)) {
-      pcov_subset_lloq <- data[data[[x_var]] >= lloq & data[[x_var]] < dydx_inflect, ]$pcov
-      pcov_at_lloq <- if (length(pcov_subset_lloq) > 0 && !all(is.na(pcov_subset_lloq))) max(pcov_subset_lloq, na.rm = TRUE) else 50
-    } else {
-      pcov_at_lloq <- 50
-    }
-    if (!is.na(uloq)) {
-      pcov_subset_uloq <- data[data[[x_var]] <= uloq & data[[x_var]] > dydx_inflect, ]$pcov
-      pcov_at_uloq <- if (length(pcov_subset_uloq) > 0 && !all(is.na(pcov_subset_uloq))) max(pcov_subset_uloq, na.rm = TRUE) else 50
-    } else {
-      pcov_at_uloq <- 50
-    }
-    pcov_at_loq <- max(pcov_at_lloq, pcov_at_uloq)
+  if (!is.na(lloq)) {
+    pcov_at_lloq <- max(data[data[[x_var]] >= lloq & data[[x_var]] < dydx_inflect, ]$pcov)
+  } else {
+    pcov_at_lloq <- 50
   }
 
-  # Calculate pcov_at_inflect if not provided
-  if (is.null(pcov_at_inflect)) {
-    pcov_at_inflect <- min(data$pcov, na.rm = TRUE)
+  if (!is.na(uloq)) {
+    pcov_at_uloq <- max(data[data[[x_var]] <= uloq & data[[x_var]] > dydx_inflect, ]$pcov)
+  } else {
+    pcov_at_uloq <- 50
   }
 
-  # Handle edge case where pcov_at_loq equals pcov_at_inflect (would cause division by zero)
-  if (pcov_at_loq == pcov_at_inflect) {
-    pcov_at_loq <- pcov_at_inflect + 1  # Avoid division by zero
-  }
+  pcov_at_loq <- max(pcov_at_lloq, pcov_at_uloq)
+  pcov_at_inflect <- min(data$pcov)
 
-  # Scale pcov values and cap at 100
-  scaled_data <- scale_pcov(data, pcov_at_inflect = pcov_at_inflect, pcov_at_loq = pcov_at_loq)
-  data$pcov <- scaled_data$pcov_scaled
-  data$pcov <- ifelse(data$pcov > 100, 100, data$pcov)
+  data$pcov <- ifelse(data$pcov > 100, 100, scale_pcov(data, pcov_at_inflect = pcov_at_inflect, pcov_at_loq = pcov_at_loq))
 
-  return(list(data=data,
-              scale_factor=1,
-              min_val=x_cond$min_val,
-              pcov_at_loq = pcov_at_loq,
-              pcov_at_inflect = pcov_at_inflect))
+  return(list(data=data, scale_factor=x_cond$scale_factor, min_val=x_cond$min_val))
 }
 
 ## The best fit must contain best_pred and antigen_plate containing plate_samples
@@ -1785,12 +1743,9 @@ predict_and_propagate_error <- function(best_fit,
 
   z    <- qnorm(0.975)
   max_conc_standard <- ifelse(study_params$is_log_independent,log10(antigen_plate$antigen_settings$standard_curve_concentration),antigen_plate$antigen_settings$standard_curve_concentration)
-
-  # Ensure scalar numeric values from best_glance
-  dydx_inflect <- as.numeric(best_fit$best_glance$dydx_inflect)[1]
-  lloq <- as.numeric(best_fit$best_glance$lloq)[1]
-  uloq <- as.numeric(best_fit$best_glance$uloq)[1]
-
+  dydx_inflect <- best_fit$best_glance$dydx_inflect
+  lloq <- best_fit$best_glance$lloq
+  uloq <- best_fit$best_glance$uloq
   # pred_se$overall_se <- se_std_response$overall_se
   pred_se$overall_se <- 0
   if (verbose) {
@@ -1880,10 +1835,7 @@ predict_and_propagate_error <- function(best_fit,
                                 x_var = "predicted_concentration",
                                 is.samples = TRUE,
                                 scale_factor=pcov_list$scale_factor,
-                                pcov_at_loq = pcov_list$pcov_at_loq,
-                                pcov_at_inflect = pcov_list$pcov_at_inflect,
                                 min_val=pcov_list$min_val)
-
   pcov_sample_data <- pcov_sample_list$data[, c("predicted_concentration","pcov")]
   names(pcov_sample_data)[which(names(pcov_sample_data) == "predicted_concentration")] <- "x"
   sample_se <- merge(sample_se, pcov_sample_data, by.x = "predicted_concentration", by.y = "x", all.x = TRUE)
@@ -1904,13 +1856,11 @@ gate_samples <- function(best_fit,
                          pcov_threshold,
                          verbose = TRUE) {
   sample_se <- best_fit$sample_se
-
-  # Ensure all threshold values are scalar numerics (not lists)
-  lloq_x <- as.numeric(best_fit$best_glance$lloq)[1]
-  uloq_x <- as.numeric(best_fit$best_glance$uloq)[1]
-  ulod <- as.numeric(best_fit$best_glance$ulod)[1]
-  llod <- as.numeric(best_fit$best_glance$llod)[1]
-  inflect_x <- as.numeric(best_fit$best_glance$inflect_x)[1]
+  lloq_x <- best_fit$best_glance$lloq
+  uloq_x <- best_fit$best_glance$uloq
+  ulod <- best_fit$best_glance$ulod
+  llod <- best_fit$best_glance$llod
+  inflect_x <- best_fit$best_glance$inflect_x
 
   sample_se$gate_class_loq <- ifelse(sample_se$predicted_concentration >= lloq_x &sample_se$predicted_concentration <= uloq_x,
                                      "Acceptable",

@@ -664,6 +664,7 @@ output$hasExperimentPath <- reactive({
   path_df <- input$upload_experiment_files   # fileInput returns a data frame
   !is.null(path_df) && nrow(path_df) > 0
 })
+
 outputOptions(output, "hasExperimentPath", suspendWhenHidden = FALSE)
 
 output$blank_layout_file <- downloadHandler(
@@ -702,15 +703,6 @@ output$blank_layout_file <- downloadHandler(
       cat("      •", ag, "\n")
     }
 
-    # generate_layout_template(
-    #   all_plates = all_plates,
-    #   study_accession = input$readxMap_study_accession,
-    #   experiment_accession = input$readxMap_experiment_accession_import,
-    #   n_wells = input$n_wells_on_plate,
-    #   header_list = bead_array_header_list(),
-    #   output_file = file
-    # )
-
     desc_status <- description_status()
 
     generate_layout_template(
@@ -738,8 +730,7 @@ output$blank_layout_file <- downloadHandler(
 
     cat("✓ Layout template generated!\n")
     cat("╚══════════════════════════════════════════════════════════╝\n\n")
-  }
-)
+  })
 
 output$plate_metadata_info <- renderUI({
   req(inFile()) # ensure new upload triggers updates
@@ -888,25 +879,26 @@ output$batch_invalid_messages <- renderTable({
 
 output$upload_batch_data_button <- renderUI({
   req(batch_metadata())
-
   state <- batch_validation_state()
   req(state)
 
-  metadata_batch <- batch_metadata()
-  batch_study_accession <- unique(metadata_batch$study_accession)
-  plates_to_upload <- unique(metadata_batch$plate_id)
+  metadata_batch <<- batch_metadata()
+  batch_study_accession <<- unique(metadata_batch$study_name)
+  batch_experiment_accession <<- unique(metadata_batch$experiment_name)
+  plates_to_upload <<- unique(metadata_batch$plate_id)
 
   # Build SQL list
-  plate_list_sql <- paste0("'", paste(plates_to_upload, collapse = "', '"), "'")
+  plate_list_sql <<- paste0("'", paste(plates_to_upload, collapse = "', '"), "'")
 
-  query <- sprintf("
+  query <- glue_sql("
     SELECT plate_id
     FROM madi_results.xmap_header
-    WHERE study_accession = '%s'
-      AND plate_id IN (%s);
-  ", batch_study_accession, plate_list_sql)
-
+    WHERE study_accession = {batch_study_accession}
+    AND experiment_accession IN ({batch_experiment_accession*})
+    AND plate_id IN ({plate_list_sql*});
+  ", .con = conn)
   existing_plates <- DBI::dbGetQuery(conn, query)
+
   plates_exist_in_db <- nrow(existing_plates) > 0
 
   # Determine badge status - use state$is_uploaded OR database check
@@ -1328,7 +1320,6 @@ observeEvent(input$view_raw_header,{
   print(header_info())
 })
 
-# Observe when data is selected again.
 observeEvent(plate_data(), {
   print("New plate data loaded!")
   print(head(plate_data()))
@@ -1345,19 +1336,15 @@ observe({
 })
 
 observeEvent(all_completed(), {
+    cat("all completed:")
+    print(all_completed())
 
-  # cat("statuses:")
-  # print(optimization_parsed_boolean())
-  cat("all completed:")
-  print(all_completed())
-  #if (is_optimization_plate(plate_data()) && all_completed()) {
-   #if (optimization_parsed_boolean() && all_completed()) {
-  if (all_completed()) {
-    optimization_ready(TRUE)
-  } else {
-    optimization_ready(FALSE)
-  }
-}, ignoreInit = TRUE)
+    if (all_completed()) {
+      optimization_ready(TRUE)
+    } else {
+      optimization_ready(FALSE)
+    }
+  }, ignoreInit = TRUE)
 
 observeEvent(input$split_opt_plates, {
   split_optimization_single_upload(study_accession = input$readxMap_study_accession, experiment_accession = input$readxMap_experiment_accession_import,
@@ -1368,24 +1355,14 @@ observeEvent(input$split_opt_plates, {
   optimization_refresh(optimization_refresh() + 1)
 })
 
-observeEvent(input$testButton, {
-
-  print("test")
-
-  print(original_df_combined())
-
-  print("unique plate types are")
-  print(unique_plate_types())
-
-
-})
-
 observeEvent(input$savexMapButton, {
+
   DBI::dbAppendTable(conn, Id(schema = "madi_results", table = "xmap_header"), theads)
   DBI::dbAppendTable(conn, Id(schema = "madi_results", table = "xmap_standard"), standard_data)
   DBI::dbAppendTable(conn, Id(schema = "madi_results", table = "xmap_control"), control_data)
   DBI::dbAppendTable(conn, Id(schema = "madi_results", table = "xmap_buffer"), buffer_data)
   DBI::dbAppendTable(conn, Id(schema = "madi_results", table = "xmap_sample"), sample_data)
+
   removeTab(inputId = "body_panel_id", target="previewxMap")
   removeTab(inputId = "body_panel_id", target="headerxMap")
   removeTab(inputId = "body_panel_id", target="readxMap")
@@ -1407,10 +1384,7 @@ observeEvent(input$savexMapButton, {
   reactive_df_study_exp(query_result)
   print("reactive_df_study_exp:loaded")
 
-
   initial_source <- obtain_initial_source(input$readxMap_study_accession)
-
- # initial_source <- unique(standard_data$source)[1]
 
   # Initialize study parameters for a user and study
   study_user_params_nrow <- nrow(fetch_study_configuration(study_accession = input$readxMap_study_accession
@@ -1418,8 +1392,6 @@ observeEvent(input$savexMapButton, {
   if (study_user_params_nrow == 0) {
     intitialize_study_configurations(study_accession = input$readxMap_study_accession,
                                      user = currentuser(), initial_source = initial_source)
-
-
   }
 })
 
@@ -1463,6 +1435,31 @@ observeEvent(input$upload_experiment_files, {
     cat("  ", i, ". ", current_exp_files$name[i], "\n", sep="")
   }
   cat("\n")
+
+  # ============================================================================
+  # HELPER FUNCTION: Extract plate number from text (filename, plateid, etc.)
+  # Looks for patterns like "plate_3", "plate 3", "plate.3", "plate3"
+  # ============================================================================
+  extract_plate_number <- function(text) {
+    if (is.na(text) || text == "") return(NA_character_)
+
+    # Try multiple patterns to extract plate number
+    # Pattern 1: "plate" followed by separator and number (plate_3, plate 3, plate.3, plate-3)
+    match1 <- regmatches(text, regexpr("[Pp]late[_\\s\\.-]+(\\d+)", text, perl = TRUE))
+    if (length(match1) > 0 && nchar(match1) > 0) {
+      num <- gsub("[^0-9]", "", match1)
+      if (nchar(num) > 0) return(paste0("plate_", num))
+    }
+
+    # Pattern 2: Just "plate" followed immediately by number (plate3, plate1IgGtot...)
+    match2 <- regmatches(text, regexpr("[Pp]late(\\d+)", text, perl = TRUE))
+    if (length(match2) > 0 && nchar(match2) > 0) {
+      num <- gsub("[^0-9]", "", match2)
+      if (nchar(num) > 0) return(paste0("plate_", num))
+    }
+
+    return(NA_character_)
+  }
 
   batch_data_list <- list()
 
@@ -1517,20 +1514,86 @@ observeEvent(input$upload_experiment_files, {
   header_list <- lapply(batch_data_list, `[[`, "header")
   header_list <- add_source_column(header_list)
 
-  # ADD PLATE NUMBERS to headers
-  cat("\nAdding plate numbers to headers...\n")
+  # ============================================================================
+  # REFACTORED: Extract plate numbers from filename or plateid
+  # Priority: 1) plateid from header, 2) filename, 3) fallback to sequential
+  # ============================================================================
+  cat("\nExtracting plate numbers from filenames/plateids...\n")
+
+  # Track used plate numbers to handle fallbacks without duplicates
+  used_plate_nums <- c()
+
   for (i in seq_along(header_list)) {
-    plate_num <- paste0("plate_", i)
+    file_name <- names(header_list)[i]
+    plate_num <- NA_character_
+    extraction_source <- ""
+
+    # PRIORITY 1: Try to extract from plateid in header metadata
+    if ("plateid" %in% names(header_list[[i]]) &&
+        !is.na(header_list[[i]]$plateid[1]) &&
+        header_list[[i]]$plateid[1] != "") {
+      plate_num <- extract_plate_number(header_list[[i]]$plateid[1])
+      if (!is.na(plate_num)) {
+        extraction_source <- paste0("plateid ('", header_list[[i]]$plateid[1], "')")
+      }
+    }
+
+    # PRIORITY 2: Try to extract from file_name in header metadata
+    if (is.na(plate_num) && "file_name" %in% names(header_list[[i]])) {
+      plate_num <- extract_plate_number(header_list[[i]]$file_name[1])
+      if (!is.na(plate_num)) {
+        extraction_source <- paste0("file_name ('", header_list[[i]]$file_name[1], "')")
+      }
+    }
+
+    # PRIORITY 3: Try to extract from the uploaded filename (source_file)
+    if (is.na(plate_num)) {
+      plate_num <- extract_plate_number(file_name)
+      if (!is.na(plate_num)) {
+        extraction_source <- paste0("source_file ('", file_name, "')")
+      }
+    }
+
+    # FALLBACK: If still NA, assign a sequential number that doesn't conflict
+    if (is.na(plate_num)) {
+      # Find the next available plate number
+      fallback_num <- 1
+      while (paste0("plate_", fallback_num) %in% used_plate_nums) {
+        fallback_num <- fallback_num + 1
+      }
+      plate_num <- paste0("plate_", fallback_num)
+      extraction_source <- "fallback (sequential)"
+      cat("  ⚠️  ", file_name, "→ Could not extract plate number, using fallback:", plate_num, "\n")
+    }
+
+    # Check for duplicate plate numbers
+    if (plate_num %in% used_plate_nums) {
+      original_plate_num <- plate_num
+      # Find next available
+      base_num <- as.numeric(gsub("plate_", "", plate_num))
+      while (paste0("plate_", base_num) %in% used_plate_nums) {
+        base_num <- base_num + 1
+      }
+      plate_num <- paste0("plate_", base_num)
+      cat("  ⚠️  Duplicate plate number detected! '", original_plate_num,
+          "' already used. Reassigning to: ", plate_num, "\n", sep = "")
+    }
+
+    # Track this plate number
+    used_plate_nums <- c(used_plate_nums, plate_num)
+
+    # Assign to header
     header_list[[i]]$plate <- plate_num
 
-    # If plateid is NA or empty, use plate number
+    # If plateid is NA or empty, use the extracted plate number
     if (is.na(header_list[[i]]$plateid[1]) || header_list[[i]]$plateid[1] == "") {
       header_list[[i]]$plateid <- plate_num
     }
 
-    cat("  ", names(header_list)[i], "→ plate:", plate_num,
-        "| plateid:", header_list[[i]]$plateid[1], "\n")
+    cat("  ✓ ", file_name, " → ", plate_num, " (from ", extraction_source, ")\n", sep = "")
   }
+
+  cat("\n")
 
   plate_list <- lapply(batch_data_list, `[[`, "plate")
   plate_list <- add_source_column(plate_list)
@@ -1762,24 +1825,50 @@ observeEvent(input$upload_layout_file, {
   layout_template_sheets(all_sheets$data)
 
   # Construct batch header metadata
-  batch_header <- construct_batch_upload_metadata(
+  batch_header <<- construct_batch_upload_metadata(
     plates_map = all_sheets$data[["plates_map"]],
     plate_metadata_list = bead_array_header_list_data,
     workspace_id = workspace_id,
     currentuser = currentuser
   )
 
-  # Prepare metadata
-  batch_metadata_data <- combine_plate_metadata(head_list = batch_header)
+  # batch_header <- transpose_batch_header(batch_header_wide)
+  #
+  # # Debug: Check what columns are in batch_header
+  # cat("\n=== DEBUG: batch_header columns after construct_batch_upload_metadata ===\n")
+  # for (nm in names(batch_header)) {
+  #   cat("  ", nm, "columns:", paste(names(batch_header[[nm]]), collapse = ", "), "\n")
+  #   if ("sample_dilution_factor" %in% names(batch_header[[nm]])) {
+  #     cat("    sample_dilution_factor values:", paste(batch_header[[nm]]$sample_dilution_factor, collapse = ", "), "\n")
+  #   }
+  # }
+  #
+  # # Prepare metadata
+  # batch_metadata_data <- combine_plate_metadata(head_list = batch_header)
+
+  # Verify sample_dilution_factor is present
+  batch_metadata_data <- batch_header
+  cat("\n=== DEBUG: batch_metadata_data after combine ===\n")
+  cat("Columns:", paste(names(batch_metadata_data), collapse = ", "), "\n")
+  if ("sample_dilution_factor" %in% names(batch_metadata_data)) {
+    cat("sample_dilution_factor values:", paste(batch_metadata_data$sample_dilution_factor, collapse = ", "), "\n")
+  } else {
+    cat("⚠ WARNING: sample_dilution_factor column MISSING!\n")
+  }
+
+  all_sheets_v <<- all_sheets
+
   batch_metadata_data <- merge(
     batch_metadata_data,
-    all_sheets$data[["plate_id"]][, c("plate_filename", "number_of_wells")],
-    by.x = "file_name",
-    by.y = "plate_filename",
+    all_sheets$data[["plate_id"]][, c("plateid", "number_of_wells")],
+    by.x = "plateid",
+    by.y = "plateid",
     all.x = TRUE
   )
 
   names(batch_metadata_data)[names(batch_metadata_data) == "number_of_wells"] <- "n_wells"
+
+  batch_metadata_data_v <<- batch_metadata_data
 
   cat("Validating...\n")
 

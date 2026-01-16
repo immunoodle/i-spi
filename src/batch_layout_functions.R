@@ -1981,6 +1981,77 @@ import_layout_file <- function(file_path,
   return(result)
 }
 
+#' Extract plate identification columns from plate metadata list
+#'
+#' @param plate_metadata_list A named list of tibbles/data frames, each containing
+#'   plate metadata with columns: plate, plateid, plate_id, source_file
+#'
+#' @return A data frame with one row per plate and columns: plate, plateid, plate_id, source_file
+#'
+extract_plate_identifiers <- function(plate_metadata_list) {
+
+  # Define columns to extract
+  cols_to_extract <- c("plate", "plateid", "plate_id", "source_file", "reader_serial_number",
+                       "file_name", "rp1_pmt_volts", "rp1_target", "acquisition_date")
+
+  # Extract and combine
+  result <- do.call(rbind, lapply(names(plate_metadata_list), function(nm) {
+    df <- plate_metadata_list[[nm]]
+
+    # Check which columns exist
+    available_cols <- intersect(cols_to_extract, names(df))
+    missing_cols <- setdiff(cols_to_extract, names(df))
+
+    # Extract available columns (take first row if multiple)
+    extracted <- df[1, available_cols, drop = FALSE]
+
+    # Add NA for any missing columns
+    for (col in missing_cols) {
+      extracted[[col]] <- NA_character_
+    }
+
+    # Ensure column order is consistent
+    extracted[, cols_to_extract, drop = FALSE]
+  }))
+
+  # Convert to plain data.frame and reset row names
+  result <- as.data.frame(result, stringsAsFactors = FALSE)
+  rownames(result) <- NULL
+
+  return(result)
+}
+
+#' Transpose batch header data frame
+#'
+#' @param batch_header A data frame with a source_file column to use as column names
+#' @param id_column The column to use for naming the transposed columns (default: "source_file")
+#'
+#' @return A transposed data frame where original rows become columns named by source_file values
+#'
+transpose_batch_header <- function(batch_header, id_column = "source_file") {
+
+  # Get the column names to use for new columns
+  new_col_names <- batch_header[[id_column]]
+
+  # Remove the id column from the data before transposing
+  data_to_transpose <- batch_header[, names(batch_header) != id_column, drop = FALSE]
+
+  # Transpose the data
+  transposed <- as.data.frame(t(data_to_transpose), stringsAsFactors = FALSE)
+
+  # Set column names to the source_file values
+  names(transposed) <- new_col_names
+
+  # The row names are now the original column names - convert to a column
+  transposed$variable <- rownames(transposed)
+  rownames(transposed) <- NULL
+
+  # Reorder so variable is first
+  transposed <- transposed[, c("variable", new_col_names)]
+
+  return(transposed)
+}
+
 # Join sample dilutions for the plate to the header
 construct_batch_upload_metadata <- function(plates_map, plate_metadata_list, currentuser, workspace_id) {
 
@@ -1994,10 +2065,12 @@ construct_batch_upload_metadata <- function(plates_map, plate_metadata_list, cur
   cat("First metadata item columns:", paste(names(first_item), collapse=", "), "\n")
 
   # Get unique sample dilution factors by plate_number
-  sample_dilutions_by_plate <- unique(
+  sample_dilutions_by_plate <- as.data.frame(dplyr::distinct(
     plates_map[plates_map$specimen_type == "X",
-               c("plate_number", "specimen_type", "specimen_dilution_factor")]
+               c("plate_number", "specimen_type", "specimen_dilution_factor")])
   )
+
+  sample_dilutions_by_plate <- sample_dilutions_by_plate[!is.na(sample_dilutions_by_plate$plate_number), ]
 
   names(sample_dilutions_by_plate)[names(sample_dilutions_by_plate) == "specimen_dilution_factor"] <- "sample_dilution_factor"
 
@@ -2005,76 +2078,32 @@ construct_batch_upload_metadata <- function(plates_map, plate_metadata_list, cur
   print(sample_dilutions_by_plate)
 
   # Get experiment by plate
-  experiment_by_plate <- unique(
-    plates_map[, c("plate_number", "experiment_name")]
+  experiment_by_plate <- as.data.frame(dplyr::distinct(
+    plates_map[, c("study_name", "plate_number", "experiment_name", "feature")])
   )
+  experiment_by_plate$workspace_id <- workspace_id
+  experiment_by_plate$auth0_user <- currentuser
 
   cat("Experiment by plate:\n")
   print(experiment_by_plate)
   cat("\n")
 
-  # Add dilution factor to each header df in the list
-  plate_metadata_list_updated <- lapply(names(plate_metadata_list), function(plate_name) {
-    df <- plate_metadata_list[[plate_name]]
+  source_file_by_plate <- extract_plate_identifiers(plate_metadata_list)
+  source_file_by_plate$plate_number <- source_file_by_plate$plate
 
-    # Get plate number from the df
-    if ("plate" %in% names(df) && !is.na(df$plate[1])) {
-      plate_num <- df$plate[1]
-    } else {
-      # Extract from name or create from index
-      plate_num <- paste0("plate_", which(names(plate_metadata_list) == plate_name))
-      df$plate <- plate_num
-      cat("  Created plate number", plate_num, "for", plate_name, "\n")
-    }
+  cat("Source file by plate:\n")
+  print(source_file_by_plate)
+  cat("\n")
 
-    cat("  Processing:", plate_name, "| plate_num:", plate_num, "\n")
+  plate_metadata_list_updated <- inner_join(experiment_by_plate, sample_dilutions_by_plate, by = "plate_number")
+  plate_metadata_list_updated <- inner_join(plate_metadata_list_updated, source_file_by_plate, by = "plate_number")
+#
+#   # Restore names
+#   names(plate_metadata_list_updated) <- names(plate_metadata_list)
 
-    # Match with dilution table
-    match_row <- sample_dilutions_by_plate[
-      sample_dilutions_by_plate$plate_number == plate_num, , drop = FALSE
-    ]
-
-    # Add dilution column if match found
-    if (nrow(match_row) == 1) {
-      df$sample_dilution_factor <- match_row$sample_dilution_factor
-      cat("    ✓ Added dilution factor:", match_row$sample_dilution_factor, "\n")
-    } else if (nrow(match_row) > 1) {
-      df$sample_dilution_factor <- match_row$sample_dilution_factor[1]
-      cat("    ⚠ Multiple dilution factors, using first:", match_row$sample_dilution_factor[1], "\n")
-    } else {
-      df$sample_dilution_factor <- NA_real_
-      cat("    ⚠ No dilution factor found for plate_number:", plate_num, "\n")
-    }
-
-    # Add experiment_name
-    exp_row <- experiment_by_plate[
-      experiment_by_plate$plate_number == plate_num, , drop = FALSE
-    ]
-
-    if (nrow(exp_row) > 0) {
-      df$experiment_name <- exp_row$experiment_name[1]
-      cat("    ✓ Added experiment:", exp_row$experiment_name[1], "\n")
-    } else {
-      df$experiment_name <- NA_character_
-      cat("    ⚠ No experiment found for plate_number:", plate_num, "\n")
-    }
-
-    # Add metadata
-    df$study_accession <- unique(plates_map$study_name)[1]
-    df$experiment_accession <- unique(plates_map$feature)[1]
-    df$workspace_id <- workspace_id
-    df$auth0_user <- currentuser
-
-    return(df)
-  })
-
-  # Restore names
-  names(plate_metadata_list_updated) <- names(plate_metadata_list)
-
-  # Add source file for later join
-  for (nm in names(plate_metadata_list_updated)) {
-    plate_metadata_list_updated[[nm]]$source_file <- nm
-  }
+  cat("plate_metadata_list_updated:\n")
+  print(plate_metadata_list_updated)
+  cat("\n")
 
   cat("✓ Batch metadata construction complete\n")
   cat("=====================================\n\n")
@@ -2269,12 +2298,16 @@ plate_plot_plotly2 <- function(data, plate_size = 96, title = NULL, colour = NUL
 combine_plate_metadata <- function(head_list) {
   plate_metadata <- do.call(rbind, lapply(names(head_list), function(nm) {
     df <- head_list[[nm]]
+    # Ensure sample_dilution_factor column exists
+    if (!"sample_dilution_factor" %in% names(df)) {
+      df$sample_dilution_factor <- 1
+      cat("  ⚠ Added default sample_dilution_factor for:", nm, "\n")
+    }
     df
   }))
 
   return(plate_metadata)
 }
-
 
 ## this function merges layout info and raw file info for uploading samples
 prepare_batch_bead_assay_samples <- function(sample_plate_map, combined_plate_data, batch_metadata, antigen_import_list, subject_map) {
@@ -2553,22 +2586,35 @@ prepare_planned_visits <- function(timepoint_map) {
 }
 
 prepare_batch_header <- function(metadata_batch) {
-  metadata_batch <- metadata_batch[,c("study_accession", "experiment_name", "plate_id", "file_name", "acquisition_date",
-                                      "reader_serial_number", "rp1_pmt_volts", "rp1_target", "auth0_user", "workspace_id", "plateid", "plate",
+
+  # Ensure sample_dilution_factor exists and has no NA values
+  if (!"sample_dilution_factor" %in% names(metadata_batch)) {
+    metadata_batch$sample_dilution_factor <- 1
+    cat("  ⚠ Added default sample_dilution_factor column\n")
+  } else {
+    # Replace NA values with default
+    na_count <- sum(is.na(metadata_batch$sample_dilution_factor))
+    if (na_count > 0) {
+      metadata_batch$sample_dilution_factor[is.na(metadata_batch$sample_dilution_factor)] <- 1
+      cat("  ⚠ Replaced", na_count, "NA sample_dilution_factor values with default 1\n")
+    }
+  }
+
+  metadata_batch <- metadata_batch[,c("study_name", "experiment_name", "plate_id", "file_name", "acquisition_date",
+                                      "reader_serial_number", "rp1_pmt_volts", "rp1_target",
+                                      "auth0_user", "workspace_id", "plateid", "plate",
                                       "sample_dilution_factor",
                                       "n_wells")]
+  names(metadata_batch)[names(metadata_batch) == "study_name"] <- "study_accession"
   names(metadata_batch)[names(metadata_batch) == "experiment_name"] <- "experiment_accession"
   metadata_batch$assay_response_variable <- "mfi"
   metadata_batch$assay_independent_variable <- "concentration"
-  # metadata_batch$sample_dilution_factor <- unique(check_df$sample_dilution_factor[!is.na(check_df$sample_dilution_factor)])[1]
 
   # Debug output
   cat("\n=== prepare_batch_header DEBUG ===\n")
   cat("Columns in prepared header:", paste(names(metadata_batch), collapse = ", "), "\n")
   cat("Number of plates:", nrow(metadata_batch), "\n")
   cat("sample_dilution_factor values:", paste(metadata_batch$sample_dilution_factor, collapse = ", "), "\n")
-  cat("assay_response_variable values:", paste(unique(metadata_batch$assay_response_variable), collapse = ", "), "\n")
-  cat("assay_independent_variable values:", paste(unique(metadata_batch$assay_independent_variable), collapse = ", "), "\n")
   cat("===================================\n")
 
   return(metadata_batch)

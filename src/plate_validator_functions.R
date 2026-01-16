@@ -754,7 +754,6 @@ validate_required_columns <- function(data, required_cols, table_name) {
   return(result)
 }
 
-
 #' Get rows with null values in specified columns
 #'
 #' @param data Data frame to check
@@ -773,7 +772,6 @@ get_null_rows <- function(data, columns) {
 
   return(data[has_null, ])
 }
-
 
 #' Debug sample data preparation
 #'
@@ -818,7 +816,6 @@ debug_sample_preparation <- function(sample_plate_map, combined_plate_data,
   return(debug_info)
 }
 
-
 #' Check if plates exist in database
 #'
 #' @param conn Database connection
@@ -826,8 +823,7 @@ debug_sample_preparation <- function(sample_plate_map, combined_plate_data,
 #' @param plate_ids Vector of plate IDs to check
 #'
 #' @return Data frame of existing plates
-check_existing_plates <- function(conn, study_accession, plate_ids) {
-
+check_existing_plates <- function(conn, study_accession, experiment_accession, plateids) {
   query <- glue::glue_sql("
     SELECT
       xmap_header_id,
@@ -847,12 +843,12 @@ check_existing_plates <- function(conn, study_accession, plate_ids) {
       n_wells
     FROM madi_results.xmap_header
     WHERE study_accession = {study_accession}
-      AND plate_id IN ({plate_ids*});
+    AND experiment_accession = {experiment_accession}
+    AND plate_id IN ({plateids*});
   ", .con = conn)
-
-  DBI::dbGetQuery(conn, query)
+  existing_plates <- DBI::dbGetQuery(conn, query)
+  return(existing_plates)
 }
-
 
 #' Get existing antigens for study/experiment
 #'
@@ -872,7 +868,6 @@ get_existing_antigens <- function(conn, study_accession, experiment_accession) {
 
   DBI::dbGetQuery(conn, query)
 }
-
 
 #' Get existing planned visits for study
 #'
@@ -1163,9 +1158,9 @@ upload_batch_to_database <- function(conn, batch_plates, metadata_batch, layout_
   plates_map <- layout_sheets[["plates_map"]]
 
   # Get unique identifiers
-  study_accession <- unique(metadata_batch$study_accession)
+  study_accession <- unique(metadata_batch$study_name)
   experiment_accession <- unique(metadata_batch$experiment_name)
-  plates_to_upload <- unique(metadata_batch$plate_id)
+  plateids <- unique(metadata_batch$plateid)
 
   # Initialize result tracking
   result <- list(
@@ -1185,11 +1180,14 @@ upload_batch_to_database <- function(conn, batch_plates, metadata_batch, layout_
   )
 
   # Check for existing plates
-  existing_plates <- check_existing_plates(conn, study_accession, plates_to_upload)
+  existing_plates <- check_existing_plates(conn = conn,
+                                           study_accession = study_accession,
+                                           experiment_accession = experiment_accession,
+                                           plateids = plateids)
 
   if (nrow(existing_plates) > 0) {
     result$already_exists <- TRUE
-    result$message <- "These plates already exist for the study"
+    result$message <- "These plates already exist for the study and experiment"
     return(result)
   }
 
