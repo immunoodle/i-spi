@@ -27,9 +27,16 @@ observeEvent(list(
       response_var <- loaded_data$response_var
       indep_var <-  loaded_data$indep_var
 
-      se_std_response <- assay_se(loaded_data$standards,
-                                  dilution_col = "dilution",
-                                  response_col = response_var)
+      # se_std_response <- assay_se(loaded_data$standards,
+      #                             dilution_col = "dilution",
+      #                             response_col = response_var)
+      se_std_response <- assay_se(
+        data = loaded_data$standards,
+        dilution_col = "dilution",
+        response_col = response_var,
+        plate_col = "plate",
+        method = "pooled_within"
+      )
 
       study_params <- fetch_study_parameters(study_accession = selected_study,
                                              param_user = currentuser(),
@@ -72,21 +79,16 @@ observeEvent(list(
           )
           # div(class = "table-container",tableOutput("samples_above_ulod")),
           # div(class = "table-container",tableOutput("samples_below_llod"))
-
-
-
-        # uiOutput("sc_antigen_selector"),
-        # uiOutput("sc_source_selector"),
-        # output$summary_table <- renderTable({
-        #   fit_summary()
-        # }),
-        # plotOutput("model_comparisions")
+          # uiOutput("sc_antigen_selector"),
+          # uiOutput("sc_source_selector"),
+          # output$summary_table <- renderTable({
+          #   fit_summary()
+          # }),
+          # plotOutput("model_comparisions")
         )
       })
 
  #   }
-
-
 
     output$standard_curve_context <- renderUI({
       standards_n <- nrow(loaded_data$standards[loaded_data$standards$experiment_accession == selected_experiment,])
@@ -192,6 +194,7 @@ observeEvent(list(
       !(length(reasons) > 0)
 
     })
+
     output$can_fit_standard_curve <- reactive({
       standards_n <- nrow(loaded_data$standards[loaded_data$standards$experiment_accession == selected_experiment,])
       blanks_n <- nrow(loaded_data$blanks[loaded_data$blanks$experiment_accession == selected_experiment,])
@@ -219,10 +222,8 @@ observeEvent(list(
       !(length(reasons) > 0)
 
     })
+
     outputOptions(output, "can_fit_standard_curve", suspendWhenHidden = FALSE)
-
-
-
 
     output$sc_plate_selector <- renderUI({
       req(loaded_data$standards$study_accession, loaded_data$standards$experiment_accession)
@@ -288,10 +289,6 @@ observeEvent(list(
 
     })
 
-
-
-
-
     antigen_plate <- reactive({
       req(input$sc_source_select,
           input$sc_antigen_select,
@@ -317,7 +314,6 @@ observeEvent(list(
       result
     })
 
-
     prepped_data <- reactive({
       plate <- antigen_plate()  # pull reactive value
       response_var <- loaded_data$response_var
@@ -337,9 +333,6 @@ observeEvent(list(
         verbose = verbose
       )
     })
-
-
-
 
     formulas <- reactive({
       plate <- antigen_plate()
@@ -508,11 +501,14 @@ observeEvent(list(
                             verbose = verbose)
 
 
-      best_fit <- predict_and_propagate_error(best_fit = best_fit,
-                                              response_var = response_var,
-                                              antigen_plate = antigen_plate(),
-                                              study_params = study_params,
-                                              verbose = verbose)
+      best_fit <- predict_and_propagate_error(
+        best_fit = best_fit,
+        response_var = response_var,
+        antigen_plate = antigen_plate(),
+        study_params = study_params,
+        se_std_response = se_std_response,
+        verbose = verbose
+      )
 
       best_fit <- gate_samples(best_fit = best_fit,
                                response_variable = response_var,
@@ -524,11 +520,6 @@ observeEvent(list(
       return(best_fit)
 
     })
-#
-#     output$print_list <- renderPrint({
-#       best_fit()   # your reactive list
-#     })
-#
     output$is_display_log_response <- renderUI({
       input_switch("display_log_response", "Display as Log Response", value = T)
     })
@@ -550,7 +541,6 @@ observeEvent(list(
                           independent_variable = indep_var,
                           response_variable = response_var)
     })
-#
 
     output$download_best_fit_parameter_estimates  <-  downloadHandler(
       filename = function() {
@@ -567,15 +557,11 @@ observeEvent(list(
       }
     )
 
-
-
-
     output$summary_statistics <- renderTable({
       req(best_fit())
       best_fit()$best_glance
     }, caption= "Summary Statistics",
     caption.placement = getOption("xtable.caption.placement", "top"))
-
 
    output$download_samples_above_ulod <- downloadHandler(
      filename = function() {
@@ -677,11 +663,20 @@ observeEvent(list(
       # the list of antigen and plates is truncated to exclude standard data with < 6 points
       antigen_plate_list_res$antigen_plate_list_ids <- prepped_data_list_res$antigen_plate_name_list
 
+      se_std_response_list <- build_se_std_response_list(
+        antigen_plate_list_res = antigen_plate_list_res,
+        loaded_data_list = loaded_data_list,
+        response_var = response_var
+      )
+
 
       cat(paste("after prepped_data_list_res", exp))
       batch_fit_res <- fit_experiment_plate_batch(prepped_data_list_res = prepped_data_list_res,
                                                   antigen_plate_list_res = antigen_plate_list_res,
-                                                  model_names = model_names, study_params = study_params, verbose = verbose)
+                                                  model_names = model_names,
+                                                  study_params = study_params,
+                                                  se_std_response_list = se_std_response_list,
+                                                  verbose = verbose)
 
       # cat(paste("after antigen_list_res", exp))
       batch_outputs <- create_batch_fit_outputs(batch_fit_res = batch_fit_res, antigen_plate_list_res)

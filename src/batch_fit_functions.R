@@ -134,7 +134,12 @@ prep_plate_data_batch <- function(antigen_plate_list_res, study_params, verbose 
               antigen_plate_name_list = antigen_plate_name_list))
 }
 
-fit_experiment_plate_batch <- function(prepped_data_list_res, antigen_plate_list_res, model_names, study_params, verbose = TRUE) {
+fit_experiment_plate_batch <- function(prepped_data_list_res,
+                                       antigen_plate_list_res,
+                                       model_names,
+                                       study_params,
+                                       se_std_response_list = NULL,
+                                       verbose = TRUE) {
   prepped_data_list <- prepped_data_list_res$prepped_data_list
   formula_list <- prepped_data_list_res$formula_list
   antigen_plate_list <- antigen_plate_list_res$antigen_plate_list
@@ -225,10 +230,18 @@ fit_experiment_plate_batch <- function(prepped_data_list_res, antigen_plate_list
                                                            antigen_fit_options = prepped_data_list[[prep_dat_name]]$antigen_fit_options,
                                                            verbose = verbose)
 
+    # Get plate-specific SE if available
+    plate_se_std_response <- if (!is.null(se_std_response_list)) {
+      se_std_response_list[[prep_dat_name]]
+    } else {
+      NULL
+    }
     candidate_best_fit_list[[prep_dat_name]]  <- predict_and_propagate_error(best_fit = candidate_best_fit_list[[prep_dat_name]],
                                                                              response_var = "mfi",
                                                                              antigen_plate = antigen_plate_list[[prep_dat_name]],
-                                                                             study_params = study_params, verbose = verbose)
+                                                                             study_params = study_params,
+                                                                             se_std_response = plate_se_std_response,
+                                                                             verbose = verbose)
 
     candidate_best_fit_list[[prep_dat_name]] <- gate_samples(best_fit = candidate_best_fit_list[[prep_dat_name]],
                                                              response_variable = "mfi",
