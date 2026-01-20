@@ -114,8 +114,31 @@ dxdyiYd5 <- function(y, a, b, c, d, g) {
 }
 
 
-inv_Y4 <- function(y, a, b, c, d) {
-  c + b * log((a - d) / (y - d) - 1)
+# inv_Y4 <- function(y, a, b, c, d) {
+#   c + b * log((a - d) / (y - d) - 1)
+# }
+
+#' Safe inverse Y4 with bounds checking
+#' @param y response value(s)
+#' @param a lower asymptote
+#' @param b slope parameter
+#' @param c inflection point
+#' @param d upper asymptote
+#' @param tol tolerance for boundary (default 1e-6)
+#' @return predicted x value(s), NA for out-of-bounds responses
+inv_Y4 <- function(y, a, b, c, d, tol = 1e-6) {
+  # Ensure y is strictly between asymptotes
+  y_min <- min(a, d) + tol
+  y_max <- max(a, d) - tol
+
+  result <- rep(NA_real_, length(y))
+  valid <- !is.na(y) & y > y_min & y < y_max
+
+  if (any(valid)) {
+    result[valid] <- c + b * log((a - d) / (y[valid] - d) - 1)
+  }
+
+  return(result)
 }
 
 inv_Y4_fixed <- function(y, fixed_a, b, c, d) {

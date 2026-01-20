@@ -138,7 +138,7 @@ fit_experiment_plate_batch <- function(prepped_data_list_res,
                                        antigen_plate_list_res,
                                        model_names,
                                        study_params,
-                                       se_std_response_list = NULL,
+                                       se_antigen_table = NULL,
                                        verbose = TRUE) {
   prepped_data_list <- prepped_data_list_res$prepped_data_list
   formula_list <- prepped_data_list_res$formula_list
@@ -230,17 +230,24 @@ fit_experiment_plate_batch <- function(prepped_data_list_res,
                                                            antigen_fit_options = prepped_data_list[[prep_dat_name]]$antigen_fit_options,
                                                            verbose = verbose)
 
-    # Get plate-specific SE if available
-    plate_se_std_response <- if (!is.null(se_std_response_list)) {
-      se_std_response_list[[prep_dat_name]]
+    # Extract identifiers for SE lookup
+    current_plate <- antigen_plate_list[[prep_dat_name]]
+    current_se <- if (!is.null(se_antigen_table)) {
+      lookup_antigen_se(
+        se_table = se_antigen_table,
+        study_accession = unique(current_plate$plate_standard$study_accession),
+        experiment_accession = unique(current_plate$plate_standard$experiment_accession),
+        source = unique(current_plate$plate_standard$source),
+        antigen = unique(current_plate$plate_standard$antigen)
+      )
     } else {
-      NULL
+      NA_real_
     }
     candidate_best_fit_list[[prep_dat_name]]  <- predict_and_propagate_error(best_fit = candidate_best_fit_list[[prep_dat_name]],
                                                                              response_var = "mfi",
                                                                              antigen_plate = antigen_plate_list[[prep_dat_name]],
                                                                              study_params = study_params,
-                                                                             se_std_response = plate_se_std_response,
+                                                                             se_std_response = current_se,
                                                                              verbose = verbose)
 
     candidate_best_fit_list[[prep_dat_name]] <- gate_samples(best_fit = candidate_best_fit_list[[prep_dat_name]],

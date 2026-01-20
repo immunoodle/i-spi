@@ -21,7 +21,9 @@ observeEvent(list(
       param_group = "standard_curve_options"
       allowed_constraint_methods = c("default","user_defined","range_of_blanks", "geometric_mean_of_blanks")
 
-      loaded_data <- pull_data(study_accession = selected_study, experiment_accession = selected_experiment, conn = conn)
+      loaded_data <- pull_data(study_accession = selected_study,
+                               experiment_accession = selected_experiment,
+                               conn = conn)
 
 
       response_var <- loaded_data$response_var
@@ -30,12 +32,14 @@ observeEvent(list(
       # se_std_response <- assay_se(loaded_data$standards,
       #                             dilution_col = "dilution",
       #                             response_col = response_var)
-      se_std_response <- assay_se(
-        data = loaded_data$standards,
-        dilution_col = "dilution",
+      se_antigen_table <- compute_antigen_se_table(
+        standards_data = loaded_data$standards,
         response_col = response_var,
+        dilution_col = "dilution",
         plate_col = "plate",
-        method = "pooled_within"
+        grouping_cols = c("study_accession", "experiment_accession", "source", "antigen"),
+        method = "pooled_within",
+        verbose = TRUE
       )
 
       study_params <- fetch_study_parameters(study_accession = selected_study,
@@ -478,6 +482,15 @@ observeEvent(list(
       response_var <- loaded_data$response_var
       indep_var <- loaded_data$indep_var
 
+      # Look up SE for current antigen selection
+      current_se <- lookup_antigen_se(
+        se_table = se_antigen_table,
+        study_accession = selected_study,
+        experiment_accession = selected_experiment,
+        source = input$sc_source_select,
+        antigen = input$sc_antigen_select
+      )
+
       best_fit <- select_model_fit_AIC(fit_summary = fit_summary(),
                                        fit_robust_lm = fit_robust_lm(),
                                        fit_params = fit_params(),
@@ -506,7 +519,7 @@ observeEvent(list(
         response_var = response_var,
         antigen_plate = antigen_plate(),
         study_params = study_params,
-        se_std_response = se_std_response,
+        se_std_response = current_se,
         verbose = verbose
       )
 
@@ -520,6 +533,8 @@ observeEvent(list(
       return(best_fit)
 
     })
+
+
     output$is_display_log_response <- renderUI({
       input_switch("display_log_response", "Display as Log Response", value = T)
     })
@@ -650,8 +665,23 @@ observeEvent(list(
 
       loaded_data_list <- list()
       for(exp in exp_list) {
-        loaded_data_list[[exp]] <- pull_data(study_accession = input$readxMap_study_accession, experiment_accession = exp, conn = conn)
+        loaded_data_list[[exp]] <- pull_data(study_accession = input$readxMap_study_accession,
+                                             experiment_accession = exp,
+                                             conn = conn)
       }
+
+      # Compute SE table for all antigens across all experiments
+      all_standards <- do.call(rbind, lapply(loaded_data_list, function(x) x$standards))
+
+      se_antigen_table <- compute_antigen_se_table(
+        standards_data = all_standards,
+        response_col = response_var,
+        dilution_col = "dilution",
+        plate_col = "plate",
+        grouping_cols = c("study_accession", "experiment_accession", "source", "antigen"),
+        method = "pooled_within",
+        verbose = TRUE
+      )
 
       antigen_list_res <- build_antigen_list(exp_list = exp_list, loaded_data_list = loaded_data_list, study_accession = input$readxMap_study_accession)
 
@@ -663,19 +693,12 @@ observeEvent(list(
       # the list of antigen and plates is truncated to exclude standard data with < 6 points
       antigen_plate_list_res$antigen_plate_list_ids <- prepped_data_list_res$antigen_plate_name_list
 
-      se_std_response_list <- build_se_std_response_list(
-        antigen_plate_list_res = antigen_plate_list_res,
-        loaded_data_list = loaded_data_list,
-        response_var = response_var
-      )
-
-
       cat(paste("after prepped_data_list_res", exp))
       batch_fit_res <- fit_experiment_plate_batch(prepped_data_list_res = prepped_data_list_res,
                                                   antigen_plate_list_res = antigen_plate_list_res,
                                                   model_names = model_names,
                                                   study_params = study_params,
-                                                  se_std_response_list = se_std_response_list,
+                                                  se_antigen_table = se_antigen_table,
                                                   verbose = verbose)
 
       # cat(paste("after antigen_list_res", exp))
