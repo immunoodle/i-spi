@@ -2036,7 +2036,7 @@ predict_and_propagate_error <- function(best_fit,
     message("Finished predict_and_propagate_error")
   }
 
-  best_fit_v <<- best_fit
+  # best_fit_v <<- best_fit
   return(best_fit)
 }
 
