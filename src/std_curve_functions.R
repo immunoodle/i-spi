@@ -2289,8 +2289,9 @@ predict_and_propagate_error <- function(best_fit,
   names(pcov_sample_data)[which(names(pcov_sample_data) == "predicted_concentration")] <- "x"
   sample_se <- merge(sample_se, pcov_sample_data, by.x = "predicted_concentration", by.y = "x", all.x = TRUE)
   sample_se$source <- unique(best_fit$best_data$source)
+  sample_se$feature <- unique(best_fit$best_data$feature)
   # remove plate_id and y_new; rename se_x to se_concentration for later use.
-  sample_se <- sample_se[, !names(sample_se) %in% c("plate_id", "y_new")]
+  sample_se <- sample_se[, !names(sample_se) %in% c("y_new")]
   names(sample_se)[names(sample_se) == "se_x"] <- "se_concentration"
   best_fit$sample_se <- sample_se
 

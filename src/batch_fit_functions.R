@@ -319,6 +319,25 @@ create_batch_fit_outputs <- function(batch_fit_res, antigen_plate_list_res) {
 # add unique identifiers and rename the response variable to be generic for saving
 process_batch_outputs <- function(batch_outputs, response_var) {
 
+  #batch_outputs <<- batch_outputs
+
+  # ensure those out of range are null not inf for database storing.
+  batch_outputs$best_sample_se_all <-
+    batch_outputs$best_sample_se_all %>%
+    mutate(predicted_concentration =
+             if_else(is.finite(predicted_concentration),
+                     predicted_concentration,
+                     NA_real_))
+
+#  response_var <<- response_var
+  # batch_outputs$best_pred_all <- batch_outputs$best_pred_all %>%
+  #   dplyr::group_by(study_accession,
+  #                   experiment_accession,
+  #                   plateid,
+  #                   antigen,
+  #                   source) %>%
+  #   dplyr::mutate(id_match = dplyr::row_number()) %>%
+  #   dplyr::ungroup()
   batch_outputs$best_pred_all <- batch_outputs$best_pred_all %>%
     dplyr::group_by(
       study_accession,
