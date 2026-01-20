@@ -954,6 +954,18 @@ insert_to_table <- function(conn, schema, table, data, label, required_cols = NU
     }
   }
 
+  if (table == "xmap_header") {
+    nk_cols <- c("study_accession", "experiment_accession", "plate_id")
+    if (all(nk_cols %in% names(data))) {
+      n_before <- nrow(data)
+      data <- data[!duplicated(data[, nk_cols, drop = FALSE]), ]
+      n_after <- nrow(data)
+      if (n_before != n_after) {
+        cat("WARNING: Removed", n_before - n_after, "duplicate header rows\n")
+      }
+    }
+  }
+
   # Attempt insert
   tryCatch({
     DBI::dbAppendTable(conn, DBI::Id(schema = schema, table = table), data)

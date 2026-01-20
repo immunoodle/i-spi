@@ -362,14 +362,6 @@ process_batch_outputs <- function(batch_outputs, response_var) {
     dplyr::mutate(uid = dplyr::row_number()) %>%
     dplyr::ungroup()
 
-  # batch_outputs$best_sample_se_all <- batch_outputs$best_sample_se_all %>%
-  #   dplyr::group_by(study_accession, experiment_accession,
-  #                          plateid, plate, sample_dilution_factor, source, antigen,
-  #                         patientid, timeperiod, sampleid, dilution) %>%
-  #   dplyr::rename(assay_response = all_of(response_var)) %>%
-  #   dplyr::mutate(uid = dplyr::row_number()) %>%
-  #   dplyr::ungroup()
-
   batch_outputs$best_standard_all <- batch_outputs$best_standard_all %>%
     dplyr::rename(assay_response = all_of(response_var))
 

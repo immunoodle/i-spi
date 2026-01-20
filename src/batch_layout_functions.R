@@ -2064,23 +2064,46 @@ construct_batch_upload_metadata <- function(plates_map, plate_metadata_list, cur
   first_item <- plate_metadata_list[[1]]
   cat("First metadata item columns:", paste(names(first_item), collapse=", "), "\n")
 
-  # Get unique sample dilution factors by plate_number
-  sample_dilutions_by_plate <- as.data.frame(dplyr::distinct(
-    plates_map[plates_map$specimen_type == "X",
-               c("plate_number", "specimen_type", "specimen_dilution_factor")])
+  # # Get unique sample dilution factors by plate_number
+  # sample_dilutions_by_plate <- as.data.frame(dplyr::distinct(
+  #   plates_map[plates_map$specimen_type == "X",
+  #              c("plate_number", "specimen_type", "specimen_dilution_factor")])
+  # )
+  #
+  # sample_dilutions_by_plate <- sample_dilutions_by_plate[!is.na(sample_dilutions_by_plate$plate_number), ]
+  #
+  # names(sample_dilutions_by_plate)[names(sample_dilutions_by_plate) == "specimen_dilution_factor"] <- "sample_dilution_factor"
+  #
+  # cat("Sample dilutions by plate:\n")
+  # print(sample_dilutions_by_plate)
+  #
+  # # Get experiment by plate
+  # experiment_by_plate <- as.data.frame(dplyr::distinct(
+  #   plates_map[, c("study_name", "plate_number", "experiment_name", "feature")])
+  # )
+
+  # Get sample dilution factors - aggregate to ONE per plate
+  sample_dilutions_raw <- plates_map[plates_map$specimen_type == "X" &
+                                       !is.na(plates_map$plate_number),
+                                     c("plate_number", "specimen_dilution_factor")]
+
+  # Aggregate to get ONE dilution factor per plate (use minimum as representative)
+  sample_dilutions_by_plate <- aggregate(
+    specimen_dilution_factor ~ plate_number,
+    data = sample_dilutions_raw,
+    FUN = function(x) min(x, na.rm = TRUE)
   )
+  names(sample_dilutions_by_plate)[names(sample_dilutions_by_plate) ==
+                                     "specimen_dilution_factor"] <- "sample_dilution_factor"
 
-  sample_dilutions_by_plate <- sample_dilutions_by_plate[!is.na(sample_dilutions_by_plate$plate_number), ]
-
-  names(sample_dilutions_by_plate)[names(sample_dilutions_by_plate) == "specimen_dilution_factor"] <- "sample_dilution_factor"
-
-  cat("Sample dilutions by plate:\n")
-  print(sample_dilutions_by_plate)
-
-  # Get experiment by plate
+  # Get experiment by plate - exclude 'feature' to avoid duplicates
   experiment_by_plate <- as.data.frame(dplyr::distinct(
-    plates_map[, c("study_name", "plate_number", "experiment_name", "feature")])
-  )
+    plates_map[!is.na(plates_map$plate_number),
+               c("study_name", "plate_number", "experiment_name")]
+  ))
+
+  # Remove any remaining duplicates (defensive)
+  experiment_by_plate <- experiment_by_plate[!duplicated(experiment_by_plate$plate_number), ]
   experiment_by_plate$workspace_id <- workspace_id
   experiment_by_plate$auth0_user <- currentuser
 
@@ -2609,6 +2632,15 @@ prepare_batch_header <- function(metadata_batch) {
   names(metadata_batch)[names(metadata_batch) == "experiment_name"] <- "experiment_accession"
   metadata_batch$assay_response_variable <- "mfi"
   metadata_batch$assay_independent_variable <- "concentration"
+
+  nk_cols <- c("study_accession", "experiment_accession", "plate_id")
+  n_before <- nrow(metadata_batch)
+  metadata_batch <- metadata_batch[!duplicated(metadata_batch[, nk_cols, drop = FALSE]), ]
+  n_after <- nrow(metadata_batch)
+
+  if (n_before != n_after) {
+    cat("  ⚠ Removed", n_before - n_after, "duplicate header rows\n")
+  }
 
   # Debug output
   cat("\n=== prepare_batch_header DEBUG ===\n")
