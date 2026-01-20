@@ -319,14 +319,6 @@ create_batch_fit_outputs <- function(batch_fit_res, antigen_plate_list_res) {
 # add unique identifiers and rename the response variable to be generic for saving
 process_batch_outputs <- function(batch_outputs, response_var) {
 
-  # batch_outputs$best_pred_all <- batch_outputs$best_pred_all %>%
-  #   dplyr::group_by(study_accession,
-  #                   experiment_accession,
-  #                   plateid,
-  #                   antigen,
-  #                   source) %>%
-  #   dplyr::mutate(id_match = dplyr::row_number()) %>%
-  #   dplyr::ungroup()
   batch_outputs$best_pred_all <- batch_outputs$best_pred_all %>%
     dplyr::group_by(
       study_accession,
@@ -350,14 +342,6 @@ process_batch_outputs <- function(batch_outputs, response_var) {
     ) %>%
     dplyr::mutate(uid = dplyr::row_number()) %>%
     dplyr::ungroup()
-
-  # batch_outputs$best_sample_se_all <- batch_outputs$best_sample_se_all %>%
-  #   dplyr::group_by(study_accession, experiment_accession,
-  #                          plateid, plate, sample_dilution_factor, source, antigen,
-  #                         patientid, timeperiod, sampleid, dilution) %>%
-  #   dplyr::rename(assay_response = all_of(response_var)) %>%
-  #   dplyr::mutate(uid = dplyr::row_number()) %>%
-  #   dplyr::ungroup()
 
   batch_outputs$best_standard_all <- batch_outputs$best_standard_all %>%
     dplyr::rename(assay_response = all_of(response_var))
