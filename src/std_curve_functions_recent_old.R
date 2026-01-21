@@ -6,30 +6,7 @@
 
 ### The Standard Curve MFI is already logged transformed but the blanks are not
 obtain_lower_constraint <- function(dat, antigen, study_accession, experiment_accession, plate, plateid, plate_blanks, antigen_constraints) {
-
-  # Handle case where antigen_constraints is a dataframe with multiple rows
-  # Take the first row to ensure scalar values for all constraint parameters
-  if (is.data.frame(antigen_constraints) && nrow(antigen_constraints) > 1) {
-    warning(paste("Multiple constraint rows found for antigen:", antigen,
-                  "- using first row. Consider deduplicating antigen_constraints."))
-    antigen_constraints <- antigen_constraints[1, , drop = FALSE]
-  }
-
-  # Extract scalar values from antigen_constraints to avoid "condition has length > 1" errors
-  # Use helper function to safely extract first non-NA value
-  safe_extract <- function(x, default = NA) {
-    if (is.null(x) || length(x) == 0) return(default)
-    x <- x[!is.na(x)]
-    if (length(x) == 0) return(default)
-    return(x[1])
-  }
-
-  constraint_method <- safe_extract(trimws(antigen_constraints$l_asy_constraint_method), "default")
-  l_asy_min <- safe_extract(antigen_constraints$l_asy_min_constraint, 0)
-  l_asy_max <- safe_extract(antigen_constraints$l_asy_max_constraint, NA)
-  std_curve_conc <- safe_extract(antigen_constraints$standard_curve_concentration, 10000)
-  pcov_thresh <- safe_extract(antigen_constraints$pcov_threshold, 20)
-
+  antigen_constraints$l_asy_constraint_method <- trimws(antigen_constraints$l_asy_constraint_method)
   # blank_data_plate <- blank_data[blank_data$plate == plate & blank_data$antigen == antigen,]
   if (nrow(plate_blanks) > 1) {
     se_blank_mfi <- sd(plate_blanks$mfi, na.rm = TRUE) / sqrt(sum(!is.na(plate_blanks$mfi)))
@@ -37,20 +14,20 @@ obtain_lower_constraint <- function(dat, antigen, study_accession, experiment_ac
     se_blank_mfi <- 0
   }
 
-  if (constraint_method == "user_defined") {
+  if (antigen_constraints$l_asy_constraint_method == "user_defined") {
     l_asy_constraints <- list(
       study_accession = study_accession,
       experiment_accession = experiment_accession,
       plate = plate,
       antigen = antigen,
-      l_asy_min_constraint = l_asy_min,
-      l_asy_max_constraint = l_asy_max,
-      l_asy_constraint_method = constraint_method,
+      l_asy_min_constraint = antigen_constraints$l_asy_min_constraint,
+      l_asy_max_constraint = antigen_constraints$l_asy_max_constraint,
+      l_asy_constraint_method = antigen_constraints$l_asy_constraint_method,
       std_error_blank = se_blank_mfi,
-      standard_curve_concentration = std_curve_conc,
-      pcov_threshold = pcov_thresh
+      standard_curve_concentration =  antigen_constraints$standard_curve_concentration,
+      pcov_threshold = antigen_constraints$pcov_threshold
     )
-  } else if (constraint_method == "default") {
+  } else if (antigen_constraints$l_asy_constraint_method == "default") {
     l_asy_max_constraint_dat <- max(dat$mfi, na.rm = TRUE)
     l_asy_constraints <- list(
       study_accession = study_accession,
@@ -59,12 +36,12 @@ obtain_lower_constraint <- function(dat, antigen, study_accession, experiment_ac
       antigen = antigen,
       l_asy_min_constraint = 0, # lower bound is set to 0
       l_asy_max_constraint = max(dat$mfi, na.rm = T),
-      l_asy_constraint_method = constraint_method,
+      l_asy_constraint_method = antigen_constraints$l_asy_constraint_method,
       std_error_blank = se_blank_mfi,
-      standard_curve_concentration = std_curve_conc,
-      pcov_threshold = pcov_thresh
+      standard_curve_concentration =  antigen_constraints$standard_curve_concentration,
+      pcov_threshold = antigen_constraints$pcov_threshold
     )
-  } else if (constraint_method == "range_of_blanks") {
+  } else if (antigen_constraints$l_asy_constraint_method == "range_of_blanks") {
     l_asy_constraints <- list(
       study_accession = study_accession,
       experiment_accession = experiment_accession,
@@ -72,12 +49,12 @@ obtain_lower_constraint <- function(dat, antigen, study_accession, experiment_ac
       antigen = antigen,
       l_asy_min_constraint = min(plate_blanks$mfi),
       l_asy_max_constraint = max(plate_blanks$mfi),
-      l_asy_constraint_method = constraint_method,
+      l_asy_constraint_method = antigen_constraints$l_asy_constraint_method,
       std_error_blank =  se_blank_mfi,
-      standard_curve_concentration = std_curve_conc,
-      pcov_threshold = pcov_thresh
+      standard_curve_concentration =  antigen_constraints$standard_curve_concentration,
+      pcov_threshold = antigen_constraints$pcov_threshold
     )
-  } else if (constraint_method == 'geometric_mean_of_blanks') {
+  } else if (antigen_constraints$l_asy_constraint_method == 'geometric_mean_of_blanks') {
     geometric_mean <- exp(mean(log(plate_blanks$mfi), na.rm = TRUE))
     l_asy_constraints <- list(
       study_accession = study_accession,
@@ -87,10 +64,10 @@ obtain_lower_constraint <- function(dat, antigen, study_accession, experiment_ac
       antigen = antigen,
       l_asy_min_constraint = geometric_mean,
       l_asy_max_constraint = geometric_mean,
-      l_asy_constraint_method = constraint_method,
+      l_asy_constraint_method = antigen_constraints$l_asy_constraint_method,
       std_error_blank = se_blank_mfi,
-      standard_curve_concentration = std_curve_conc,
-      pcov_threshold = pcov_thresh
+      standard_curve_concentration =  antigen_constraints$standard_curve_concentration,
+      pcov_threshold = antigen_constraints$pcov_threshold
     )
   } else {
     return(NULL)
@@ -853,6 +830,17 @@ fit_qc_glance <- function(best_fit,
 
   theta <- coef(best_fit$best_fit)
   theta["a"] <- ifelse(!is.null(fixed_a_result), fixed_a_result, theta["a"])
+  # yi <- as.numeric(inflection_point$inflect_y)
+  # dydx_inflect <- as.numeric(switch(best_fit$best_model_name,
+  #                                   Y4      = dydxY4(yi, a = theta["a"], b = theta["b"], c = theta["c"], d = theta["d"]),
+  #                                   Yd4     = dydxYd4(yi, a = theta["a"], b = theta["b"], c = theta["c"], d = theta["d"]),
+  #                                   Ygomp4  = dydxYgomp4(yi, a = theta["a"], b = theta["b"], c = theta["c"], d = theta["d"]),
+  #                                   Y5      = dydxY5(yi, a = theta["a"], b = theta["b"], c = theta["c"], d = theta["d"], g = theta["g"]),
+  #                                   Yd5     = dydxYd5(yi, a = theta["a"], b = theta["b"], c = theta["c"], d = theta["d"], g = theta["g"]),
+  #                                   stop("Unsupported model")
+  # )
+  # )
+
   # Use inflect_x (concentration) for the derivative, not inflect_y (response)
   # The dydx functions take x (concentration) as the first argument
   xi <- as.numeric(inflection_point$inflect_x)
@@ -1069,28 +1057,43 @@ generate_inflection_point <- function(model_name, fit, fixed_a_result, independe
   c <- as.numeric(params["c"])
   d <- as.numeric(params["d"])
 
-  # Calculate x-coordinate of inflection point analytically
-  # The inflection point is where the second derivative equals zero
+
   inflect_x  <- tryCatch({
     if (model_name == "Y5") {
-      # For 5 parameter model: x_inflect = c - b*ln(g)
+      # For 5 parameter model
+      # x inflection point is c - b*ln(g)
       c - b * log(g)
     } else if (model_name == "Y4") {
-      # For 4 parameter logistic: x_inflect = c
       c
     } else if (model_name == "Yd5") {
-      # For 5 parameter decreasing logistic: x_inflect = c + ln(g)/b
       c + (log(g) / b)
     } else if (model_name == "Yd4") {
-      # For 4 parameter log-logistic: x_inflect = c
       c
     } else if (model_name == "Ygomp4") {
-      # For Gompertz: x_inflect = c (where second derivative = 0)
       c
     }
   }, error = function(e) NA)
 
   inflect_x <- as.numeric(inflect_x)
+
+  # inflect_y <- tryCatch({
+  #   if (model_name == "Y5") {
+  #     # For 5 parameter model
+  #     # d + ((a - d) / (1 + g)^g)
+  #     x_inf <- c - b * log(g)
+  #     d + (a - d) / (1 + exp((x_inf - c) / b))^g
+  #   } else if (model_name == "Y4") {
+  #     (a + d) / 2
+  #   } else if (model_name == "Yd5") {
+  #     a + (d - a) * 2^(-1/g)
+  #   } else if (model_name == "Yd4") {
+  #     (a + d) / 2
+  #   } else if (model_name == "Ygomp4") {
+  #     a + (d - a) * exp(-1)
+  #   }
+  #
+  #   #predict(fit, newdata = setNames(data.frame(x = inflect_x), independent_variable))
+  # }, error = function(e) NA)
 
   # Calculate y-coordinate by evaluating the fitted model at inflect_x
   # This ensures the inflection point lies exactly on the fitted curve

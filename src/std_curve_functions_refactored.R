@@ -6,30 +6,7 @@
 
 ### The Standard Curve MFI is already logged transformed but the blanks are not
 obtain_lower_constraint <- function(dat, antigen, study_accession, experiment_accession, plate, plateid, plate_blanks, antigen_constraints) {
-
-  # Handle case where antigen_constraints is a dataframe with multiple rows
-  # Take the first row to ensure scalar values for all constraint parameters
-  if (is.data.frame(antigen_constraints) && nrow(antigen_constraints) > 1) {
-    warning(paste("Multiple constraint rows found for antigen:", antigen,
-                  "- using first row. Consider deduplicating antigen_constraints."))
-    antigen_constraints <- antigen_constraints[1, , drop = FALSE]
-  }
-
-  # Extract scalar values from antigen_constraints to avoid "condition has length > 1" errors
-  # Use helper function to safely extract first non-NA value
-  safe_extract <- function(x, default = NA) {
-    if (is.null(x) || length(x) == 0) return(default)
-    x <- x[!is.na(x)]
-    if (length(x) == 0) return(default)
-    return(x[1])
-  }
-
-  constraint_method <- safe_extract(trimws(antigen_constraints$l_asy_constraint_method), "default")
-  l_asy_min <- safe_extract(antigen_constraints$l_asy_min_constraint, 0)
-  l_asy_max <- safe_extract(antigen_constraints$l_asy_max_constraint, NA)
-  std_curve_conc <- safe_extract(antigen_constraints$standard_curve_concentration, 10000)
-  pcov_thresh <- safe_extract(antigen_constraints$pcov_threshold, 20)
-
+  antigen_constraints$l_asy_constraint_method <- trimws(antigen_constraints$l_asy_constraint_method)
   # blank_data_plate <- blank_data[blank_data$plate == plate & blank_data$antigen == antigen,]
   if (nrow(plate_blanks) > 1) {
     se_blank_mfi <- sd(plate_blanks$mfi, na.rm = TRUE) / sqrt(sum(!is.na(plate_blanks$mfi)))
@@ -37,20 +14,20 @@ obtain_lower_constraint <- function(dat, antigen, study_accession, experiment_ac
     se_blank_mfi <- 0
   }
 
-  if (constraint_method == "user_defined") {
+  if (antigen_constraints$l_asy_constraint_method == "user_defined") {
     l_asy_constraints <- list(
       study_accession = study_accession,
       experiment_accession = experiment_accession,
       plate = plate,
       antigen = antigen,
-      l_asy_min_constraint = l_asy_min,
-      l_asy_max_constraint = l_asy_max,
-      l_asy_constraint_method = constraint_method,
+      l_asy_min_constraint = antigen_constraints$l_asy_min_constraint,
+      l_asy_max_constraint = antigen_constraints$l_asy_max_constraint,
+      l_asy_constraint_method = antigen_constraints$l_asy_constraint_method,
       std_error_blank = se_blank_mfi,
-      standard_curve_concentration = std_curve_conc,
-      pcov_threshold = pcov_thresh
+      standard_curve_concentration =  antigen_constraints$standard_curve_concentration,
+      pcov_threshold = antigen_constraints$pcov_threshold
     )
-  } else if (constraint_method == "default") {
+  } else if (antigen_constraints$l_asy_constraint_method == "default") {
     l_asy_max_constraint_dat <- max(dat$mfi, na.rm = TRUE)
     l_asy_constraints <- list(
       study_accession = study_accession,
@@ -59,12 +36,12 @@ obtain_lower_constraint <- function(dat, antigen, study_accession, experiment_ac
       antigen = antigen,
       l_asy_min_constraint = 0, # lower bound is set to 0
       l_asy_max_constraint = max(dat$mfi, na.rm = T),
-      l_asy_constraint_method = constraint_method,
+      l_asy_constraint_method = antigen_constraints$l_asy_constraint_method,
       std_error_blank = se_blank_mfi,
-      standard_curve_concentration = std_curve_conc,
-      pcov_threshold = pcov_thresh
+      standard_curve_concentration =  antigen_constraints$standard_curve_concentration,
+      pcov_threshold = antigen_constraints$pcov_threshold
     )
-  } else if (constraint_method == "range_of_blanks") {
+  } else if (antigen_constraints$l_asy_constraint_method == "range_of_blanks") {
     l_asy_constraints <- list(
       study_accession = study_accession,
       experiment_accession = experiment_accession,
@@ -72,12 +49,12 @@ obtain_lower_constraint <- function(dat, antigen, study_accession, experiment_ac
       antigen = antigen,
       l_asy_min_constraint = min(plate_blanks$mfi),
       l_asy_max_constraint = max(plate_blanks$mfi),
-      l_asy_constraint_method = constraint_method,
+      l_asy_constraint_method = antigen_constraints$l_asy_constraint_method,
       std_error_blank =  se_blank_mfi,
-      standard_curve_concentration = std_curve_conc,
-      pcov_threshold = pcov_thresh
+      standard_curve_concentration =  antigen_constraints$standard_curve_concentration,
+      pcov_threshold = antigen_constraints$pcov_threshold
     )
-  } else if (constraint_method == 'geometric_mean_of_blanks') {
+  } else if (antigen_constraints$l_asy_constraint_method == 'geometric_mean_of_blanks') {
     geometric_mean <- exp(mean(log(plate_blanks$mfi), na.rm = TRUE))
     l_asy_constraints <- list(
       study_accession = study_accession,
@@ -87,10 +64,10 @@ obtain_lower_constraint <- function(dat, antigen, study_accession, experiment_ac
       antigen = antigen,
       l_asy_min_constraint = geometric_mean,
       l_asy_max_constraint = geometric_mean,
-      l_asy_constraint_method = constraint_method,
+      l_asy_constraint_method = antigen_constraints$l_asy_constraint_method,
       std_error_blank = se_blank_mfi,
-      standard_curve_concentration = std_curve_conc,
-      pcov_threshold = pcov_thresh
+      standard_curve_concentration =  antigen_constraints$standard_curve_concentration,
+      pcov_threshold = antigen_constraints$pcov_threshold
     )
   } else {
     return(NULL)
@@ -1105,12 +1082,12 @@ generate_inflection_point <- function(model_name, fit, fixed_a_result, independe
     if (verbose) message("predict() failed, using analytical formula for inflect_y")
     tryCatch({
       switch(model_name,
-             "Y5" = d + (a - d) / (1 + exp((inflect_x - c) / b))^g,
-             "Y4" = d + (a - d) / (1 + exp((inflect_x - c) / b)),
-             "Yd5" = a + (d - a) * (1 + g * exp(-b * (inflect_x - c)))^(-1/g),
-             "Yd4" = a + (d - a) / (1 + exp(-b * (inflect_x - c))),
-             "Ygomp4" = a + (d - a) * exp(-exp(-b * (inflect_x - c))),
-             NA
+        "Y5" = d + (a - d) / (1 + exp((inflect_x - c) / b))^g,
+        "Y4" = d + (a - d) / (1 + exp((inflect_x - c) / b)),
+        "Yd5" = a + (d - a) * (1 + g * exp(-b * (inflect_x - c)))^(-1/g),
+        "Yd4" = a + (d - a) / (1 + exp(-b * (inflect_x - c))),
+        "Ygomp4" = a + (d - a) * exp(-exp(-b * (inflect_x - c))),
+        NA
       )
     }, error = function(e2) NA)
   })

@@ -21,8 +21,7 @@ data_summary <- list()
 
 std_curve_tab_active <- reactiveVal(FALSE)
 
-
-fetch_antigen_family_table <- function(study_accession) {
+fetch_antigen_family_table <- function(study_accession, default_family = "All Antigens") {
   if (study_accession == "reset") {
     result_df <- NULL
   } else {
@@ -39,17 +38,17 @@ fetch_antigen_family_table <- function(study_accession) {
       # check if result df is null or 0 rows and if so run additional query insert.
       insert_query <- paste0("INSERT INTO madi_results.xmap_antigen_family(
                 	study_accession, antigen, antigen_family, standard_curve_concentration)
-                	SELECT DISTINCT '",study_accession,"', antigen, 'All Antigens', 10000
+                	SELECT DISTINCT '",study_accession,"', antigen, '", default_family, "', 10000
                 	FROM madi_results.xmap_sample
                 	WHERE study_accession = '", study_accession, "'
                 	ORDER BY antigen;")
       dbExecute(conn, insert_query)
       result_df <- dbGetQuery(conn, query)
     } else {
-  #}  ## Add new antigens to table
+      #}  ## Add new antigens to table
       insert_query <- paste0("
       INSERT INTO madi_results.xmap_antigen_family (study_accession, antigen, antigen_family, standard_curve_concentration)
-      SELECT DISTINCT s.study_accession, s.antigen, 'All Antigens', 10000
+      SELECT DISTINCT s.study_accession, s.antigen, '", default_family, "', 10000
       FROM madi_results.xmap_sample s
       WHERE s.study_accession = '", study_accession, "'
         AND NOT EXISTS (
@@ -59,12 +58,67 @@ fetch_antigen_family_table <- function(study_accession) {
         );")
       dbExecute(conn, insert_query)
 
-     result_df <- dbGetQuery(conn, query)
+      result_df <- dbGetQuery(conn, query)
+    }
+
+    # Handle NULL or empty antigen_family values in the result
+    # This catches cases where rows exist but antigen_family was never set or was cleared
+    if (!is.null(result_df) && nrow(result_df) > 0 && "antigen_family" %in% names(result_df)) {
+      na_or_empty <- is.na(result_df$antigen_family) |
+        result_df$antigen_family == "" |
+        trimws(as.character(result_df$antigen_family)) == ""
+      if (any(na_or_empty)) {
+        result_df$antigen_family[na_or_empty] <- default_family
+      }
     }
   } # end outer else statement
 
   return(result_df)
 }
+
+# fetch_antigen_family_table <- function(study_accession) {
+#   if (study_accession == "reset") {
+#     result_df <- NULL
+#   } else {
+#     query <- paste0("
+#       SELECT xmap_antigen_family_id, study_accession, experiment_accession, antigen, antigen_family, standard_curve_concentration,
+#       antigen_name, virus_bacterial_strain, antigen_source, catalog_number, l_asy_min_constraint, l_asy_max_constraint, l_asy_constraint_method
+#       FROM madi_results.xmap_antigen_family
+#       WHERE study_accession = '", study_accession, "'")
+#
+#     # Run the query and fetch the result as a data frame
+#     result_df <- dbGetQuery(conn, query)
+#
+#     if (nrow(result_df) == 0 || is.null(result_df)) {
+#       # check if result df is null or 0 rows and if so run additional query insert.
+#       insert_query <- paste0("INSERT INTO madi_results.xmap_antigen_family(
+#                 	study_accession, antigen, antigen_family, standard_curve_concentration)
+#                 	SELECT DISTINCT '",study_accession,"', antigen, 'All Antigens', 10000
+#                 	FROM madi_results.xmap_sample
+#                 	WHERE study_accession = '", study_accession, "'
+#                 	ORDER BY antigen;")
+#       dbExecute(conn, insert_query)
+#       result_df <- dbGetQuery(conn, query)
+#     } else {
+#   #}  ## Add new antigens to table
+#       insert_query <- paste0("
+#       INSERT INTO madi_results.xmap_antigen_family (study_accession, antigen, antigen_family, standard_curve_concentration)
+#       SELECT DISTINCT s.study_accession, s.antigen, 'All Antigens', 10000
+#       FROM madi_results.xmap_sample s
+#       WHERE s.study_accession = '", study_accession, "'
+#         AND NOT EXISTS (
+#           SELECT 1 FROM madi_results.xmap_antigen_family f
+#           WHERE f.study_accession = s.study_accession
+#             AND f.antigen = s.antigen
+#         );")
+#       dbExecute(conn, insert_query)
+#
+#      result_df <- dbGetQuery(conn, query)
+#     }
+#   } # end outer else statement
+#
+#   return(result_df)
+# }
 
 create_antigen_family_rows <- function(study, experiment) {
   conn <- get_db_connection()

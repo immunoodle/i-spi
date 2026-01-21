@@ -455,8 +455,26 @@ observeEvent(list(
 #
 #
     observeEvent(input$show_comparisions, {
-      plate <- unique(plot_data()$dat$plate)
-      antigen <- unique(plot_data()$dat$antigen)
+      # Validate that plot_data is available before trying to access it
+      pd <- tryCatch({
+        plot_data()
+      }, error = function(e) {
+        NULL
+      })
+
+      # Check if plot_data is valid and has the expected structure
+      if (is.null(pd) || is.null(pd$dat)) {
+        showNotification("No plot data available. Please ensure standard curve data is loaded.",
+                         type = "warning")
+        return()
+      }
+      #
+      # plate <- unique(plot_data()$dat$plate)
+      # antigen <- unique(plot_data()$dat$antigen)
+      # title <- paste("Model Comparisons for ", antigen, "on", plate)
+
+      plate <- unique(pd$dat$plate)
+      antigen <- unique(pd$dat$antigen)
       title <- paste("Model Comparisons for ", antigen, "on", plate)
 
       showModal(
@@ -506,13 +524,11 @@ observeEvent(list(
                                 antigen_fit_options = prepped_data()$antigen_fit_options,
                                 verbose = verbose)
 
-
       ## add the tidy to the best fit object
       best_fit <- tidy.nlsLM(best_fit = best_fit, fixed_a_result = antigen_plate()$fixed_a_result, model_constraints =
                                model_constraints(), antigen_settings = antigen_plate()$antigen_settings,
                                antigen_fit_options = prepped_data()$antigen_fit_options,
                             verbose = verbose)
-
 
       best_fit <- predict_and_propagate_error(
         best_fit = best_fit,
@@ -527,9 +543,6 @@ observeEvent(list(
                                response_variable = response_var,
                                pcov_threshold = antigen_plate()$antigen_settings$pcov_threshold,
                                verbose = verbose)
-
-
-
       return(best_fit)
 
     })

@@ -399,9 +399,9 @@ upsert_best_curve <- function(conn,
   invisible(ok)
 }
 
-## ----------------------------
+
 ## Pre-compute SQL components once
-## ----------------------------
+
 build_sql_components <- function(conn, schema, table, cols, nk) {
   schema_id <- as.character(DBI::dbQuoteIdentifier(conn, schema))
   table_id <- as.character(DBI::dbQuoteIdentifier(conn, table))
@@ -441,9 +441,9 @@ build_sql_components <- function(conn, schema, table, cols, nk) {
   )
 }
 
-## ----------------------------
+
 ## Execute single batch with COPY optimization
-## ----------------------------
+
 upsert_batch <- function(conn, df, sql_parts, use_copy, notify) {
   tryCatch({
     DBI::dbWithTransaction(conn, {
@@ -489,9 +489,9 @@ upsert_batch <- function(conn, df, sql_parts, use_copy, notify) {
   })
 }
 
-## ----------------------------
+
 ## Map R types to PostgreSQL types
-## ----------------------------
+
 pg_type_map <- function(col) {
   switch(class(col)[1],
          "integer" = "INTEGER",
@@ -505,9 +505,9 @@ pg_type_map <- function(col) {
          "TEXT"
   )
 }
-## ----------------------------
+
 ## Helper: Get natural keys for table
-## ----------------------------
+
 get_natural_keys <- function(table) {
   keys <- list(
     best_plate_all = c(
@@ -542,9 +542,9 @@ get_natural_keys <- function(table) {
   keys[[table]]
 }
 
-## ----------------------------
+
 ## Helper: Build UPSERT SQL using glue_sql
-## ----------------------------
+
 build_upsert_sql_glue <- function(conn, schema, table, tmp_name, cols, nk) {
 
   ## Pre-quote identifiers to avoid glue_sql conflicts
@@ -704,6 +704,47 @@ fetch_best_glance_all <- function(study_accession,experiment_accession, conn) {
   return(best_glance_all)
 }
 
+#' Fetch best_glance_all filtered by user's current study parameters
+#' This ensures consistency with fetch_best_pred_all_summary and other summary functions
+#' @param study_accession Study accession ID
+#' @param experiment_accession Experiment accession ID
+#' @param param_user Current user for parameter lookup
+#' @param conn Database connection
+#' @return Filtered best_glance_all dataframe matching user's current study configuration
+fetch_best_glance_all_summary <- function(study_accession, experiment_accession, param_user, conn) {
+  query <- glue_sql("
+    WITH params AS (
+      SELECT
+        study_accession,
+        BOOL_OR(CASE WHEN param_name = 'is_log_mfi_axis' THEN param_boolean_value END) AS is_log_mfi_axis,
+        MAX(CASE WHEN param_name = 'blank_option' THEN param_character_value END) AS blank_option,
+        BOOL_OR(CASE WHEN param_name = 'applyProzone' THEN param_boolean_value END) AS apply_prozone
+      FROM madi_results.xmap_study_config
+      WHERE study_accession = {study_accession}
+        AND param_user = {param_user}
+        AND param_name IN ('is_log_mfi_axis', 'blank_option', 'applyProzone')
+      GROUP BY study_accession
+    )
+    SELECT
+      g.best_glance_all_id, g.study_accession, g.experiment_accession,
+      g.plateid, g.plate, g.sample_dilution_factor, g.antigen, g.iter,
+      g.status, g.crit, g.a, g.b, g.c, g.d, g.lloq, g.uloq, g.lloq_y,
+      g.uloq_y, g.llod, g.ulod, g.inflect_x, g.inflect_y, g.std_error_blank,
+      g.dydx_inflect, g.dfresidual, g.nobs, g.rsquare_fit, g.aic, g.bic,
+      g.loglik, g.mse, g.cv, g.source, g.bkg_method, g.is_log_response,
+      g.is_log_x, g.apply_prozone, g.formula, g.g
+    FROM madi_results.best_glance_all g
+    CROSS JOIN params
+    WHERE g.study_accession = {study_accession}
+      AND g.experiment_accession = {experiment_accession}
+      AND g.is_log_response = params.is_log_mfi_axis
+      AND g.bkg_method = params.blank_option
+      AND g.apply_prozone = params.apply_prozone",
+                    .con = conn
+  )
+  dbGetQuery(conn, query)
+}
+
 fetch_best_sample_se_all <- function(study_accession, experiment_accession, conn) {
   query <- glue("
 SELECT best_sample_se_all_id, predicted_concentration, study_accession, experiment_accession, timeperiod, patientid, well, stype, sampleid,
@@ -853,14 +894,49 @@ GROUP BY study_accession, param_user
   dbGetQuery(conn, query)
 }
 
+attach_antigen_familes <- function(best_pred_all, antigen_families, default_family = "All Antigens") {
+  # Handle case where antigen_families is NULL or empty
+  if (is.null(antigen_families) || nrow(antigen_families) == 0) {
+    # Create antigen_family column with default value for all antigens
+    best_pred_all$antigen_family <- default_family
+    return(best_pred_all)
+  }
 
+  # Ensure antigen_families has required columns
+  required_cols <- c("study_accession", "antigen", "antigen_family")
+  if (!all(required_cols %in% names(antigen_families))) {
+    # If required columns are missing, use default family
+    best_pred_all$antigen_family <- default_family
+    return(best_pred_all)
+  }
 
+  # Perform the merge
+  pred_with_antigen_familes <- merge(best_pred_all,
+                                     antigen_families[, required_cols],
+                                     by = c("study_accession", "antigen"),
+                                     all.x = TRUE)
 
-attach_antigen_familes <- function(best_pred_all, antigen_families) {
-  pred_with_antigen_familes <- merge(best_pred_all, antigen_families[, c("study_accession", "antigen", "antigen_family")],
-                                     by = c("study_accession", "antigen"), all.x = T)
+  # Replace NA/NULL antigen_family values with the default
+  if ("antigen_family" %in% names(pred_with_antigen_familes)) {
+    na_family <- is.na(pred_with_antigen_familes$antigen_family) |
+      pred_with_antigen_familes$antigen_family == "" |
+      is.null(pred_with_antigen_familes$antigen_family)
+    pred_with_antigen_familes$antigen_family[na_family] <- default_family
+  } else {
+    # Column doesn't exist after merge, add it with default
+    pred_with_antigen_familes$antigen_family <- default_family
+  }
+
   return(pred_with_antigen_familes)
-
 }
+
+
+
+# attach_antigen_familes <- function(best_pred_all, antigen_families) {
+#   pred_with_antigen_familes <- merge(best_pred_all, antigen_families[, c("study_accession", "antigen", "antigen_family")],
+#                                      by = c("study_accession", "antigen"), all.x = T)
+#   return(pred_with_antigen_familes)
+#
+# }
 
 

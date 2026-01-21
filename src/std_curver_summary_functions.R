@@ -72,6 +72,7 @@ calculate_cv_dilution_platewise <- function(best_standard, antigen_settings) {
 
 }
 
+
 aggregate_standard_curves <- function(best_pred_all,
                                       experiment_accession,
                                       best_glance_all,
@@ -81,12 +82,30 @@ aggregate_standard_curves <- function(best_pred_all,
                                       response_var,
                                       antigen_settings) {
 
+  # Validate inputs early
+
+  if (is.null(best_pred_all) || nrow(best_pred_all) == 0) {
+    warning("No prediction data available (best_pred_all is empty)")
+    return(data.frame())
+  }
+
+  if (is.null(best_glance_all) || nrow(best_glance_all) == 0) {
+    warning("No glance data available (best_glance_all is empty)")
+    return(data.frame())
+  }
+
   best_glance_experiment_antigen <- best_glance_all[
     best_glance_all$experiment_accession == experiment_accession &
       best_glance_all$antigen == antigen &
       best_glance_all$source == source,
   ]
 
+  # Check if glance data exists for this combination
+  if (nrow(best_glance_experiment_antigen) == 0) {
+    warning(paste("No glance data found for experiment:", experiment_accession,
+                  "/ antigen:", antigen, "/ source:", source))
+    return(data.frame())
+  }
 
   antigen_settings_specific <- antigen_settings[antigen_settings$antigen == antigen, ]
 
@@ -98,10 +117,15 @@ aggregate_standard_curves <- function(best_pred_all,
       best_pred_all$antigen == antigen &
       best_pred_all$source == source,
   ]
+
   if (nrow(best_pred_experiment_antigen) == 0) {
-    warning("No data found for specified experiment / antigen / source")
-    return(list(refit_fit_df = data.frame(),
-                predicted_agg_df = data.frame()))
+    # Provide more informative error message
+    warning(paste0("No prediction data found for experiment: ", experiment_accession,
+                   " / antigen: ", antigen, " / source: ", source,
+                   ". This may indicate a mismatch between current study parameters ",
+                   "and the parameters used when fitting the standard curves. ",
+                   "Check that is_log_response, blank_option, and apply_prozone settings match."))
+    return(data.frame())
   }
 
 
@@ -211,6 +235,146 @@ aggregate_standard_curves <- function(best_pred_all,
   return(predicted_agg_df)
 
 }
+
+# aggregate_standard_curves <- function(best_pred_all,
+#                                       experiment_accession,
+#                                       best_glance_all,
+#                                       antigen,
+#                                       source,
+#                                       indep_var,
+#                                       response_var,
+#                                       antigen_settings) {
+#
+#   best_glance_experiment_antigen <- best_glance_all[
+#     best_glance_all$experiment_accession == experiment_accession &
+#       best_glance_all$antigen == antigen &
+#       best_glance_all$source == source,
+#   ]
+#
+#
+#   antigen_settings_specific <- antigen_settings[antigen_settings$antigen == antigen, ]
+#
+#   ## ---------------------------
+#   ## Filter experiment / antigen / source
+#   ## ---------------------------
+#   best_pred_experiment_antigen <- best_pred_all[
+#     best_pred_all$experiment_accession == experiment_accession &
+#       best_pred_all$antigen == antigen &
+#       best_pred_all$source == source,
+#   ]
+#   if (nrow(best_pred_experiment_antigen) == 0) {
+#     warning("No data found for specified experiment / antigen / source")
+#     return(list(refit_fit_df = data.frame(),
+#                 predicted_agg_df = data.frame()))
+#   }
+#
+#
+#   ## ---------------------------
+#   ## X grid (original concentration scale)
+#   ## ---------------------------
+#   x_values <- seq(
+#     min(best_pred_experiment_antigen$predicted_concentration, na.rm = TRUE),
+#     max(best_pred_experiment_antigen$predicted_concentration, na.rm = TRUE),
+#     length.out = 1000
+#   )
+#
+#   ## ---------------------------
+#   ## Initialize outputs
+#   ## ---------------------------
+#   refit_fit_df   <- data.frame()
+#   predicted_agg_df <- data.frame()
+#
+#   y <- best_pred_experiment_antigen$yhat
+#   x <- best_pred_experiment_antigen$predicted_concentration
+#   data <- data.frame(concentration = x,
+#                      mfi = y)
+#
+#
+#   formulas <- select_model_formulas(fixed_constraint = NULL, response_variable = response_var,
+#                                     is_log_response = study_params$is_log_response)
+#
+#   params_by_model <- split(best_glance_experiment_antigen, best_glance_experiment_antigen$crit)
+#
+#   model_counts <- table(best_glance_experiment_antigen$crit)
+#   agg_model <- names(which.max(model_counts))
+#
+#
+#
+#   agg_params_by_model <- lapply(params_by_model, aggregate_params)
+#   agg_params <- agg_params_by_model[[agg_model]]
+#
+#   if (agg_model == "Yd5") {
+#
+#     predicted_mfi_agg <- Yd5(
+#       x_values,
+#       a = as.numeric(agg_params["a"]),
+#       b = as.numeric(agg_params["b"]),
+#       c = as.numeric(agg_params["c"]),
+#       d = as.numeric(agg_params["d"]),
+#       g = as.numeric(agg_params["g"])
+#     )
+#
+#   } else if (agg_model == "Y5") {
+#
+#     predicted_mfi_agg <- Y5(
+#       x_values,
+#       a = as.numeric(agg_params["a"]),
+#       b = as.numeric(agg_params["b"]),
+#       c = as.numeric(agg_params["c"]),
+#       d = as.numeric(agg_params["d"]),
+#       g = as.numeric(agg_params["g"])
+#     )
+#
+#   } else if (agg_model == "Y4") {
+#
+#     predicted_mfi_agg <- Y4(
+#       x_values,
+#       a = as.numeric(agg_params["a"]),
+#       b = as.numeric(agg_params["b"]),
+#       c = as.numeric(agg_params["c"]),
+#       d = as.numeric(agg_params["d"])
+#     )
+#
+#   } else if (agg_model == "Yd4") {
+#
+#     predicted_mfi_agg <- Yd4(
+#       x_values,
+#       a = as.numeric(agg_params["a"]),
+#       b = as.numeric(agg_params["b"]),
+#       c = as.numeric(agg_params["c"]),
+#       d = as.numeric(agg_params["d"])
+#     )
+#
+#   } else if (agg_model == "Ygomp4") {
+#
+#     predicted_mfi_agg <- Ygomp4(
+#       x_values,
+#       a = as.numeric(agg_params["a"]),
+#       b = as.numeric(agg_params["b"]),
+#       c = as.numeric(agg_params["c"]),
+#       d = as.numeric(agg_params["d"])
+#     )
+#
+#   } else {
+#     stop("Unsupported aggregated model: ", agg_model)
+#   }
+#
+#   predicted_agg_df <- data.frame(
+#     plateid = "aggregated",
+#     mod_class = agg_model,
+#     experiment_accession = experiment_accession,
+#     antigen = antigen,
+#     source = source,
+#     predicted_concentration = x_values,
+#     yhat = predicted_mfi_agg
+#   )
+#
+#
+#
+#
+#   return(predicted_agg_df)
+#
+# }
 
 summarize_sc_fits_plotly <- function(best_pred_all, cv_df, best_plate_all, experiment_accession,
                                      aggregated_fit, antigen, source) {
