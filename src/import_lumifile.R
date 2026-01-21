@@ -464,7 +464,7 @@ output$readxMapData <- renderUI({
                      inputId = "xPonentFile",
                      label = "File Format",
                      choices = c("xPONENT", "RAW", "Layout Template"),
-                     selected = "RAW",
+                     selected = "Layout Template",
                      justified = TRUE,
                      checkIcon = list(
                        yes = icon("check", lib = "font-awesome")

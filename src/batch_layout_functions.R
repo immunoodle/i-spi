@@ -593,6 +593,60 @@ get_element_position <- function(element,
   return(position)
 }
 
+#' Clean Antigen Label String
+#'
+#' Takes a raw antigen_label_on_plate string that may be irregularly formatted
+#' and returns a well-behaved string. Removes content in parentheses, replaces
+#' slashes with underscores, replaces whitespace with nothing, and removes
+#' punctuation except for '.' and '_'.
+#'
+#' @param antigen_label A character string (or vector) containing the raw antigen label
+#' @return A cleaned character string (or vector) with only alphanumeric characters, '.', and '_'
+#'
+#' @examples
+#' clean_antigen_label("  Washington_32 (18) ")
+#' # Returns: "Washington_32"
+#'
+#' clean_antigen_label("A/Hong Kong_NA(123)")
+#' # Returns: "A_Hong.Kong_NA"
+#'
+#' clean_antigen_label(c("Test/Label (1)", "Another_One(99)"))
+#' # Returns: c("Test_Label", "Another_One")
+
+clean_antigen_label <- function(antigen_label) {
+  if (!is.character(antigen_label)) {
+    stop("Input must be a character string or vector")
+  }
+
+  cleaned <- antigen_label
+
+  # Step 1: Remove content within parentheses (including the parentheses)
+  cleaned <- gsub("\\s*\\([^)]*\\)", "", cleaned)
+
+  # Step 2: Trim leading and trailing whitespace
+  cleaned <- trimws(cleaned)
+
+  # Step 3: Replace forward slashes with underscores
+  cleaned <- gsub("/", "_", cleaned)
+
+  # Step 4: Replace internal whitespace with dots
+  cleaned <- gsub("\\s+", ".", cleaned)
+
+  # Step 5: Remove any remaining punctuation except '.' and '_'
+  # This regex matches any punctuation that is NOT a dot or underscore
+  cleaned <- gsub("[^[:alnum:]._]", "", cleaned)
+
+  # Step 6: Clean up any multiple consecutive dots or underscores
+  cleaned <- gsub("\\.{2,}", ".", cleaned)
+  cleaned <- gsub("_{2,}", "_", cleaned)
+
+  # Step 7: Remove leading/trailing dots or underscores
+  cleaned <- gsub("^[._]+|[._]+$", "", cleaned)
+
+  return(cleaned)
+}
+
+
 #' Generate Layout Template with Description Validation
 #'
 #' Creates an Excel layout template for batch plate uploads. Handles cases where
@@ -627,9 +681,9 @@ generate_layout_template <- function(all_plates,
   bold_style <- createStyle(textDecoration = "bold")
   italic_style  <- createStyle(textDecoration = "italic")
 
-  # ============================================================================
+
   # NEW: Handle description_status - compute if not provided
-  # ============================================================================
+
   if (is.null(description_status)) {
     # Get delimiter from input or use default
     check_delimiter <- if (!is.null(delimiter)) delimiter else
@@ -650,9 +704,9 @@ generate_layout_template <- function(all_plates,
     cat("╚══════════════════════════════════════════════════════════╝\n\n")
   }
 
-  # ============================================================================
-  # NEW: Get delimiter - from parameter, input, or default
-  # ============================================================================
+
+  # Get delimiter - from parameter, input, or default
+
   description_delimiter <- if (!is.null(delimiter)) {
     delimiter
   } else if (description_status$has_content && exists("input") && !is.null(input$description_delimiter)) {
@@ -661,9 +715,9 @@ generate_layout_template <- function(all_plates,
     "_"  # Default delimiter
   }
 
-  # ============================================================================
-  # NEW: Get element order - from parameter, input, or defaults
-  # ============================================================================
+
+  # Get element order - from parameter, input, or defaults
+
   XElementOrder <- if (!is.null(element_order)) {
     element_order
   } else if (description_status$has_sufficient_elements && exists("input") && !is.null(input$XElementOrder)) {
@@ -711,10 +765,10 @@ generate_layout_template <- function(all_plates,
     cat("  ✓ Created plate_filename from header_list names\n")
   }
 
-  # ============================================================================
-  # IMPROVED: Extract plate_number from filename or plateid
+
+  # Extract plate_number from filename or plateid
   # Looks for patterns like "plate_3", "plate 3", "plate.3", "plate3"
-  # ============================================================================
+
   extract_plate_number <- function(text) {
     if (is.na(text) || text == "") return(NA_character_)
 
@@ -861,7 +915,8 @@ generate_layout_template <- function(all_plates,
     study_name = rep(study_accession, length(antigen_names)),
     experiment_name = rep(experiment_accession, length(antigen_names)),
     antigen_label_on_plate = antigen_names,
-    antigen_abbreviation = str_split_i(antigen_names," ",1),
+    # antigen_abbreviation = str_split_i(antigen_names," ",1),
+    antigen_abbreviation = clean_antigen_label(antigen_names),
     standard_curve_max_concentration = 100000,
     l_asy_constraint_method = "default",
     l_asy_min_constraint = 0,
@@ -965,10 +1020,10 @@ generate_layout_template <- function(all_plates,
     TRUE ~ ""
   )
 
-  # ============================================================================
+
   # MODIFIED: Use parse_description_with_defaults for sample rows when Description
   # is blank or insufficient
-  # ============================================================================
+
   if (!description_status$has_content || !description_status$has_sufficient_elements) {
     cat("\n╔══════════════════════════════════════════════════════════╗\n")
     cat("║  Using parse_description_with_defaults for samples       ║\n")
@@ -1033,9 +1088,9 @@ generate_layout_template <- function(all_plates,
     cat("╚══════════════════════════════════════════════════════════╝\n\n")
 
   } else {
-    # ============================================================================
+
     # ORIGINAL: Use str_split_i when Description has content
-    # ============================================================================
+
     plate_well_map$subject_id <- case_when(
       is.na(plate_well_map$Type) ~ "",
       substr(plate_well_map$Type,1,1) == "X" ~ str_split_i(plate_well_map$Description,description_delimiter,xpatientid),
@@ -1064,9 +1119,9 @@ generate_layout_template <- function(all_plates,
     )
   }
 
-  # ============================================================================
+
   # Build subject_groups - also using parse_description_with_defaults if needed
-  # ============================================================================
+
 
   # First, ensure subject_id has no NA values for sample rows before creating subject_groups
   # Replace NA/empty subject_id values with default "1" for sample rows
@@ -1177,9 +1232,9 @@ generate_layout_template <- function(all_plates,
   plate_well_map <- plate_well_map[ , c("study_name",	"plate_number",	"well",	"specimen_type",	"specimen_source",
                                         "specimen_dilution_factor",	"experiment_name",	"feature",	"subject_id",	"biosample_id_barcode",	"timepoint_tissue_abbreviation")]
 
-  # ============================================================================
+
   # NEW: Apply default values to plates_map if Description was insufficient
-  # ============================================================================
+
   # Apply defaults directly here since the column names may differ
   if (!description_status$has_content || !description_status$has_sufficient_elements) {
     sample_mask <- plate_well_map$specimen_type == "X"
@@ -1369,9 +1424,9 @@ generate_layout_template <- function(all_plates,
     }
   }
 
-  # ============================================================================
+
   # VALIDATION: Collect all issues for README_IMPORTANT
-  # ============================================================================
+
   validation_issues <- list()
   validation_warnings <- list()
 
@@ -1528,9 +1583,9 @@ generate_layout_template <- function(all_plates,
     }
   }
 
-  # ============================================================================
+
   # BUILD README_IMPORTANT CONTENT
-  # ============================================================================
+
   if (needs_readme || length(validation_issues) > 0 || length(validation_warnings) > 0) {
 
     readme_lines <- c(
@@ -2188,86 +2243,6 @@ construct_batch_upload_metadata <- function(plates_map, plate_metadata_list, cur
 
   return(plate_metadata_list_updated)
 }
-# construct_batch_upload_metadata <- function(plates_map, plate_metadata_list, currentuser, workspace_id) {
-#
-#   cat("\n=== CONSTRUCT BATCH UPLOAD METADATA ===\n")
-#   cat("plates_map columns:", paste(names(plates_map), collapse=", "), "\n")
-#   cat("Number of plate metadata items:", length(plate_metadata_list), "\n")
-#   cat("Plate metadata names:", paste(names(plate_metadata_list), collapse=", "), "\n")
-#
-#   # Check if plate_metadata_list items have 'plate' column
-#   first_item <- plate_metadata_list[[1]]
-#   cat("First metadata item columns:", paste(names(first_item), collapse=", "), "\n")
-#
-#   # # Get unique sample dilution factors by plate_number
-#   # sample_dilutions_by_plate <- as.data.frame(dplyr::distinct(
-#   #   plates_map[plates_map$specimen_type == "X",
-#   #              c("plate_number", "specimen_type", "specimen_dilution_factor")])
-#   # )
-#   #
-#   # sample_dilutions_by_plate <- sample_dilutions_by_plate[!is.na(sample_dilutions_by_plate$plate_number), ]
-#   #
-#   # names(sample_dilutions_by_plate)[names(sample_dilutions_by_plate) == "specimen_dilution_factor"] <- "sample_dilution_factor"
-#   #
-#   # cat("Sample dilutions by plate:\n")
-#   # print(sample_dilutions_by_plate)
-#   #
-#   # # Get experiment by plate
-#   # experiment_by_plate <- as.data.frame(dplyr::distinct(
-#   #   plates_map[, c("study_name", "plate_number", "experiment_name", "feature")])
-#   # )
-#
-#   # Get sample dilution factors - aggregate to ONE per plate
-#   sample_dilutions_raw <- plates_map[plates_map$specimen_type == "X" &
-#                                        !is.na(plates_map$plate_number),
-#                                      c("plate_number", "specimen_dilution_factor")]
-#
-#   # Aggregate to get ONE dilution factor per plate (use minimum as representative)
-#   sample_dilutions_by_plate <- aggregate(
-#     specimen_dilution_factor ~ plate_number,
-#     data = sample_dilutions_raw,
-#     FUN = function(x) min(x, na.rm = TRUE)
-#   )
-#   names(sample_dilutions_by_plate)[names(sample_dilutions_by_plate) ==
-#                                      "specimen_dilution_factor"] <- "sample_dilution_factor"
-#
-#   # Get experiment by plate - exclude 'feature' to avoid duplicates
-#   experiment_by_plate <- as.data.frame(dplyr::distinct(
-#     plates_map[!is.na(plates_map$plate_number),
-#                c("study_name", "plate_number", "experiment_name")]
-#   ))
-#
-#   # Remove any remaining duplicates (defensive)
-#   experiment_by_plate <- experiment_by_plate[!duplicated(experiment_by_plate$plate_number), ]
-#   experiment_by_plate$workspace_id <- workspace_id
-#   experiment_by_plate$auth0_user <- currentuser
-#
-#   cat("Experiment by plate:\n")
-#   print(experiment_by_plate)
-#   cat("\n")
-#
-#   source_file_by_plate <- extract_plate_identifiers(plate_metadata_list)
-#   source_file_by_plate$plate_number <- source_file_by_plate$plate
-#
-#   cat("Source file by plate:\n")
-#   print(source_file_by_plate)
-#   cat("\n")
-#
-#   plate_metadata_list_updated <- inner_join(experiment_by_plate, sample_dilutions_by_plate, by = "plate_number")
-#   plate_metadata_list_updated <- inner_join(plate_metadata_list_updated, source_file_by_plate, by = "plate_number")
-# #
-# #   # Restore names
-# #   names(plate_metadata_list_updated) <- names(plate_metadata_list)
-#
-#   cat("plate_metadata_list_updated:\n")
-#   print(plate_metadata_list_updated)
-#   cat("\n")
-#
-#   cat("✓ Batch metadata construction complete\n")
-#   cat("=====================================\n\n")
-#
-#   return(plate_metadata_list_updated)
-# }
 
 plot_plate_layout <- function(plates_map, plate_id_data) {
   #plates_map_v <<- plates_map
