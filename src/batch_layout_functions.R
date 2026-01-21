@@ -2053,6 +2053,9 @@ transpose_batch_header <- function(batch_header, id_column = "source_file") {
 }
 
 # Join sample dilutions for the plate to the header
+
+# In batch_layout_functions.R - Replace the construct_batch_upload_metadata function
+
 construct_batch_upload_metadata <- function(plates_map, plate_metadata_list, currentuser, workspace_id) {
 
   cat("\n=== CONSTRUCT BATCH UPLOAD METADATA ===\n")
@@ -2064,51 +2067,64 @@ construct_batch_upload_metadata <- function(plates_map, plate_metadata_list, cur
   first_item <- plate_metadata_list[[1]]
   cat("First metadata item columns:", paste(names(first_item), collapse=", "), "\n")
 
-  # # Get unique sample dilution factors by plate_number
-  # sample_dilutions_by_plate <- as.data.frame(dplyr::distinct(
-  #   plates_map[plates_map$specimen_type == "X",
-  #              c("plate_number", "specimen_type", "specimen_dilution_factor")])
-  # )
-  #
-  # sample_dilutions_by_plate <- sample_dilutions_by_plate[!is.na(sample_dilutions_by_plate$plate_number), ]
-  #
-  # names(sample_dilutions_by_plate)[names(sample_dilutions_by_plate) == "specimen_dilution_factor"] <- "sample_dilution_factor"
-  #
-  # cat("Sample dilutions by plate:\n")
-  # print(sample_dilutions_by_plate)
-  #
-  # # Get experiment by plate
-  # experiment_by_plate <- as.data.frame(dplyr::distinct(
-  #   plates_map[, c("study_name", "plate_number", "experiment_name", "feature")])
-  # )
-
-  # Get sample dilution factors - aggregate to ONE per plate
+  # ============================================================================
+  # FIX: Get sample dilution factors - use the MOST COMMON value per plate
+  # or the minimum if there are multiple dilutions (for mixed dilution plates)
+  # ============================================================================
   sample_dilutions_raw <- plates_map[plates_map$specimen_type == "X" &
                                        !is.na(plates_map$plate_number),
                                      c("plate_number", "specimen_dilution_factor")]
 
-  # Aggregate to get ONE dilution factor per plate (use minimum as representative)
-  sample_dilutions_by_plate <- aggregate(
-    specimen_dilution_factor ~ plate_number,
-    data = sample_dilutions_raw,
-    FUN = function(x) min(x, na.rm = TRUE)
-  )
-  names(sample_dilutions_by_plate)[names(sample_dilutions_by_plate) ==
-                                     "specimen_dilution_factor"] <- "sample_dilution_factor"
+  # Remove NA dilution factors before aggregation
+  sample_dilutions_raw <- sample_dilutions_raw[!is.na(sample_dilutions_raw$specimen_dilution_factor), ]
 
-  # Get experiment by plate - exclude 'feature' to avoid duplicates
-  experiment_by_plate <- as.data.frame(dplyr::distinct(
-    plates_map[!is.na(plates_map$plate_number),
-               c("study_name", "plate_number", "experiment_name")]
+  # FIX: Use a custom aggregation that picks the most frequent dilution factor
+  # If ties, use the minimum value
+  sample_dilutions_by_plate <- do.call(rbind, lapply(
+    split(sample_dilutions_raw, sample_dilutions_raw$plate_number),
+    function(df) {
+      if (nrow(df) == 0) return(NULL)
+
+      # Get frequency table
+      freq_table <- table(df$specimen_dilution_factor)
+
+      # Get the most frequent value (or min if tied)
+      max_freq <- max(freq_table)
+      most_common <- as.numeric(names(freq_table)[freq_table == max_freq])
+      representative_dilution <- min(most_common)  # Use min if there's a tie
+
+      data.frame(
+        plate_number = unique(df$plate_number),
+        sample_dilution_factor = representative_dilution,
+        stringsAsFactors = FALSE
+      )
+    }
   ))
+  rownames(sample_dilutions_by_plate) <- NULL
 
-  # Remove any remaining duplicates (defensive)
+  cat("Sample dilutions by plate:\n")
+  print(sample_dilutions_by_plate)
+  cat("\n")
+
+  # ============================================================================
+  # FIX: Get experiment by plate - ensure TRUE uniqueness by plate_number
+  # Remove 'feature' from distinct to prevent multiplication
+  # ============================================================================
+  experiment_by_plate <- unique(
+    plates_map[!is.na(plates_map$plate_number),
+               c("study_name", "plate_number", "experiment_name"),
+               drop = FALSE]
+  )
+
+  # CRITICAL FIX: Ensure only ONE row per plate_number
   experiment_by_plate <- experiment_by_plate[!duplicated(experiment_by_plate$plate_number), ]
+
   experiment_by_plate$workspace_id <- workspace_id
   experiment_by_plate$auth0_user <- currentuser
 
-  cat("Experiment by plate:\n")
+  cat("Experiment by plate (after dedup):\n")
   print(experiment_by_plate)
+  cat("Number of rows:", nrow(experiment_by_plate), "\n")
   cat("\n")
 
   source_file_by_plate <- extract_plate_identifiers(plate_metadata_list)
@@ -2116,13 +2132,52 @@ construct_batch_upload_metadata <- function(plates_map, plate_metadata_list, cur
 
   cat("Source file by plate:\n")
   print(source_file_by_plate)
+  cat("Number of rows:", nrow(source_file_by_plate), "\n")
   cat("\n")
 
-  plate_metadata_list_updated <- inner_join(experiment_by_plate, sample_dilutions_by_plate, by = "plate_number")
-  plate_metadata_list_updated <- inner_join(plate_metadata_list_updated, source_file_by_plate, by = "plate_number")
-#
-#   # Restore names
-#   names(plate_metadata_list_updated) <- names(plate_metadata_list)
+  # ============================================================================
+  # FIX: Perform joins carefully with validation
+  # ============================================================================
+
+  # First join
+  plate_metadata_list_updated <- merge(
+    experiment_by_plate,
+    sample_dilutions_by_plate,
+    by = "plate_number",
+    all.x = TRUE
+  )
+
+  cat("After first join - rows:", nrow(plate_metadata_list_updated), "\n")
+
+  # Check for unexpected row multiplication
+  if (nrow(plate_metadata_list_updated) > nrow(experiment_by_plate)) {
+    cat("⚠️  WARNING: Row multiplication detected after first join!\n")
+    cat("   Expected:", nrow(experiment_by_plate), "Got:", nrow(plate_metadata_list_updated), "\n")
+    # Deduplicate
+    plate_metadata_list_updated <- plate_metadata_list_updated[
+      !duplicated(plate_metadata_list_updated$plate_number), ]
+    cat("   After dedup:", nrow(plate_metadata_list_updated), "\n")
+  }
+
+  # Second join
+  plate_metadata_list_updated <- merge(
+    plate_metadata_list_updated,
+    source_file_by_plate,
+    by = "plate_number",
+    all.x = TRUE
+  )
+
+  cat("After second join - rows:", nrow(plate_metadata_list_updated), "\n")
+
+  # Check for unexpected row multiplication again
+  if (nrow(plate_metadata_list_updated) > length(plate_metadata_list)) {
+    cat("⚠️  WARNING: Row multiplication detected after second join!\n")
+    cat("   Expected:", length(plate_metadata_list), "Got:", nrow(plate_metadata_list_updated), "\n")
+    # Deduplicate by plate_number (the true unique key)
+    plate_metadata_list_updated <- plate_metadata_list_updated[
+      !duplicated(plate_metadata_list_updated$plate_number), ]
+    cat("   After dedup:", nrow(plate_metadata_list_updated), "\n")
+  }
 
   cat("plate_metadata_list_updated:\n")
   print(plate_metadata_list_updated)
@@ -2133,6 +2188,86 @@ construct_batch_upload_metadata <- function(plates_map, plate_metadata_list, cur
 
   return(plate_metadata_list_updated)
 }
+# construct_batch_upload_metadata <- function(plates_map, plate_metadata_list, currentuser, workspace_id) {
+#
+#   cat("\n=== CONSTRUCT BATCH UPLOAD METADATA ===\n")
+#   cat("plates_map columns:", paste(names(plates_map), collapse=", "), "\n")
+#   cat("Number of plate metadata items:", length(plate_metadata_list), "\n")
+#   cat("Plate metadata names:", paste(names(plate_metadata_list), collapse=", "), "\n")
+#
+#   # Check if plate_metadata_list items have 'plate' column
+#   first_item <- plate_metadata_list[[1]]
+#   cat("First metadata item columns:", paste(names(first_item), collapse=", "), "\n")
+#
+#   # # Get unique sample dilution factors by plate_number
+#   # sample_dilutions_by_plate <- as.data.frame(dplyr::distinct(
+#   #   plates_map[plates_map$specimen_type == "X",
+#   #              c("plate_number", "specimen_type", "specimen_dilution_factor")])
+#   # )
+#   #
+#   # sample_dilutions_by_plate <- sample_dilutions_by_plate[!is.na(sample_dilutions_by_plate$plate_number), ]
+#   #
+#   # names(sample_dilutions_by_plate)[names(sample_dilutions_by_plate) == "specimen_dilution_factor"] <- "sample_dilution_factor"
+#   #
+#   # cat("Sample dilutions by plate:\n")
+#   # print(sample_dilutions_by_plate)
+#   #
+#   # # Get experiment by plate
+#   # experiment_by_plate <- as.data.frame(dplyr::distinct(
+#   #   plates_map[, c("study_name", "plate_number", "experiment_name", "feature")])
+#   # )
+#
+#   # Get sample dilution factors - aggregate to ONE per plate
+#   sample_dilutions_raw <- plates_map[plates_map$specimen_type == "X" &
+#                                        !is.na(plates_map$plate_number),
+#                                      c("plate_number", "specimen_dilution_factor")]
+#
+#   # Aggregate to get ONE dilution factor per plate (use minimum as representative)
+#   sample_dilutions_by_plate <- aggregate(
+#     specimen_dilution_factor ~ plate_number,
+#     data = sample_dilutions_raw,
+#     FUN = function(x) min(x, na.rm = TRUE)
+#   )
+#   names(sample_dilutions_by_plate)[names(sample_dilutions_by_plate) ==
+#                                      "specimen_dilution_factor"] <- "sample_dilution_factor"
+#
+#   # Get experiment by plate - exclude 'feature' to avoid duplicates
+#   experiment_by_plate <- as.data.frame(dplyr::distinct(
+#     plates_map[!is.na(plates_map$plate_number),
+#                c("study_name", "plate_number", "experiment_name")]
+#   ))
+#
+#   # Remove any remaining duplicates (defensive)
+#   experiment_by_plate <- experiment_by_plate[!duplicated(experiment_by_plate$plate_number), ]
+#   experiment_by_plate$workspace_id <- workspace_id
+#   experiment_by_plate$auth0_user <- currentuser
+#
+#   cat("Experiment by plate:\n")
+#   print(experiment_by_plate)
+#   cat("\n")
+#
+#   source_file_by_plate <- extract_plate_identifiers(plate_metadata_list)
+#   source_file_by_plate$plate_number <- source_file_by_plate$plate
+#
+#   cat("Source file by plate:\n")
+#   print(source_file_by_plate)
+#   cat("\n")
+#
+#   plate_metadata_list_updated <- inner_join(experiment_by_plate, sample_dilutions_by_plate, by = "plate_number")
+#   plate_metadata_list_updated <- inner_join(plate_metadata_list_updated, source_file_by_plate, by = "plate_number")
+# #
+# #   # Restore names
+# #   names(plate_metadata_list_updated) <- names(plate_metadata_list)
+#
+#   cat("plate_metadata_list_updated:\n")
+#   print(plate_metadata_list_updated)
+#   cat("\n")
+#
+#   cat("✓ Batch metadata construction complete\n")
+#   cat("=====================================\n\n")
+#
+#   return(plate_metadata_list_updated)
+# }
 
 plot_plate_layout <- function(plates_map, plate_id_data) {
   #plates_map_v <<- plates_map
