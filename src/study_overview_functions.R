@@ -193,7 +193,7 @@ INNER JOIN madi_results.xmap_header AS h
     ON h.study_accession      = b.study_accession
    AND h.experiment_accession = b.experiment_accession
    AND h.plate_id            = b.plate_id
-WHERE b.study_accession = 'MADI_01'
+WHERE b.study_accession = {selected_study}
 ORDER BY b.experiment_accession,
          b.antigen;
 ",.con = conn)
@@ -239,8 +239,6 @@ pull_control <- function(conn, selected_study, current_user, plates) {
          c.study_accession,
 		 c.experiment_accession,
          (c.experiment_accession || '_' || h.sample_dilution_factor) AS Analyte,
-        -- c.plate_id,
-		-- h.xmap_header_id,
          h.plateid,
          h.plate,
          h.sample_dilution_factor,
@@ -340,6 +338,7 @@ pull_control <- function(conn, selected_study, current_user, plates) {
 #   return(active_samples)
 # }
 
+### depends on the fitting - gating of samples
 pull_samples <- function(conn, selected_study, current_user, plates) {
   sample_query <- glue::glue_sql("/* -------------------------------------------------------------
      1. Pull the study‑specific thresholds once (single scan)
@@ -380,7 +379,6 @@ SELECT
     /* NEW – columns already in best_sample_se_all */
     b.feature,               -- bead‑/antigen‑level feature
     (b.experiment_accession || '_' || b.sample_dilution_factor) AS Analyte,
-  --  b.plate_id,              -- plate identifier
 
     b.assay_response_variable,
     b.assay_independent_variable,
@@ -426,13 +424,66 @@ SELECT
 FROM madi_results.best_sample_se_all AS b               -- alias defined here
 INNER JOIN study_config AS cfg
         ON cfg.study_accession = b.study_accession
-WHERE b.study_accession = {selected_study}       -- keep only the study you care about
-  --AND b.plate_id IS NOT NULL;             -- filter out rows without a plate_id", .con = conn)
+WHERE b.study_accession = {selected_study};", .con = conn)
 
 active_samples <- dbGetQuery(conn,sample_query)
 
 return(active_samples)
 }
+
+pull_raw_samples <- function(conn, selected_study, current_user) {
+  raw_sample_query <- glue::glue_sql("WITH study_config AS (
+    SELECT
+        study_accession,
+        MAX(CASE WHEN param_name = 'lower_bc_threshold' THEN param_integer_value END) AS lower_bc_threshold,
+        MAX(CASE WHEN param_name = 'pct_agg_threshold'   THEN param_integer_value END) AS pct_agg_threshold
+    FROM madi_results.xmap_study_config
+    WHERE param_user = {current_user}
+      AND param_name IN ('lower_bc_threshold','pct_agg_threshold')
+    GROUP BY study_accession
+)
+SELECT DISTINCT
+    s.study_accession,
+    s.experiment_accession,
+    (s.experiment_accession || '_' || h.sample_dilution_factor) AS analyte,
+    h.plateid,
+    h.plate,
+    h.sample_dilution_factor,
+    s.feature,
+    s.well,
+    s.antigen,
+    s.patientid,
+    s.agroup,
+    s.timeperiod,
+    s.antibody_mfi AS MFI,
+
+    CASE
+        WHEN s.antibody_n < cfg.lower_bc_threshold THEN 'LowBeadN'
+        ELSE 'Acceptable'
+    END AS lowbeadn,
+
+    CASE
+        WHEN s.pctaggbeads > cfg.pct_agg_threshold THEN 'PctAggBeads'
+        ELSE 'Acceptable'
+    END AS highbeadagg
+
+FROM madi_results.xmap_sample AS s
+
+INNER JOIN madi_results.xmap_header AS h
+    ON h.study_accession      = s.study_accession
+   AND h.experiment_accession = s.experiment_accession
+   AND h.plate_id             = s.plate_id
+
+INNER JOIN study_config AS cfg
+    ON cfg.study_accession = s.study_accession
+
+WHERE s.study_accession = {selected_study};
+",.con = conn)
+
+raw_samples <- dbGetQuery(conn, raw_sample_query)
+return(raw_samples)
+}
+
 
 pull_conc <- function(conn, selected_study, current_user){
   query_stdcurve_conc <- glue::glue_sql("SELECT antigen, antigen_family, standard_curve_concentration
@@ -522,7 +573,6 @@ pull_fits <- function(conn, selected_study, current_user, plates) {
   fit_query <- glue::glue_sql("SELECT
   sf.study_accession,
   sf.experiment_accession,
-  experiment_accession,
   sample_dilution_factor,
   (sf.experiment_accession || '_' || sample_dilution_factor) AS Analyte,
   antigen,
@@ -686,6 +736,40 @@ get_condition_counts <- function(data, condition_col, condition_val, count_col_n
   }
   return(dfsum)
 }
+#
+# get_condition_counts <- function(data, condition_col, condition_val, count_col_name, sample_summ) {
+#   if (nrow(data) > 2) {
+#     filtered <- data %>%
+#       dplyr::filter((!!sym(condition_col)) == condition_val)
+#
+#     if (nrow(filtered) > 0) {
+#       # Normal summarise case
+#       dfsum <- filtered %>%
+#         dplyr::group_by(analyte, antigen, plateid) %>%
+#         dplyr::summarise(!!count_col_name := dplyr::n(), .groups = "drop")
+#
+#     } else {
+#       # No filtered rows
+#       if (is.data.frame(sample_summ) && nrow(sample_summ) > 0) {
+#
+#         dfsum <- sample_summ %>%
+#           dplyr::select(analyte, antigen, plateid) %>%
+#           dplyr::mutate(!!count_col_name := 0)
+#
+#       } else {
+#         # sample_summ empty or missing necessary columns → return empty with count col
+#         dfsum <- tibble::tibble(!!count_col_name := numeric(0))
+#       }
+#     }
+#
+#   } else {
+#     # data too small, return empty
+#     dfsum <- data.frame()
+#   }
+#
+#   return(dfsum)
+# }
+
 
 # check_plate <- function(conn, selected_study){
 #  # conn <- get_db_connection()
@@ -808,8 +892,15 @@ load_specimens <- function(conn, current_user, selected_study) {
  # plates_v <<- plates
   standard_fit <- pull_fits(conn, selected_study, current_user, plates)
   stdcurve_undiluted_conc <- pull_conc(conn, selected_study, current_user)
+
+  raw_samples <- pull_raw_samples(conn, selected_study, current_user)
+  if (nrow(raw_samples) > 1) {raw_samples$specimen_type <- "raw_sample"} else {
+    raw_samples <- data.frame()
+  }
   #dbDisconnect(conn)
-  return(list(plates, standard_data, blank_data, sample_data, control_data, standard_fit, stdcurve_undiluted_conc))
+  return(list(plates, standard_data, blank_data, sample_data, control_data, standard_fit,
+              stdcurve_undiluted_conc,
+              raw_samples))
 }
 
 # add_condition_counts <- function(data, summ) {
@@ -883,29 +974,29 @@ make_summspec <- function(standard_data, blank_data, control_data, active_sample
       mutate(specimen_type = "sample")
     sample_lowbead <- get_condition_counts(active_samples, "lowbeadn", "LowBeadN", "nlowbead", sample_summ)
     sample_highbeadagg <- get_condition_counts(active_samples, "highbeadagg", "PctAggBeads", "nhighbeadagg", sample_summ)
-    sample_gclin <- get_condition_counts(active_samples, "gclin", "Acceptable", "nlinear", sample_summ)
-    sample_gcconc <- get_condition_counts(active_samples, "gclin", "Too Concentrated", "ntooconc", sample_summ)
-    sample_gcdilut <- get_condition_counts(active_samples, "gclin", "Too Diluted", "ntoodilut", sample_summ)
-    sample_gcaulod <- get_condition_counts(active_samples, "gclod", "Too Concentrated", "nabovelod", sample_summ)
-    sample_gcbllod <- get_condition_counts(active_samples, "gclod", "Too Diluted", "nbelowlod", sample_summ)
+    # sample_gclin <- get_condition_counts(active_samples, "gclin", "Acceptable", "nlinear", sample_summ)
+    # sample_gcconc <- get_condition_counts(active_samples, "gclin", "Too Concentrated", "ntooconc", sample_summ)
+    # sample_gcdilut <- get_condition_counts(active_samples, "gclin", "Too Diluted", "ntoodilut", sample_summ)
+    # sample_gcaulod <- get_condition_counts(active_samples, "gclod", "Too Concentrated", "nabovelod", sample_summ)
+    # sample_gcbllod <- get_condition_counts(active_samples, "gclod", "Too Diluted", "nbelowlod", sample_summ)
 
     sample_summ <- sample_summ %>%
-      left_join(sample_gclin, by = c("analyte", "antigen", "plateid")) %>%
+     # left_join(sample_gclin, by = c("analyte", "antigen", "plateid")) %>%
       left_join(sample_highbeadagg, by = c("analyte", "antigen", "plateid")) %>%
       left_join(sample_lowbead, by = c("analyte", "antigen", "plateid")) %>%
-      left_join(sample_gcconc, by = c("analyte", "antigen", "plateid")) %>%
-      left_join(sample_gcdilut, by = c("analyte", "antigen", "plateid")) %>%
-      left_join(sample_gcaulod, by = c("analyte", "antigen", "plateid")) %>%
-      left_join(sample_gcbllod, by = c("analyte", "antigen", "plateid")) %>%
+      # left_join(sample_gcconc, by = c("analyte", "antigen", "plateid")) %>%
+      # left_join(sample_gcdilut, by = c("analyte", "antigen", "plateid")) %>%
+      # left_join(sample_gcaulod, by = c("analyte", "antigen", "plateid")) %>%
+      # left_join(sample_gcbllod, by = c("analyte", "antigen", "plateid")) %>%
       # Replace NAs in the new count columns with zeros
       replace_na(list(
-        nlinear = 0,
+       # nlinear = 0,
         nhighbeadagg = 0,
-        nlowbead = 0,
-        ntooconc = 0,
-        ntoodilut = 0,
-        nabovelod = 0,
-        nbelowlod = 0
+        nlowbead = 0
+        # ntooconc = 0,
+        # ntoodilut = 0,
+        # nabovelod = 0,
+        # nbelowlod = 0
       ))
   } else {
     sample_summ <- data.frame()
@@ -915,8 +1006,12 @@ make_summspec <- function(standard_data, blank_data, control_data, active_sample
   # Summarise blank data and add specimen_type
   if(nrow(blank_data) > 2)
   {
+    cat("summarizing BLANK data")
+    print(str(blank_data))
+
     buffer_summ <- summarise_data(blank_data) %>%
       mutate(specimen_type = "blank")
+
     blank_lowbead <- get_condition_counts(blank_data, "lowbeadn", "LowBeadN", "nlowbead", sample_summ)
     blank_highbeadagg <- get_condition_counts(blank_data, "highbeadagg", "PctAggBeads", "nhighbeadagg", sample_summ)
     buffer_summ <- buffer_summ %>%
@@ -949,6 +1044,18 @@ make_summspec <- function(standard_data, blank_data, control_data, active_sample
   {
   control_summ <- summarise_data(control_data) %>%
     mutate(specimen_type = "control")
+  cat("After Control Sum")
+  print(names(control_summ))
+
+  cat("Sample SUM")
+  print(head(sample_summ))
+  print(names(sample_summ))
+  cat("control data\n")
+  print(head(control_data))
+  print(names(control_data))
+
+
+
   control_lowbead <- get_condition_counts(control_data, "lowbeadn", "LowBeadN", "nlowbead", sample_summ)
   control_highbeadagg <- get_condition_counts(control_data, "highbeadagg", "PctAggBeads", "nhighbeadagg", sample_summ)
   control_summ <- control_summ %>%
@@ -1051,13 +1158,13 @@ convert_vars <- function(summ_spec) {
   sample_spec <- summ_spec_dup[summ_spec_dup$specimen_type=='sample', ]
   cat("sample spec\n")
   sample_spec$nlowbead <- ifelse(is.na(sample_spec$nlowbead),0,sample_spec$nlowbead)
-  sample_spec$nlinear <- ifelse(is.na(sample_spec$nlinear),0,sample_spec$nlinear)
+  #sample_spec$nlinear <- ifelse(is.na(sample_spec$nlinear),0,sample_spec$nlinear)
   sample_spec$nhighbeadagg <- ifelse(is.na(sample_spec$nhighbeadagg),0,sample_spec$nhighbeadagg)
-  sample_spec$ntooconc <- ifelse(is.na(sample_spec$ntooconc),0,sample_spec$ntooconc)
-  sample_spec$ntoodilut <- ifelse(is.na(sample_spec$ntoodilut),0,sample_spec$ntoodilut)
-  sample_spec$nabovelod <- ifelse(is.na(sample_spec$nabovelod),0,sample_spec$nabovelod)
-  sample_spec$nbelowlod <- ifelse(is.na(sample_spec$nbelowlod),0,sample_spec$nbelowlod)
-  sample_spec$pct_lin <- ifelse(sample_spec$n > 0, round(sample_spec$nlinear / sample_spec$n * 100, digits = 0), NULL)
+  # sample_spec$ntooconc <- ifelse(is.na(sample_spec$ntooconc),0,sample_spec$ntooconc)
+  # sample_spec$ntoodilut <- ifelse(is.na(sample_spec$ntoodilut),0,sample_spec$ntoodilut)
+  # sample_spec$nabovelod <- ifelse(is.na(sample_spec$nabovelod),0,sample_spec$nabovelod)
+  # sample_spec$nbelowlod <- ifelse(is.na(sample_spec$nbelowlod),0,sample_spec$nbelowlod)
+  # sample_spec$pct_lin <- ifelse(sample_spec$n > 0, round(sample_spec$nlinear / sample_spec$n * 100, digits = 0), NULL)
 
  # sample_spec$analyte <- paste(sample_spec$analyte, sample_spec$sample_dilution_factor, sep = "_")
   print(head(sample_spec))
@@ -1099,14 +1206,17 @@ convert_vars <- function(summ_spec) {
   } else {tblank <- data.frame()}
 
   #tsumm_spec$analyte <- paste(tsumm_spec$analyte, tsumm_spec$sample_dilution_factor, sep = "_")
-  tsample_lin <- as.data.frame(pivot_wider(sample_spec, id_cols = c("analyte", "antigen"), names_from = "plate", values_from = "pct_lin"))
+
+  tsample_lin <- data.frame()
+  #tsample_lin <- as.data.frame(pivot_wider(sample_spec, id_cols = c("analyte", "antigen"), names_from = "plate", values_from = "pct_lin"))
+
   tsample_lobead <- as.data.frame(pivot_wider(sample_spec, id_cols = c("analyte", "antigen"), names_from = "plate", values_from = "nlowbead"))
   tsample_hiagg <- as.data.frame(pivot_wider(sample_spec, id_cols = c("analyte", "antigen"), names_from = "plate", values_from = "nhighbeadagg"))
-  tsample_conc <- as.data.frame(pivot_wider(sample_spec, id_cols = c("analyte", "antigen"), names_from = "plate", values_from = "ntooconc"))
-  tsample_dilut <- as.data.frame(pivot_wider(sample_spec, id_cols = c("analyte", "antigen"), names_from = "plate", values_from = "ntoodilut"))
-  tsample_abovelod <- as.data.frame(pivot_wider(sample_spec, id_cols = c("analyte", "antigen"), names_from = "plate", values_from = "nabovelod"))
-  tsample_belowlod <- as.data.frame(pivot_wider(sample_spec, id_cols = c("analyte", "antigen"), names_from = "plate", values_from = "nbelowlod"))
-  return(list(tsample, tstandard, tblank, tcontrol, tsample_lin, tsample_lobead, tsample_hiagg, tsample_conc, tsample_dilut, tsample_abovelod, tsample_belowlod))
+  # tsample_conc <- as.data.frame(pivot_wider(sample_spec, id_cols = c("analyte", "antigen"), names_from = "plate", values_from = "ntooconc"))
+  # tsample_dilut <- as.data.frame(pivot_wider(sample_spec, id_cols = c("analyte", "antigen"), names_from = "plate", values_from = "ntoodilut"))
+  # tsample_abovelod <- as.data.frame(pivot_wider(sample_spec, id_cols = c("analyte", "antigen"), names_from = "plate", values_from = "nabovelod"))
+  # tsample_belowlod <- as.data.frame(pivot_wider(sample_spec, id_cols = c("analyte", "antigen"), names_from = "plate", values_from = "nbelowlod"))
+  return(list(tsample, tstandard, tblank, tcontrol, tsample_lin, tsample_lobead, tsample_hiagg)) # tsample_conc, tsample_dilut, tsample_abovelod, tsample_belowlod))
 }
 
 get_bg_color <- function(pctlin) {
@@ -1115,91 +1225,126 @@ get_bg_color <- function(pctlin) {
   colors[ceiling(norm_val * 99) + 1]
 }
 
-preprocess_plate_data <- function(conn, current_user, selected_study){
+select_safe <- function(df, cols) {
+  existing <- intersect(cols, names(df))
+  if (length(existing) == 0) {
+    tibble::tibble()
+  } else {
+    df %>% select(all_of(existing))
+  }
+}
+
+# create low bead and high aggregate data frames for any specimen type
+make_problem_sets <- function(df, needed_cols) {
+  # -----------------------------------------------------------------
+  # 1) Low‑bead rows
+  # -----------------------------------------------------------------
+  low_bead <- df %>%
+    filter(lowbeadn == "LowBeadN") %>%
+    select_safe(needed_cols) %>%
+    mutate(problem_type = "low_bead_count")
+
+  # -----------------------------------------------------------------
+  # 2) High‑aggregate rows
+  # -----------------------------------------------------------------
+  high_agg <- df %>%
+    filter(highbeadagg == "PctAggBeads") %>%
+    select_safe(needed_cols) %>%
+    mutate(problem_type = "high_aggregate_beads")
+
+  # -----------------------------------------------------------------
+  # Return a list with the two tables
+  # -----------------------------------------------------------------
+  return(list(low = low_bead, high = high_agg))
+}
+
+
+
+preprocess_plate_data <- function(conn, current_user, selected_study) {
+  cat("\n=== preprocess_plate_data start ===\n")
+
+  ## ------------------------------------------------------------
+  ## 1) Load everything (using the unchanged load_specimens())
+  ## ------------------------------------------------------------
+  loaded <- load_specimens(conn, current_user, selected_study)
+
+  print(str(loaded[[2]]))
+  ## ------------------------------------------------------------
+  ## 2) Unpack the list (convert each element to a tibble for safety)
+  ## ------------------------------------------------------------
+#  plates                 <- as_tibble(loaded[[1]])
   plates <- check_plate(conn = conn, selected_study = selected_study)
-  cat("before load specimens\n")
-  loaded_data <- load_specimens(conn, current_user, selected_study)
-  #return(list(plates, standard_data, blank_data, sample_data, control_data, standard_fit, stdcurve_undiluted_conc))
-  cat("after loading specimens\n")
-  standard_data <- as.data.frame(loaded_data[[2]]) # shift it up 1 index
-  blank_data <- as.data.frame(loaded_data[[3]])
-  active_samples <- as.data.frame(loaded_data[[4]])
-  control_data <- as.data.frame(loaded_data[[5]])
-  standard_fit_data <- as.data.frame(loaded_data[[6]])
-
-
-  missing_cols <- setdiff(c("study_accession","plateid", "plate","analyte", "antigen", "mfi",
-                            "specimen_type", "sample_dilution_factor", "feature","lowbeadn", "highbeadagg"), names(active_samples))
-
-  print("missing cols:\n")
-  print(missing_cols)
-
-  if(nrow(active_samples) > 1){
-    low_bead_sample <- active_samples[active_samples$lowbeadn == "LowBeadN",
-                       c("study_accession","plateid", "plate","analyte", "antigen", "mfi",
-                       "specimen_type", "sample_dilution_factor", "feature","lowbeadn", "highbeadagg")]
-
-    high_agg_bead_sample <- active_samples[active_samples$highbeadagg == "PctAggBeads",
-                            c("study_accession", "plateid", "plate", "analyte", "antigen","mfi",
-                            "specimen_type", "sample_dilution_factor", "feature","lowbeadn", "highbeadagg")]
-  } else {
-    low_bead_sample <- data.frame()
-    high_agg_bead_sample <- data.frame()
-  }
-
+  standard_data          <- as_tibble(loaded[[2]])
+  cat("aftter standard")
+  blank_data             <- as_tibble(loaded[[3]])
+  cat("after_blank")
+  sample_data            <- as_tibble(loaded[[4]])   # may be empty
+  cat("after sample")
+  control_data           <- as_tibble(loaded[[5]])
+  cat("after control")
+  #print(str(loaded[[6]]))
+  standard_fit_data      <- as_tibble(loaded[[6]])   # not used here but returned later
+  cat("after standard fit")
+  stdcurve_undiluted_conc <- as_tibble(loaded[[7]]) # not used here but returned later
+  cat("after undiluted_conc")
+  raw_samples            <- as_tibble(loaded[[8]])   # always present
   cat("after samples")
-  if(nrow(standard_data) > 1){
-    low_bead_standard <- standard_data[standard_data$lowbeadn == "LowBeadN",
-                         c("study_accession", "plateid", "plate", "analyte", "antigen", "mfi", "specimen_type",
-                         "sample_dilution_factor", "feature", "lowbeadn", "highbeadagg")]
-    high_agg_bead_standard <- standard_data[standard_data$highbeadagg == "PctAggBeads",
-                              c("study_accession", "plateid", "plate", "analyte", "antigen","mfi",
-                              "specimen_type", "sample_dilution_factor", "feature", "lowbeadn", "highbeadagg")]
-  } else {
-    low_bead_standard <- data.frame()
-    high_agg_bead_standard <- data.frame()
-  }
-  print("after standards")
-  missing_cols2 <- setdiff(c("study_accession","plateid", "plate","analyte", "antigen", "mfi",
-                           "specimen_type", "sample_dilution_factor", "feature","lowbeadn", "highbeadagg"), names(blank_data))
 
-  print("missing cols blank data :\n")
-  print(missing_cols2)
+  cat("after loading specimens\n")
 
-  if(nrow(blank_data) > 1){
-    low_bead_blank <- blank_data[blank_data$lowbeadn == "LowBeadN", c("study_accession",
-                      "plateid", "plate", "analyte", "antigen","mfi", "specimen_type",
-                      "sample_dilution_factor", "feature", "lowbeadn", "highbeadagg")]
-    high_agg_bead_blank <- blank_data[blank_data$highbeadagg == "PctAggBeads",
-                           c("study_accession", "plateid", "plate", "analyte", "antigen","mfi",
-                          "specimen_type", "sample_dilution_factor", "feature", "lowbeadn", "highbeadagg")]
-  } else {
-    low_bead_blank <- data.frame()
-    high_agg_bead_blank <- data.frame()
-  }
-  print("after blanks")
-  if(nrow(control_data) > 1){
-    low_bead_control <- control_data[control_data$lowbead == "LowBeadN", c("study_accession",
-                        "plateid", "plate", "analyte", "antigen","mfi", "specimen_type",
-                        "sample_dilution_factor", "feature","lowbeadn", "highbeadagg")]
-    high_agg_bead_control <- control_data[control_data$highbeadagg == "PctAggBeads",
-                             c("study_accession", "plateid", "plate", "analyte", "antigen","mfi",
-                             "specimen_type", "sample_dilution_factor", "feature", "lowbeadn", "highbeadagg")]
-  } else {
-    low_bead_control <- data.frame()
-    high_agg_bead_control <- data.frame()
-  }
+  ## ------------------------------------------------------------
+  ## 3) Columns we need for the low‑bead / high‑aggregate extraction
+  ## ------------------------------------------------------------
+  needed_cols <- c(
+    "study_accession","plateid","plate","analyte","antigen","mfi",
+    "specimen_type","sample_dilution_factor","feature",
+    "lowbeadn","highbeadagg"
+  )
 
-  cat("\n\nLow Bead Sample \n\n")
-  print(names(low_bead_sample))
-  cat("\n\nLow Bead standard \n\n")
-  print(names(low_bead_standard))
+  ## ------------------------------------------------------------
+  ## 4) Build low‑bead / high‑aggregate tables for EVERY specimen type
+  ## ------------------------------------------------------------
+  # problem_lists <- list(
+  #   raw_samples   = make_problem_sets(raw_samples,   needed_cols),
+  #   standard_data = make_problem_sets(standard_data, needed_cols),
+  #   blank_data    = make_problem_sets(blank_data,    needed_cols),
+  #   control_data  = make_problem_sets(control_data,  needed_cols),
+  #   sample_data   = make_problem_sets(sample_data,   needed_cols)   # may be empty
+  # )
+  cat("active sample data procccessing row:")
+  print(nrow(sample_data))
+  print(nrow(control_data))
 
-  low_bead_data <- rbind(low_bead_sample, low_bead_standard, low_bead_blank, low_bead_control)
-  high_agg_bead_data <- rbind(high_agg_bead_sample, high_agg_bead_blank, high_agg_bead_control, high_agg_bead_standard)
-  cat("before make summspec\n")
-  print(head(standard_data))
-  summ_spec <- make_summspec(standard_data, blank_data, control_data, active_samples, low_bead_data, high_agg_bead_data, plates)
+  problem_lists <- list(
+    raw_samples   = { cat("-> processing raw_samples\n");   make_problem_sets(raw_samples,   needed_cols) },
+    standard_data = { cat("-> processing standard_data\n"); make_problem_sets(standard_data, needed_cols) },
+    blank_data    = { cat("-> processing blank_data\n");    make_problem_sets(blank_data,    needed_cols) },
+    control_data  = { cat("-> processing control_data\n");  make_problem_sets(control_data,  needed_cols) }
+   # sample_data   = { cat("-> processing sample_data\n");   make_problem_sets(sample_data,   needed_cols) }
+  )
+
+  low_bead_data  <- dplyr::bind_rows(purr::map(problem_lists, "low"))
+  high_agg_data  <- dplyr::bind_rows(purr::map(problem_lists, "high"))
+
+  cat("Low‑bead rows   :", nrow(low_bead_data), "\n")
+  cat("High‑agg rows   :", nrow(high_agg_data), "\n")
+
+  ## ------------------------------------------------------------
+  ## 5) Create the master summary table
+  ## ------------------------------------------------------------
+  summ_spec <- make_summspec(
+    standard = standard_data,
+    blank    = blank_data,
+    control  = control_data,
+    raw      = raw_samples,
+    low_bead = low_bead_data,
+    high_agg = high_agg_data,
+    plates   = plates
+  )
+
+  ## ------------------------------------------------------------
+  ## 6) Add an explicit ordering factor (so downstream sorts are deterministic)
+  ## ------------------------------------------------------------
   summ_spec$specimen_type_order <- case_when(
     summ_spec$specimen_type == "blank" ~ 1,
     summ_spec$specimen_type == "control" ~ 2,
@@ -1207,13 +1352,156 @@ preprocess_plate_data <- function(conn, current_user, selected_study){
     summ_spec$specimen_type == "sample" ~ 4,
     summ_spec$specimen_type == "low_bead_count" ~5,
     summ_spec$specimen_type == "high_aggregate_beads" ~6,
+    summ_spec$specimen_type == "raw_sample" ~7,
     TRUE ~ 0
   )
-  cat("after make spec\n")
+  # summ_spec <- summ_spec %>%
+  #   mutate(
+  #     specimen_type_order = factor(
+  #       specimen_type,
+  #       levels = c(
+  #         "blank", "control", "standard", "sample",
+  #         "raw_sample", "low_bead_count", "high_aggregate_beads"
+  #       ),
+  #       ordered = TRUE
+  #     )
+  #   )
+
+  ## ------------------------------------------------------------
+  ## 7) Convert variables to their final types (you already have a helper)
+  ## ------------------------------------------------------------
   count_set <- convert_vars(summ_spec)
-  plates$plate <- paste(plates$plate, plates$sample_dilution_factor, sep = "_")
-  return(list(count_set, plates, active_samples, summ_spec, standard_fit_data))
+
+  ## ------------------------------------------------------------
+  ## 8) Tweak the plates table exactly as you did before
+  ## ------------------------------------------------------------
+  plates <- plates %>%
+    mutate(plate = paste(plate, sample_dilution_factor, sep = "_"))
+
+  # ## ------------------------------------------------------------
+  # ## 9) (Optional) expose the summary globally – keep only if you really need it
+  # ## ------------------------------------------------------------
+  # assign("summ_spec_v", summ_spec, envir = .GlobalEnv)
+
+  cat("=== preprocess_plate_data finished ===\n\n")
+
+  ## ------------------------------------------------------------
+  ## 10) Return the objects you asked for
+  ## ------------------------------------------------------------
+  return(list(
+    count_set          = count_set,
+    plates             = plates,
+    raw_samples        = raw_samples,
+    summ_spec          = summ_spec,
+    standard_fit_data = standard_fit_data,
+    active_samples    = sample_data          # may be an empty tibble
+  ))
 }
+
+
+# preprocess_plate_data <- function(conn, current_user, selected_study){
+#   plates <- check_plate(conn = conn, selected_study = selected_study)
+#   cat("before load specimens\n")
+#   loaded_data <<- load_specimens(conn, current_user, selected_study)
+#   #return(list(plates, standard_data, blank_data, sample_data, control_data, standard_fit, stdcurve_undiluted_conc))
+#   cat("after loading specimens\n")
+#   standard_data <- as.data.frame(loaded_data[[2]]) # shift it up 1 index
+#   blank_data <- as.data.frame(loaded_data[[3]])
+#   active_samples <- as.data.frame(loaded_data[[4]])
+#   control_data <- as.data.frame(loaded_data[[5]])
+#   standard_fit_data <- as.data.frame(loaded_data[[6]])
+#   # raw samples to analyze up to fit quality
+#   raw_samples <- as.data.frame(loaded_data[[8]])
+#
+#
+#   missing_cols <- setdiff(c("study_accession","plateid", "plate","analyte", "antigen", "mfi",
+#                             "specimen_type", "sample_dilution_factor", "feature","lowbeadn", "highbeadagg"), names(raw_samples))
+#
+#   print("missing cols:\n")
+#   print(missing_cols)
+#
+#   if(nrow(raw_samples) > 1){
+#     low_bead_sample <- raw_samples[raw_samples$lowbeadn == "LowBeadN",
+#                        c("study_accession","plateid", "plate","analyte", "antigen", "mfi",
+#                        "specimen_type", "sample_dilution_factor", "feature","lowbeadn", "highbeadagg")]
+#
+#     high_agg_bead_sample <- raw_samples[raw_samples$highbeadagg == "PctAggBeads",
+#                             c("study_accession", "plateid", "plate", "analyte", "antigen","mfi",
+#                             "specimen_type", "sample_dilution_factor", "feature","lowbeadn", "highbeadagg")]
+#   } else {
+#     low_bead_sample <- data.frame()
+#     high_agg_bead_sample <- data.frame()
+#   }
+#
+#   cat("after samples")
+#   if(nrow(standard_data) > 1){
+#     low_bead_standard <- standard_data[standard_data$lowbeadn == "LowBeadN",
+#                          c("study_accession", "plateid", "plate", "analyte", "antigen", "mfi", "specimen_type",
+#                          "sample_dilution_factor", "feature", "lowbeadn", "highbeadagg")]
+#     high_agg_bead_standard <- standard_data[standard_data$highbeadagg == "PctAggBeads",
+#                               c("study_accession", "plateid", "plate", "analyte", "antigen","mfi",
+#                               "specimen_type", "sample_dilution_factor", "feature", "lowbeadn", "highbeadagg")]
+#   } else {
+#     low_bead_standard <- data.frame()
+#     high_agg_bead_standard <- data.frame()
+#   }
+#   print("after standards")
+#   missing_cols2 <- setdiff(c("study_accession","plateid", "plate","analyte", "antigen", "mfi",
+#                            "specimen_type", "sample_dilution_factor", "feature","lowbeadn", "highbeadagg"), names(blank_data))
+#
+#   print("missing cols blank data :\n")
+#   print(missing_cols2)
+#
+#   if(nrow(blank_data) > 1){
+#     blank_data <<- blank_data
+#     low_bead_blank <- blank_data[blank_data$lowbeadn == "LowBeadN", c("study_accession",
+#                       "plateid", "plate", "analyte", "antigen","mfi", "specimen_type",
+#                       "sample_dilution_factor", "feature", "lowbeadn", "highbeadagg")]
+#     high_agg_bead_blank <- blank_data[blank_data$highbeadagg == "PctAggBeads",
+#                            c("study_accession", "plateid", "plate", "analyte", "antigen","mfi",
+#                           "specimen_type", "sample_dilution_factor", "feature", "lowbeadn", "highbeadagg")]
+#   } else {
+#     low_bead_blank <- data.frame()
+#     high_agg_bead_blank <- data.frame()
+#   }
+#   print("after blanks")
+#   if(nrow(control_data) > 1){
+#     low_bead_control <- control_data[control_data$lowbead == "LowBeadN", c("study_accession",
+#                         "plateid", "plate", "analyte", "antigen","mfi", "specimen_type",
+#                         "sample_dilution_factor", "feature","lowbeadn", "highbeadagg")]
+#     high_agg_bead_control <- control_data[control_data$highbeadagg == "PctAggBeads",
+#                              c("study_accession", "plateid", "plate", "analyte", "antigen","mfi",
+#                              "specimen_type", "sample_dilution_factor", "feature", "lowbeadn", "highbeadagg")]
+#   } else {
+#     low_bead_control <- data.frame()
+#     high_agg_bead_control <- data.frame()
+#   }
+#
+#   cat("\n\nLow Bead Sample \n\n")
+#   print(names(low_bead_sample))
+#   cat("\n\nLow Bead standard \n\n")
+#   print(names(low_bead_standard))
+#
+#   low_bead_data <- rbind(low_bead_sample, low_bead_standard, low_bead_blank, low_bead_control)
+#   high_agg_bead_data <- rbind(high_agg_bead_sample, high_agg_bead_blank, high_agg_bead_control, high_agg_bead_standard)
+#   cat("before make summspec\n")
+#   print(head(standard_data))
+#   summ_spec <- make_summspec(standard_data, blank_data, control_data, raw_samples, low_bead_data, high_agg_bead_data, plates)
+#   summ_spec$specimen_type_order <- case_when(
+#     summ_spec$specimen_type == "blank" ~ 1,
+#     summ_spec$specimen_type == "control" ~ 2,
+#     summ_spec$specimen_type == "standard" ~ 3,
+#     summ_spec$specimen_type == "sample" ~ 4,
+#     summ_spec$specimen_type == "low_bead_count" ~5,
+#     summ_spec$specimen_type == "high_aggregate_beads" ~6,
+#     TRUE ~ 0
+#   )
+#   cat("after make spec\n")
+#   count_set <- convert_vars(summ_spec)
+#   plates$plate <- paste(plates$plate, plates$sample_dilution_factor, sep = "_")
+#   summ_spec_v <<- summ_spec
+#   return(list(count_set, plates, raw_samples, summ_spec, standard_fit_data, active_samples))
+# }
 
 ## Cohort Overview
 fetch_study_participant_arms <- function(study_accession) {
@@ -1332,6 +1620,10 @@ make_cv_scatterplot <- function(df, x_var, y_var, facet_var1, facet_var2, color_
 
   return(p)
 }
+
+
+library(dplyr)
+
 
 
 prep_analyte_fit_summary <- function(summ_spec_in, standard_fit_res) {
