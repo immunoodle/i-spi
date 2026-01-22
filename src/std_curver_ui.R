@@ -674,8 +674,13 @@ observeEvent(list(
     )
 
 
+    # showNotification(
+    #   div(class = "big-notification", "This is an important message!"),
+    #   duration = 5
+    # )
+
     observeEvent(input$run_batch_fit, {
-      showNotification(id = "batch_sc_fit_notify", "Fitting standard curves for all experiments.", duration = NULL)
+      showNotification(id = "batch_sc_fit_notify", div(class = "big-notification", "Fitting standard curves for all experiments."), duration = NULL)
       response_var <- loaded_data$response_var
       headers <- fetch_db_header_experiments(study_accession = input$readxMap_study_accession, conn = conn)
       exp_list <- unique(headers$experiment_accession) #[1]
@@ -732,7 +737,7 @@ observeEvent(list(
        table  = "best_glance_all",
        notify = shiny_notify(session)
      )
-     showNotification(id = "batch_sc_fit_notify","Best Fit Statistics saved", duration = NULL)
+     showNotification(id = "batch_sc_fit_notify",div(class = "big-notification", "Best Fit Statistics saved"), duration = NULL)
 
   #    # Retrieve lookup of IDs using NK
      study_to_save <- unique(batch_outputs_processed$best_glance_all$study_accession)
@@ -793,9 +798,9 @@ observeEvent(list(
         notify = shiny_notify(session)
       )
 
-      showNotification(id = "batch_sc_fit_notify","Best Plates saved", duration = NULL)
+      showNotification(id = "batch_sc_fit_notify",div(class = "big-notification", "Best Plates saved"), duration = NULL)
 
-      showNotification(id = "batch_sc_fit_notify","Saving parameter estimates...", duration = NULL)
+      showNotification(id = "batch_sc_fit_notify",div(class = "big-notification", "Saving parameter estimates..."), duration = NULL)
 
       upsert_best_curve(
         conn   = conn,
@@ -804,12 +809,12 @@ observeEvent(list(
         table  = "best_tidy_all",
         notify = shiny_notify(session)
       )
-      showNotification(id = "batch_sc_fit_notify","Best parameter estimates saved", duration = NULL)
+      showNotification(id = "batch_sc_fit_notify",div(class = "big-notification", "Best parameter estimates saved"), duration = NULL)
 
      # batch_outputs$best_pred_all$id_match <- match(batch_outputs$best_pred_all$x, unique(batch_outputs$best_pred_all$x))
 
 
-      showNotification(id = "batch_sc_fit_notify","Saving predicted standards...", duration = NULL)
+      showNotification(id = "batch_sc_fit_notify",div(class = "big-notification", "Saving predicted standards..."), duration = NULL)
 
       #print(str(batch_outputs_processed$best_pred_all))
 
@@ -822,10 +827,10 @@ observeEvent(list(
       )
 
 
-      showNotification(id = "batch_sc_fit_notify","Best Predicted standards saved", duration = NULL)
+      showNotification(id = "batch_sc_fit_notify",div(class = "big-notification", "Best Predicted standards saved"), duration = NULL)
 
 
-      showNotification(id = "batch_sc_fit_notify","Saving Predicted samples...", duration = NULL)
+      showNotification(id = "batch_sc_fit_notify",div(class = "big-notification", "Saving Predicted samples..."), duration = NULL)
 
       #print(str(batch_outputs_processed$best_sample_se_all))
 
@@ -837,9 +842,9 @@ observeEvent(list(
       notify = shiny_notify(session)
     )
 
-      showNotification(id = "batch_sc_fit_notify","Best Predicted Samples saved", duration = NULL)
+      showNotification(id = "batch_sc_fit_notify",div(class = "big-notification", "Best Predicted Samples saved"), duration = NULL)
 
-      showNotification(id = "batch_sc_fit_notify","Saving Best Standards...", duration = NULL)
+      showNotification(id = "batch_sc_fit_notify",div(class = "big-notification", "Saving Best Standards..."), duration = NULL)
 
       upsert_best_curve(
         conn   = conn,
@@ -851,11 +856,11 @@ observeEvent(list(
 
       )
 
-      showNotification(id = "batch_sc_fit_notify","Best Standards saved", duration = NULL)
+      showNotification(id = "batch_sc_fit_notify",div(class = "big-notification", "Best Standards saved"), duration = NULL)
 
 
 
-      showNotification(id = "batch_sc_fit_notify","Standard Curves Calculated for all Experiments", duration = NULL)
+      showNotification(id = "batch_sc_fit_notify",div(class = "big-notification", "Standard Curves Calculated for all Experiments"), duration = NULL)
       removeNotification("batch_sc_fit_notify")
 
     })

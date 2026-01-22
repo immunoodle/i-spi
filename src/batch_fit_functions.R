@@ -65,11 +65,11 @@ build_antigen_plate_list <- function(antigen_list_result, loaded_data_list, verb
       ]
 
       current_unique_id <- paste0(
-        info$study_accession, "_",
-        info$experiment_accession, "_",
-        info$plate, "_",
-        info$source, "_",
-        info$sample_dilution_factor, "_",
+        info$study_accession, "|",
+        info$experiment_accession, "|",
+        info$plate, "|",
+        info$source, "|",
+        info$sample_dilution_factor, "|",
         antigen
       )
 
@@ -140,6 +140,7 @@ fit_experiment_plate_batch <- function(prepped_data_list_res,
                                        study_params,
                                        se_antigen_table = NULL,
                                        verbose = TRUE) {
+  prepped_data_list_res_v <<- prepped_data_list_res
   prepped_data_list <- prepped_data_list_res$prepped_data_list
   formula_list <- prepped_data_list_res$formula_list
   antigen_plate_list <- antigen_plate_list_res$antigen_plate_list
@@ -153,7 +154,24 @@ fit_experiment_plate_batch <- function(prepped_data_list_res,
   candidate_best_fit_list <- list()
   best_fit_list <- list()
   for(prep_dat_name in names(prepped_data_list)) {
-    showNotification(id = "batch_sc_fit_notify", paste("processing", prep_dat_name), duration = NULL)
+    # showNotification(id = "batch_sc_fit_notify", div(class = "big-notification", paste("Processing", prep_dat_name)), duration = NULL)
+
+    # Split the name string into components
+    components <- strsplit(prep_dat_name, "\\|")[[1]]
+    field_names <- c("Study", "Experiment", "Plate", "Source", "Dilution", "Antigen")
+
+    # Create labeled lines
+    labeled_lines <- paste0("<b>", field_names, ":</b> ", components, collapse = "<br>")
+
+    showNotification(
+      id = "batch_sc_fit_notify",
+      div(
+        class = "big-notification",
+        HTML(paste0("<strong>Processing</strong><br><br>", labeled_lines))
+      ),
+      duration = NULL
+    )
+
     if (verbose) print(prep_dat_name)
     plate_prepped_data <- prepped_data_list[[prep_dat_name]]
     formulas <- formula_list[[prep_dat_name]]

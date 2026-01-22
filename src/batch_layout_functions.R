@@ -76,6 +76,272 @@ onSessionStart <- function() {
   }
 }
 
+#' Clean and standardize plate_id from file path
+#'
+#' This function processes a file path to create a standardized plate_id by:
+#'
+#' a. Replacing all whitespace with single periods (consecutive whitespace characters
+#'    are replaced with a single period)
+#' b. Converting all characters to uppercase
+#' c. Removing the file type suffix (extension)
+#' d. Replacing all slashes (forward and back) with pipes
+#' e. Replacing all instances of a space or period and other punctuation followed by
+#'    another space or period with a single period
+#' f. Removing the first drive letter or identifier (e.g., "C:", "/mnt", etc.)
+#'
+#' @param filepath A character string containing the file path to process
+#'
+#' @return A character string with the cleaned plate_id
+#'
+#' @examples
+#' clean_plate_id("C:\\Users\\BIO-PLEX\\OneDrive - Université Libre de Bruxelles\\Documents - GRP_IMI_ERASME\\INCENTIVE STUDY\\Systems serology\\India\\FcgR\\FcgR2a plate1 rerun 091225.rbx")
+#' # Returns: "USERS|BIO-PLEX|ONEDRIVE.-.UNIVERSITÉ.LIBRE.DE.BRUXELLES|DOCUMENTS.GRP_IMI_ERASME|INCENTIVE.STUDY|SYSTEMS.SEROLOGY|INDIA|FCGR|FCGR2A.PLATE1.RERUN.091225"
+#'
+#' @export
+clean_plate_id <- function(filepath) {
+  # Handle NULL or empty input
+  if (is.null(filepath) || length(filepath) == 0) {
+    return(NA_character_)
+  }
+
+  # Handle NA
+  if (length(filepath) == 1 && is.na(filepath)) {
+    return(NA_character_)
+  }
+
+  # Handle empty string
+  if (length(filepath) == 1 && filepath == "") {
+    return(NA_character_)
+  }
+
+  # Vectorize if needed
+  if (length(filepath) > 1) {
+    return(sapply(filepath, clean_plate_id, USE.NAMES = FALSE))
+  }
+
+  result <- filepath
+
+  # Step c: Remove file extension (do this early to avoid issues with period handling)
+  # Match common extensions including .xlsx, .xls, .rbx, .csv, .txt, etc.
+  result <- sub("\\.[a-zA-Z0-9]+$", "", result)
+
+  # Step d: Replace all slashes (forward and back) with pipes
+  result <- gsub("[/\\\\]", "|", result)
+
+  # Step f: Remove the first drive letter or identifier
+  # Handle Windows drive letters (e.g., "C:|", "D:|")
+  result <- sub("^[A-Za-z]:\\|", "", result)
+  # Handle Unix-style root paths that might start with a pipe after slash conversion
+  result <- sub("^\\|", "", result)
+  # Handle network paths (e.g., "||server" from "\\server")
+  result <- sub("^\\|+", "", result)
+  # Handle common mount points (e.g., "mnt|", "home|", "var|")
+  result <- sub("^(mnt|home|var|tmp|opt)\\|", "", result, ignore.case = TRUE)
+
+  # Step b: Convert to uppercase
+  result <- toupper(result)
+
+  # Step a: Replace all whitespace (including consecutive) with single periods
+  # This handles spaces, tabs, newlines, etc.
+  result <- gsub("[[:space:]]+", ".", result)
+
+  # Step e: Replace punctuation sequences with single period
+  # Keep: letters (including accented), numbers, underscores, hyphens, pipes, and single periods
+  # Replace: other punctuation that isn't followed by a hyphen (to preserve " - " becoming ".-.")
+
+  # First pass: Convert punctuation (except | _ - .) to periods
+  result <- gsub("([^|_.a-zA-Z0-9À-ÿ-])", ".", result)
+
+  # This loop handles nested patterns like ".-.-."
+  prev_result <- ""
+  while (prev_result != result) {
+    prev_result <- result
+    # Replace period + any punctuation (except |) + period with single period
+    result <- gsub("\\.[^|a-zA-Z0-9À-ÿ]+\\.", ".", result)
+    # Replace multiple consecutive periods with single period
+    result <- gsub("\\.{2,}", ".", result)
+  }
+
+  # Remove leading/trailing periods and pipes
+  result <- gsub("^[|.]+|[|.]+$", "", result)
+
+  # Remove periods immediately before or after pipes
+  result <- gsub("\\|\\.", "|", result)
+  result <- gsub("\\.\\|", "|", result)
+
+  # Remove any empty pipe segments (consecutive pipes)
+  result <- gsub("\\|{2,}", "|", result)
+
+  return(result)
+}
+
+add_clean_plate_id_to_identifiers <- function(identifiers_df) {
+
+  if ("source_file" %in% names(identifiers_df) && !all(is.na(identifiers_df$source_file))) {
+    identifiers_df$plateid <- clean_plate_id(identifiers_df$source_file)
+  }
+
+  if ("file_name" %in% names(identifiers_df) && !all(is.na(identifiers_df$file_name))) {
+    identifiers_df$plate_id <- clean_plate_id(identifiers_df$file_name)
+  }
+
+  return(identifiers_df)
+}
+
+# add_clean_plate_id_to_identifiers <- function(identifiers_df) {
+#   # IMPORTANT: Ensure correct assignment:
+#   # - plate_id = LONG form (full cleaned path from clean_plate_id)
+#   # - plateid = SHORT form (plate_number or simple identifier)
+#
+#   # First, set plate_id to the full cleaned path
+#   if ("source_file" %in% names(identifiers_df) && !all(is.na(identifiers_df$source_file))) {
+#     identifiers_df$plate_id <- clean_plate_id(identifiers_df$source_file)
+#   } else if ("file_name" %in% names(identifiers_df) && !all(is.na(identifiers_df$file_name))) {
+#     identifiers_df$plate_id <- clean_plate_id(identifiers_df$file_name)
+#   }
+#
+#   # Then, ensure plateid contains the SHORT identifier (plate column value)
+#   # If plateid currently has the long path, swap it to the short form
+#   if ("plateid" %in% names(identifiers_df) && "plate" %in% names(identifiers_df)) {
+#     # Check if plateid looks like a long path (contains | which indicates it's a cleaned path)
+#     if (any(grepl("\\|", identifiers_df$plateid, fixed = FALSE), na.rm = TRUE)) {
+#       # plateid has the long form - use plate column for short form instead
+#       identifiers_df$plateid <- identifiers_df$plate
+#     }
+#   }
+#
+#   return(identifiers_df)
+# }
+
+#' Apply clean_plate_id to a data frame column
+#'
+#' @param df Data frame
+#' @param source_col Column containing the file path (default: "source_file")
+#' @param target_col Column to store cleaned plate_id (default: "plate_id")
+#' @return Data frame with cleaned plate_id column
+#' @export
+add_clean_plate_id <- function(df, source_col = "source_file", target_col = "plate_id") {
+  if (!source_col %in% names(df)) {
+    warning(paste0("Column '", source_col, "' not found. Returning unchanged."))
+    return(df)
+  }
+  df[[target_col]] <- clean_plate_id(df[[source_col]])
+  return(df)
+}
+
+
+#' Apply clean_plate_id using file_name column
+#' @export
+add_clean_plate_id_from_filename <- function(df) {
+  add_clean_plate_id(df, source_col = "file_name", target_col = "plate_id")
+}
+
+
+#' Apply clean_plate_id using plate_filename column
+#' @export
+add_clean_plate_id_from_plate_filename <- function(df) {
+  add_clean_plate_id(df, source_col = "plate_filename", target_col = "plate_id")
+}
+
+
+#' Test the clean_plate_id function
+#'
+#' Run tests to verify the function works correctly
+#'
+#' @return Invisible NULL, prints test results
+#' @examples
+#' test_clean_plate_id()
+#'
+test_clean_plate_id <- function() {
+  cat("Testing clean_plate_id function:\n")
+  cat(strrep("=", 80), "\n\n")
+
+  # Test cases
+  tests <- list(
+    list(
+      input = "C:\\Users\\BIO-PLEX\\OneDrive - Université Libre de Bruxelles\\Documents - GRP_IMI_ERASME\\INCENTIVE STUDY\\Systems serology\\India\\FcgR\\FcgR2a plate1 rerun 091225.rbx",
+      expected = "USERS|BIO-PLEX|ONEDRIVE.-.UNIVERSITÉ.LIBRE.DE.BRUXELLES|DOCUMENTS.GRP_IMI_ERASME|INCENTIVE.STUDY|SYSTEMS.SEROLOGY|INDIA|FCGR|FCGR2A.PLATE1.RERUN.091225",
+      description = "Full Windows path with spaces, special chars, and extension"
+    ),
+    list(
+      input = "/home/user/data/plate 1.xlsx",
+      expected = "USER|DATA|PLATE.1",
+      description = "Unix path with space in filename"
+    ),
+    list(
+      input = "D:/Projects/Study  Data/file   name.csv",
+      expected = "PROJECTS|STUDY.DATA|FILE.NAME",
+      description = "Multiple consecutive spaces"
+    ),
+    list(
+      input = "\\\\server\\share\\folder\\file.txt",
+      expected = "SERVER|SHARE|FOLDER|FILE",
+      description = "Network UNC path"
+    ),
+    list(
+      input = "/mnt/data/experiment/plate.xlsx",
+      expected = "DATA|EXPERIMENT|PLATE",
+      description = "Unix path with /mnt prefix"
+    ),
+    list(
+      input = "plate1.xlsx",
+      expected = "PLATE1",
+      description = "Simple filename only"
+    ),
+    list(
+      input = NA,
+      expected = NA_character_,
+      description = "NA input"
+    ),
+    list(
+      input = "",
+      expected = NA_character_,
+      description = "Empty string"
+    ),
+    list(
+      input = "C:\\Users\\Name\\File - Copy (2).xlsx",
+      expected = "USERS|NAME|FILE.-.COPY.2",
+      description = "Filename with parentheses and dash"
+    )
+  )
+
+  passed <- 0
+  failed <- 0
+
+  for (test in tests) {
+    result <- clean_plate_id(test$input)
+
+    # Handle NA comparison properly
+    if (is.na(test$expected) && is.na(result)) {
+      match <- TRUE
+    } else if (is.na(test$expected) || is.na(result)) {
+      match <- FALSE
+    } else {
+      match <- result == test$expected
+    }
+
+    status <- if (match) "✓ PASS" else "✗ FAIL"
+
+    if (match) {
+      passed <- passed + 1
+    } else {
+      failed <- failed + 1
+    }
+
+    cat(sprintf("%s: %s\n", status, test$description))
+    cat(sprintf("  Input:    %s\n", ifelse(is.na(test$input), "NA", test$input)))
+    cat(sprintf("  Expected: %s\n", ifelse(is.na(test$expected), "NA", test$expected)))
+    cat(sprintf("  Got:      %s\n", ifelse(is.na(result), "NA", result)))
+    cat("\n")
+  }
+
+  cat(strrep("=", 80), "\n")
+  cat(sprintf("Results: %d passed, %d failed\n", passed, failed))
+
+  invisible(NULL)
+}
+
+
 #' Check Description field content and element count
 #'
 #' This function examines the Description column in plate data to determine
@@ -593,6 +859,60 @@ get_element_position <- function(element,
   return(position)
 }
 
+#' Clean Antigen Label String
+#'
+#' Takes a raw antigen_label_on_plate string that may be irregularly formatted
+#' and returns a well-behaved string. Removes content in parentheses, replaces
+#' slashes with underscores, replaces whitespace with nothing, and removes
+#' punctuation except for '.' and '_'.
+#'
+#' @param antigen_label A character string (or vector) containing the raw antigen label
+#' @return A cleaned character string (or vector) with only alphanumeric characters, '.', and '_'
+#'
+#' @examples
+#' clean_antigen_label("  Washington_32 (18) ")
+#' # Returns: "Washington_32"
+#'
+#' clean_antigen_label("A/Hong Kong_NA(123)")
+#' # Returns: "A_Hong.Kong_NA"
+#'
+#' clean_antigen_label(c("Test/Label (1)", "Another_One(99)"))
+#' # Returns: c("Test_Label", "Another_One")
+
+clean_antigen_label <- function(antigen_label) {
+  if (!is.character(antigen_label)) {
+    stop("Input must be a character string or vector")
+  }
+
+  cleaned <- antigen_label
+
+  # Step 1: Remove content within parentheses (including the parentheses)
+  cleaned <- gsub("\\s*\\([^)]*\\)", "", cleaned)
+
+  # Step 2: Trim leading and trailing whitespace
+  cleaned <- trimws(cleaned)
+
+  # Step 3: Replace forward slashes with underscores
+  cleaned <- gsub("/", "_", cleaned)
+
+  # Step 4: Replace internal whitespace with dots
+  cleaned <- gsub("\\s+", ".", cleaned)
+
+  # Step 5: Remove any remaining punctuation except '.' and '_'
+  # This regex matches any punctuation that is NOT a dot or underscore
+  cleaned <- gsub("[^[:alnum:]._]", "", cleaned)
+
+  # Step 6: Clean up any multiple consecutive dots or underscores
+  cleaned <- gsub("\\.{2,}", ".", cleaned)
+  cleaned <- gsub("_{2,}", "_", cleaned)
+
+  # Step 7: Remove leading/trailing dots or underscores
+  cleaned <- gsub("^[._]+|[._]+$", "", cleaned)
+
+  return(cleaned)
+}
+
+
 #' Generate Layout Template with Description Validation
 #'
 #' Creates an Excel layout template for batch plate uploads. Handles cases where
@@ -627,9 +947,9 @@ generate_layout_template <- function(all_plates,
   bold_style <- createStyle(textDecoration = "bold")
   italic_style  <- createStyle(textDecoration = "italic")
 
-  # ============================================================================
-  # NEW: Handle description_status - compute if not provided
-  # ============================================================================
+
+  # Handle description_status - compute if not provided
+
   if (is.null(description_status)) {
     # Get delimiter from input or use default
     check_delimiter <- if (!is.null(delimiter)) delimiter else
@@ -650,9 +970,9 @@ generate_layout_template <- function(all_plates,
     cat("╚══════════════════════════════════════════════════════════╝\n\n")
   }
 
-  # ============================================================================
-  # NEW: Get delimiter - from parameter, input, or default
-  # ============================================================================
+
+  # Get delimiter - from parameter, input, or default
+
   description_delimiter <- if (!is.null(delimiter)) {
     delimiter
   } else if (description_status$has_content && exists("input") && !is.null(input$description_delimiter)) {
@@ -661,9 +981,9 @@ generate_layout_template <- function(all_plates,
     "_"  # Default delimiter
   }
 
-  # ============================================================================
-  # NEW: Get element order - from parameter, input, or defaults
-  # ============================================================================
+
+  # Get element order - from parameter, input, or defaults
+
   XElementOrder <- if (!is.null(element_order)) {
     element_order
   } else if (description_status$has_sufficient_elements && exists("input") && !is.null(input$XElementOrder)) {
@@ -711,10 +1031,10 @@ generate_layout_template <- function(all_plates,
     cat("  ✓ Created plate_filename from header_list names\n")
   }
 
-  # ============================================================================
-  # IMPROVED: Extract plate_number from filename or plateid
+
+  # Extract plate_number from filename or plateid
   # Looks for patterns like "plate_3", "plate 3", "plate.3", "plate3"
-  # ============================================================================
+
   extract_plate_number <- function(text) {
     if (is.na(text) || text == "") return(NA_character_)
 
@@ -826,24 +1146,47 @@ generate_layout_template <- function(all_plates,
     cat("      ", source_name, " → ", plate_id$plate_number[i], "\n")
   }
 
-  # Handle plateid
-  if (!"plateid" %in% names(plate_id)) {
-    # Try to extract from plate_id column if it exists
-    if ("plate_id" %in% names(plate_id)) {
-      plate_id$plateid <- plate_id$plate_id
-      cat("  ✓ Created plateid from plate_id column\n")
-    } else {
-      # Create from plate_number
+  # # Handle plateid
+  # if (!"plateid" %in% names(plate_id)) {
+  #   # Try to extract from plate_id column if it exists
+  #   if ("plate_id" %in% names(plate_id)) {
+  #     plate_id$plateid <- plate_id$plate_id
+  #     cat("  ✓ Created plateid from plate_id column\n")
+  #   } else {
+  #     # Create from plate_number
+  #     plate_id$plateid <- plate_id$plate_number
+  #     cat("  ✓ Created plateid from plate_number\n")
+  #   }
+  # }
+
+    # Handle plateid and plate_id columns
+    # NOTE: plate_id = full cleaned path, plateid = short identifier
+
+    # First, create plate_id from the full file path using clean_plate_id
+    if ("plate_filename" %in% names(plate_id)) {
+      plate_id$plate_id <- clean_plate_id(plate_id$plate_filename)
+      cat("  ✓ Created plate_id from plate_filename using clean_plate_id\n")
+    } else if ("source_file" %in% names(plate_id)) {
+      plate_id$plate_id <- clean_plate_id(plate_id$source_file)
+      cat("  ✓ Created plate_id from source_file using clean_plate_id\n")
+    }
+
+    # Then, set plateid to the short identifier (plate_number or existing plateid)
+    if (!"plateid" %in% names(plate_id) || is.na(plate_id$plateid[1]) || plate_id$plateid[1] == "") {
       plate_id$plateid <- plate_id$plate_number
       cat("  ✓ Created plateid from plate_number\n")
     }
-  }
 
+  # # Apply clean_plate_id to plateid using the full file path
+  # if ("plate_filename" %in% names(plate_id)) {
+  #   plate_id$plateid <- clean_plate_id(plate_id$plate_filename)
+  #   cat("  ✓ Applied clean_plate_id to plateid from plate_filename\n")
+  # }
   cat("Columns after processing:", paste(names(plate_id), collapse=", "), "\n")
 
   # Now safely subset
   required_cols <- c("study_name", "experiment_name", "number_of_wells",
-                     "plate_number", "plateid", "plate_filename")
+                     "plate_number", "plateid", "plate_id", "plate_filename")
 
   # Verify all required columns exist
   missing <- setdiff(required_cols, names(plate_id))
@@ -861,7 +1204,8 @@ generate_layout_template <- function(all_plates,
     study_name = rep(study_accession, length(antigen_names)),
     experiment_name = rep(experiment_accession, length(antigen_names)),
     antigen_label_on_plate = antigen_names,
-    antigen_abbreviation = str_split_i(antigen_names," ",1),
+    # antigen_abbreviation = str_split_i(antigen_names," ",1),
+    antigen_abbreviation = clean_antigen_label(antigen_names),
     standard_curve_max_concentration = 100000,
     l_asy_constraint_method = "default",
     l_asy_min_constraint = 0,
@@ -965,10 +1309,10 @@ generate_layout_template <- function(all_plates,
     TRUE ~ ""
   )
 
-  # ============================================================================
+
   # MODIFIED: Use parse_description_with_defaults for sample rows when Description
   # is blank or insufficient
-  # ============================================================================
+
   if (!description_status$has_content || !description_status$has_sufficient_elements) {
     cat("\n╔══════════════════════════════════════════════════════════╗\n")
     cat("║  Using parse_description_with_defaults for samples       ║\n")
@@ -1033,9 +1377,9 @@ generate_layout_template <- function(all_plates,
     cat("╚══════════════════════════════════════════════════════════╝\n\n")
 
   } else {
-    # ============================================================================
+
     # ORIGINAL: Use str_split_i when Description has content
-    # ============================================================================
+
     plate_well_map$subject_id <- case_when(
       is.na(plate_well_map$Type) ~ "",
       substr(plate_well_map$Type,1,1) == "X" ~ str_split_i(plate_well_map$Description,description_delimiter,xpatientid),
@@ -1064,9 +1408,9 @@ generate_layout_template <- function(all_plates,
     )
   }
 
-  # ============================================================================
+
   # Build subject_groups - also using parse_description_with_defaults if needed
-  # ============================================================================
+
 
   # First, ensure subject_id has no NA values for sample rows before creating subject_groups
   # Replace NA/empty subject_id values with default "1" for sample rows
@@ -1177,9 +1521,9 @@ generate_layout_template <- function(all_plates,
   plate_well_map <- plate_well_map[ , c("study_name",	"plate_number",	"well",	"specimen_type",	"specimen_source",
                                         "specimen_dilution_factor",	"experiment_name",	"feature",	"subject_id",	"biosample_id_barcode",	"timepoint_tissue_abbreviation")]
 
-  # ============================================================================
+
   # NEW: Apply default values to plates_map if Description was insufficient
-  # ============================================================================
+
   # Apply defaults directly here since the column names may differ
   if (!description_status$has_content || !description_status$has_sufficient_elements) {
     sample_mask <- plate_well_map$specimen_type == "X"
@@ -1369,9 +1713,9 @@ generate_layout_template <- function(all_plates,
     }
   }
 
-  # ============================================================================
+
   # VALIDATION: Collect all issues for README_IMPORTANT
-  # ============================================================================
+
   validation_issues <- list()
   validation_warnings <- list()
 
@@ -1528,9 +1872,9 @@ generate_layout_template <- function(all_plates,
     }
   }
 
-  # ============================================================================
+
   # BUILD README_IMPORTANT CONTENT
-  # ============================================================================
+
   if (needs_readme || length(validation_issues) > 0 || length(validation_warnings) > 0) {
 
     readme_lines <- c(
@@ -2066,7 +2410,8 @@ construct_batch_upload_metadata <- function(plates_map, plate_metadata_list, cur
   # Check if plate_metadata_list items have 'plate' column
   first_item <- plate_metadata_list[[1]]
   cat("First metadata item columns:", paste(names(first_item), collapse=", "), "\n")
-
+  print(plate_metadata_list)
+  cat("\n")
   # ============================================================================
   # FIX: Get sample dilution factors - use the MOST COMMON value per plate
   # or the minimum if there are multiple dilutions (for mixed dilution plates)
@@ -2128,6 +2473,8 @@ construct_batch_upload_metadata <- function(plates_map, plate_metadata_list, cur
   cat("\n")
 
   source_file_by_plate <- extract_plate_identifiers(plate_metadata_list)
+  Source_file_by_plate_v <<- source_file_by_plate
+  source_file_by_plate <- add_clean_plate_id_to_identifiers(source_file_by_plate)
   source_file_by_plate$plate_number <- source_file_by_plate$plate
 
   cat("Source file by plate:\n")
@@ -2183,91 +2530,13 @@ construct_batch_upload_metadata <- function(plates_map, plate_metadata_list, cur
   print(plate_metadata_list_updated)
   cat("\n")
 
+  plate_metadata_list_updated_v <<- plate_metadata_list_updated
+
   cat("✓ Batch metadata construction complete\n")
   cat("=====================================\n\n")
 
   return(plate_metadata_list_updated)
 }
-# construct_batch_upload_metadata <- function(plates_map, plate_metadata_list, currentuser, workspace_id) {
-#
-#   cat("\n=== CONSTRUCT BATCH UPLOAD METADATA ===\n")
-#   cat("plates_map columns:", paste(names(plates_map), collapse=", "), "\n")
-#   cat("Number of plate metadata items:", length(plate_metadata_list), "\n")
-#   cat("Plate metadata names:", paste(names(plate_metadata_list), collapse=", "), "\n")
-#
-#   # Check if plate_metadata_list items have 'plate' column
-#   first_item <- plate_metadata_list[[1]]
-#   cat("First metadata item columns:", paste(names(first_item), collapse=", "), "\n")
-#
-#   # # Get unique sample dilution factors by plate_number
-#   # sample_dilutions_by_plate <- as.data.frame(dplyr::distinct(
-#   #   plates_map[plates_map$specimen_type == "X",
-#   #              c("plate_number", "specimen_type", "specimen_dilution_factor")])
-#   # )
-#   #
-#   # sample_dilutions_by_plate <- sample_dilutions_by_plate[!is.na(sample_dilutions_by_plate$plate_number), ]
-#   #
-#   # names(sample_dilutions_by_plate)[names(sample_dilutions_by_plate) == "specimen_dilution_factor"] <- "sample_dilution_factor"
-#   #
-#   # cat("Sample dilutions by plate:\n")
-#   # print(sample_dilutions_by_plate)
-#   #
-#   # # Get experiment by plate
-#   # experiment_by_plate <- as.data.frame(dplyr::distinct(
-#   #   plates_map[, c("study_name", "plate_number", "experiment_name", "feature")])
-#   # )
-#
-#   # Get sample dilution factors - aggregate to ONE per plate
-#   sample_dilutions_raw <- plates_map[plates_map$specimen_type == "X" &
-#                                        !is.na(plates_map$plate_number),
-#                                      c("plate_number", "specimen_dilution_factor")]
-#
-#   # Aggregate to get ONE dilution factor per plate (use minimum as representative)
-#   sample_dilutions_by_plate <- aggregate(
-#     specimen_dilution_factor ~ plate_number,
-#     data = sample_dilutions_raw,
-#     FUN = function(x) min(x, na.rm = TRUE)
-#   )
-#   names(sample_dilutions_by_plate)[names(sample_dilutions_by_plate) ==
-#                                      "specimen_dilution_factor"] <- "sample_dilution_factor"
-#
-#   # Get experiment by plate - exclude 'feature' to avoid duplicates
-#   experiment_by_plate <- as.data.frame(dplyr::distinct(
-#     plates_map[!is.na(plates_map$plate_number),
-#                c("study_name", "plate_number", "experiment_name")]
-#   ))
-#
-#   # Remove any remaining duplicates (defensive)
-#   experiment_by_plate <- experiment_by_plate[!duplicated(experiment_by_plate$plate_number), ]
-#   experiment_by_plate$workspace_id <- workspace_id
-#   experiment_by_plate$auth0_user <- currentuser
-#
-#   cat("Experiment by plate:\n")
-#   print(experiment_by_plate)
-#   cat("\n")
-#
-#   source_file_by_plate <- extract_plate_identifiers(plate_metadata_list)
-#   source_file_by_plate$plate_number <- source_file_by_plate$plate
-#
-#   cat("Source file by plate:\n")
-#   print(source_file_by_plate)
-#   cat("\n")
-#
-#   plate_metadata_list_updated <- inner_join(experiment_by_plate, sample_dilutions_by_plate, by = "plate_number")
-#   plate_metadata_list_updated <- inner_join(plate_metadata_list_updated, source_file_by_plate, by = "plate_number")
-# #
-# #   # Restore names
-# #   names(plate_metadata_list_updated) <- names(plate_metadata_list)
-#
-#   cat("plate_metadata_list_updated:\n")
-#   print(plate_metadata_list_updated)
-#   cat("\n")
-#
-#   cat("✓ Batch metadata construction complete\n")
-#   cat("=====================================\n\n")
-#
-#   return(plate_metadata_list_updated)
-# }
 
 plot_plate_layout <- function(plates_map, plate_id_data) {
   #plates_map_v <<- plates_map

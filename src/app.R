@@ -5,7 +5,7 @@ source("global.R", local = TRUE)
 
 # Set to 1 for local and do not push in prod
 #Sys.setenv(LOCAL_DEV = "1")
- local_email_user <- "seamus.owen.stein@dartmouth.edu"
+  local_email_user <- "seamus.owen.stein@dartmouth.edu"
 #local_email_user <- "mscotzens@gmail.com"
 
 # Source authentication configuration (Step 1)
@@ -28,346 +28,353 @@ print(paste("APP_REDIRECT_URI:", APP_REDIRECT_URI))
 print(paste("OIDC_SCOPES:", OIDC_SCOPES))
 print("---------------------------------")
 
-
 # ==============================================================
-# 2. UI Definition (MERGED)
+# UI Definition - Interactive Serology Plate Inspector
 # ==============================================================
 
-# --- Define the UI structure shown AFTER login ---
-# MERGE: Using teammate's more detailed CSS and shinyFeedback from `main`
-authenticated_body_content <- function() {
-  fluidPage(
-    useShinyjs(),
-    useShinyFeedback(),
-    tags$head(tags$link(rel = "shortcut icon", href = "greenicon.ico")),
-    # change background of collapse panels in standard curve analysis
-    # and documentation of manage project.
-    tags$head(tags$style(HTML("
-       #StandardCurveCollapse,  #addProjectDocumentation, #createNewProjectCollapse, .panel-collapse {
-           background-color: whitesmoke;
-       }
-      "))),
-    tags$head(tags$style(HTML("
-    #StandardCurveCollapse, #da_subject_level_inspection, #da_datasets, #main_dilution_linearity_collapse, #linearity_stats, #standard_curve_model_fit, #gated_samples, .table-container {
-      width: 75vw;
-      overflow-x: auto;
-    }
-  "))),
-    tags$style(HTML("
-      #StandardCurveCollapse .button-container {
-        width: 75vw; /* Make the button container responsive */
-        overflow-x: auto; /* Add horizontal scrolling if buttons overflow */
-        gap: 300px; /* Space between buttons */
-      }
-      #StandardCurveCollapse button-container .btn {
-        white-space: nowrap; /* Prevent button text wrapping */
-      }
-    ")),
-
-    uiOutput("body_tabs")
-
-    #This tabsetPanel is the same in both versions
-    # tabsetPanel(id = "main_tabs",
-    #             tabPanel("View, Process, and Export Data", value = "view_files_tab", uiOutput("view_stored_experiments_ui")),
-    #             tabPanel("Import Plate Data", value = "import_tab", uiOutput("readxMapData")),
-    #             tabPanel("Create, Add, and Load Projects", value = "manage_project_tab", uiOutput("manage_project_ui"))
-    # )
-
-
-    # mainPanel(
-    # conditionalPanel(
-    #   condition = "selected_tab == 'view_files_tab'",
-    #   uiOutput("view_stored_experiments_ui")
-    # ),
-    #
-    # conditionalPanel(
-    #   condition = "selected_tab == 'import_tab'",
-    #   uiOutput("readxMapData")
-    # ),
-    #
-    # conditionalPanel(
-    #   condition = "selected_tab == 'manage_project_tab'",
-    #   uiOutput("manage_project_ui")
-    # )
-    # )
-     )
-}
-
-# --- Define header, sidebar, body shell (From your HEAD version) ---
+# --------------------------------------------------------------
+# 1. HEADER
+# --------------------------------------------------------------
 header <- dashboardHeader(
-  #tags$li(a(img(src = "apple-touch-icon.png", title = "MADI Logo", height = "30px"), style = "padding-top:10px; padding-bottom:10px;"), class = "dropdown"), # Ensure www/apple-touch-icon.png
   title = "Interactive Serology Plate Inspector",
   titleWidth = 350
 )
 
- sidebar <- dashboardSidebar(    useShinyjs(),
-                                 useShinyalert(force = TRUE),
-                                 shinyjs::hidden(actionButton("execute_delete_btn", "")),
-                                 uiOutput("userpanel"))
-
-body <- dashboardBody(uiOutput("body_content_ui")) # Content depends on auth state
-
-ui <- tagList(
-  tags$head(
-    # Your existing JS handlers
-    tags$script(HTML(
-      "
-        $(document).on('shiny:connected', function(event) {
-          console.log('JS: Shiny connected, setting up ALL custom message handlers...');
-
-          // Handler for redirect
-          Shiny.addCustomMessageHandler('redirect', function(url) {
-            console.log('JS: Redirecting to:', url);
-            if(url) window.location.href = url; else console.error('JS: Null URL for redirect.');
-          });
-
-          // Handler for cleaning URL query string
-          Shiny.addCustomMessageHandler('updateQueryString', function(query) {
-            console.log('JS: Updating query string to:', query);
-            const newUrl = window.location.pathname + query + window.location.hash;
-            window.history.replaceState({}, document.title, newUrl);
-          });
-
-          // --- Cookie Handlers ---
-          Shiny.addCustomMessageHandler('setAuthStateCookie', function(data) {
-             if (data && data.state) {
-               console.log('JS: Setting auth state cookie:', data.state);
-               const cookieString = `shiny_oidc_state=${encodeURIComponent(data.state)}; path=/; SameSite=Lax`;
-               document.cookie = cookieString;
-               console.log('JS: Cookie string set:', cookieString);
-             } else {
-               console.error('JS: No state received to set cookie.');
-             }
-          });
-
-          Shiny.addCustomMessageHandler('getAuthStateCookie', function(message) {
-            console.log('JS: getAuthStateCookie handler triggered.');
-            const cookies = document.cookie.split('; ');
-            let stateFromCookie = null;
-            const cookieName = 'shiny_oidc_state=';
-            for (let i = 0; i < cookies.length; i++) {
-              let cookie = cookies[i].trim();
-              if (cookie.startsWith(cookieName)) {
-                stateFromCookie = decodeURIComponent(cookie.substring(cookieName.length));
-                console.log('JS: Found state in cookie:', stateFromCookie);
-                document.cookie = `${cookieName}; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`;
-                console.log('JS: Deleted auth state cookie.');
-                break;
-              }
-            }
-            if (!stateFromCookie) {
-               console.warn('JS: Auth state cookie \"shiny_oidc_state\" not found or already deleted.');
-            }
-            Shiny.setInputValue('authStateCookieValue', stateFromCookie, {priority: 'event'});
-          });
-
-           Shiny.addCustomMessageHandler('reloadPage', function(message) {
-             console.log('JS: Received reloadPage message. Reloading...');
-             window.location.reload();
-           });
-
-          console.log('JS: Finished setting up custom message handlers.');
-        });
-        "
-    )), # End tags$script(HTML(...))
-
-    # === Inactivity detection script goes below ===
-    tags$script(HTML("
-      (function() {
-        const inactivityTimeout = 15 * 60 * 1000; // 15 minutes in milliseconds
-        let timeout;
-
-        function resetTimer() {
-          clearTimeout(timeout);
-          timeout = setTimeout(logout, inactivityTimeout);
-        }
-
-        function logout() {
-          // Check if Shiny is active before sending message
-          if (window.Shiny && Shiny.setInputValue) {
-            Shiny.setInputValue('user_is_inactive', true, {priority: 'event'});
-          }
-        }
-
-        window.addEventListener('mousemove', resetTimer, {passive: true});
-        window.addEventListener('mousedown', resetTimer, {passive: true});
-        window.addEventListener('keypress', resetTimer, {passive: true});
-        window.addEventListener('touchmove', resetTimer, {passive: true});
-
-        resetTimer(); // Start the timer when the app loads
-      })();
-    "))
-    # === End inactivity script ===
-
-  ), # End tags$head
-
-  # Your dashboardPage etc remains unchanged
-
-  dashboardPage(
-    title = "Interactive Serology Plate Inspector",
-    skin = "black",
-    header = header,
-    sidebar = sidebar,
-    body = body # Contains uiOutput("body_content_ui")
-  )
-)
-
-
+# --------------------------------------------------------------
+# 2. SIDEBAR
+# --------------------------------------------------------------
 sidebar <- dashboardSidebar(
+  width = 350,
+
+  # User panel and project info
+
   uiOutput("userpanel"),
   uiOutput("project_info"),
+
+  # Primary navigation menu
   sidebarMenu(
     id = "main_tabs",
     menuItem("Home", tabName = "home_page", icon = icon("home")),
-    menuItem("Create, Add, and Load Projects", tabName = "manage_project_tab", icon = icon("chart-line"))),
+    menuItem("Create, Add, and Load Projects", tabName = "manage_project_tab", icon = icon("chart-line"))
+  ),
 
+  # Study selector and dynamic study menu
   uiOutput("main_study_selector"),
-
-  # second menu rendered dynamically
-  uiOutput("study_sidebar"),
-
-  # sidebarMenu(
-  #   id = "study_tabs",
-  #   menuItem("Import Plate Data", tabName = "import_tab", icon = icon("file")),
-  #   menuItem("View, Process, and Export Data", tabName = "view_files_tab", icon = icon("dashboard")),
-  #   menuItem("Change Study Settings", tabName = "study_settings", icon = icon("cog"))
-  # ),
-  width = 350 # dynamic sidebar menu
+  uiOutput("study_sidebar")
 )
 
-# sidebar <- dashboardSidebar(uiOutput("userpanel"), width = 350)
+# --------------------------------------------------------------
+# 3. BODY
+# --------------------------------------------------------------
 body <- dashboardBody(
-  style = "min-height:100vh; background-color: smokewhite;",
-    tags$head(
-  tags$style(HTML("
-        /* Keep sidebar fixed but allow toggling */
-        .main-sidebar {
-          position: fixed;
-          top: 0;
-          left: 0;
-          height: 100%;
-          width: 350px;
-        }
+  style = "min-height: 100vh; background-color: whitesmoke;",
 
-        /* Make sure content shifts when sidebar toggles */
+  # ----------------------------------------------------------
+  # 3a. ALL CSS STYLES (Consolidated)
+  # ----------------------------------------------------------
+  tags$head(
+    tags$style(HTML("
+      /* ==============================================
+         LAYOUT: Fixed sidebar and header
+         ============================================== */
+      .main-sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100%;
+        width: 350px;
+      }
 
-        /*.sidebar-collapse .content-wrapper,*/
-        .sidebar-collapse .main-footer {
-          margin-left: 0 !important;
-        }
+      .main-header {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 1000;
+        width: 100% !important;
+      }
 
-        .main-footer {
+      .content-wrapper {
+        min-height: 100vh;
+        padding-top: 50px;
+        margin-left: 350px;
+        background-color: whitesmoke;
+      }
+
+      /* Hide footer, adjust margin when sidebar collapsed */
+      .main-footer {
         display: none;
+      }
+
+      .sidebar-collapse .main-footer {
+        margin-left: 0 !important;
+      }
+
+      /* ==============================================
+         PANELS: Collapse panel backgrounds
+         ============================================== */
+      #StandardCurveCollapse,
+      #addProjectDocumentation,
+      #createNewProjectCollapse,
+      .panel-collapse {
+        background-color: whitesmoke;
+      }
+
+      /* ==============================================
+         CONTAINERS: Width and overflow for data panels
+         ============================================== */
+      #StandardCurveCollapse,
+      #da_subject_level_inspection,
+      #da_datasets,
+      #main_dilution_linearity_collapse,
+      #linearity_stats,
+      #standard_curve_model_fit,
+      #gated_samples,
+      .table-container {
+        width: 75vw;
+        overflow-x: auto;
+      }
+
+      /* ==============================================
+         BUTTONS: Standard curve button container
+         ============================================== */
+      #StandardCurveCollapse .button-container {
+        width: 75vw;
+        overflow-x: auto;
+        gap: 300px;
+      }
+
+      #StandardCurveCollapse .button-container .btn {
+        white-space: nowrap;
+      }
+
+      /* ==============================================
+         NOTIFICATIONS: Custom styled notifications
+         ============================================== */
+      .big-notification {
+        width: 450px !important;
+        font-size: 16px !important;
+        padding: 25px !important;
+      }
+
+      .success-notification {
+        width: 400px !important;
+        font-size: 14px !important;
+        padding: 20px !important;
+        border-left: 4px solid #28a745 !important;
+      }
+
+      .warning-notification {
+        width: 400px !important;
+        font-size: 14px !important;
+        padding: 20px !important;
+        border-left: 4px solid #ffc107 !important;
+      }
+
+      .error-notification {
+        width: 450px !important;
+        font-size: 14px !important;
+        padding: 20px !important;
+        border-left: 4px solid #dc3545 !important;
+      }
+    "))
+  ),
+
+  # ----------------------------------------------------------
+  # 3b. BODY CONTENT
+  # ----------------------------------------------------------
+  uiOutput("landing_page_ui"),
+  uiOutput("body_content_ui")
+)
+
+# --------------------------------------------------------------
+# 4. JAVASCRIPT HANDLERS
+# --------------------------------------------------------------
+# Consolidated JS for authentication, cookies, and user activity
+
+js_handlers <- tags$script(HTML("
+  $(document).on('shiny:connected', function(event) {
+    console.log('JS: Shiny connected, setting up custom message handlers...');
+
+    // ------------------------------------------------
+    // REDIRECT: Navigate to a new URL
+    // ------------------------------------------------
+    Shiny.addCustomMessageHandler('redirect', function(url) {
+      console.log('JS: Redirecting to:', url);
+      if (url) {
+        window.location.href = url;
+      } else {
+        console.error('JS: Null URL for redirect.');
+      }
+    });
+
+    // ------------------------------------------------
+    // QUERY STRING: Update URL without page reload
+    // ------------------------------------------------
+    Shiny.addCustomMessageHandler('updateQueryString', function(query) {
+      console.log('JS: Updating query string to:', query);
+      const newUrl = window.location.pathname + query + window.location.hash;
+      window.history.replaceState({}, document.title, newUrl);
+    });
+
+    // ------------------------------------------------
+    // COOKIES: Set authentication state cookie
+    // ------------------------------------------------
+    Shiny.addCustomMessageHandler('setAuthStateCookie', function(data) {
+      if (data && data.state) {
+        console.log('JS: Setting auth state cookie:', data.state);
+        const cookieString = `shiny_oidc_state=${encodeURIComponent(data.state)}; path=/; SameSite=Lax`;
+        document.cookie = cookieString;
+        console.log('JS: Cookie string set:', cookieString);
+      } else {
+        console.error('JS: No state received to set cookie.');
+      }
+    });
+
+    // ------------------------------------------------
+    // COOKIES: Get and clear authentication state cookie
+    // ------------------------------------------------
+    Shiny.addCustomMessageHandler('getAuthStateCookie', function(message) {
+      console.log('JS: getAuthStateCookie handler triggered.');
+      const cookies = document.cookie.split('; ');
+      let stateFromCookie = null;
+      const cookieName = 'shiny_oidc_state=';
+
+      for (let i = 0; i < cookies.length; i++) {
+        let cookie = cookies[i].trim();
+        if (cookie.startsWith(cookieName)) {
+          stateFromCookie = decodeURIComponent(cookie.substring(cookieName.length));
+          console.log('JS: Found state in cookie:', stateFromCookie);
+          // Delete the cookie after reading
+          document.cookie = `${cookieName}; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`;
+          console.log('JS: Deleted auth state cookie.');
+          break;
         }
+      }
 
-        /* Keep header fixed full width */
-    .main-header {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      z-index: 1000;
-      width: 100% !important;
+      if (!stateFromCookie) {
+        console.warn('JS: Auth state cookie not found or already deleted.');
+      }
+
+      Shiny.setInputValue('authStateCookieValue', stateFromCookie, {priority: 'event'});
+    });
+
+    // ------------------------------------------------
+    // RELOAD: Force page reload
+    // ------------------------------------------------
+    Shiny.addCustomMessageHandler('reloadPage', function(message) {
+      console.log('JS: Received reloadPage message. Reloading...');
+      window.location.reload();
+    });
+
+    console.log('JS: Finished setting up custom message handlers.');
+  });
+"))
+
+js_inactivity_timer <- tags$script(HTML("
+  // ------------------------------------------------
+  // INACTIVITY TIMER: Log out user after 15 minutes
+  // ------------------------------------------------
+  (function() {
+    const inactivityTimeout = 15 * 60 * 1000; // 15 minutes in milliseconds
+    let timeout;
+
+    function resetTimer() {
+      clearTimeout(timeout);
+      timeout = setTimeout(logout, inactivityTimeout);
     }
 
-    /* Push body down so it doesn't overlap header */
-    .content-wrapper {
-      padding-top: 50px; /* adjust if header is taller */
+    function logout() {
+      if (window.Shiny && Shiny.setInputValue) {
+        Shiny.setInputValue('user_is_inactive', true, {priority: 'event'});
+      }
     }
 
-.content-wrapper {
-      min-height: 100vh;        /* always full height */
-      padding-top: 50px;        /* header height */
-      margin-left: 350px;       /* sidebar width */
-      background-color: whitesmoke;
-    }
+    // Reset timer on user activity
+    window.addEventListener('mousemove', resetTimer, {passive: true});
+    window.addEventListener('mousedown', resetTimer, {passive: true});
+    window.addEventListener('keypress', resetTimer, {passive: true});
+    window.addEventListener('touchmove', resetTimer, {passive: true});
 
-      "))
-), uiOutput("landing_page_ui"),
-  uiOutput("body_content_ui")) # Content depends on auth state
+    // Start the timer when the app loads
+    resetTimer();
+  })();
+"))
 
-
-# --- Main UI Definition (From your HEAD version, as it handles auth) ---
-# MERGE: This `ui` definition from HEAD is the shell for the entire app.
+# --------------------------------------------------------------
+# 5. MAIN UI ASSEMBLY
+# --------------------------------------------------------------
 ui <- tagList(
   tags$head(
-    tags$script(HTML(
-      "
-        $(document).on('shiny:connected', function(event) {
-          console.log('JS: Shiny connected, setting up ALL custom message handlers...');
+    # Favicon
+    tags$link(rel = "shortcut icon", href = "greenicon.ico"),
 
-          // Handler for redirecthttp://127.0.0.1:8080/#shiny-tab-study_settings
-          Shiny.addCustomMessageHandler('redirect', function(url) {
-            console.log('JS: Redirecting to:', url);
-            if(url) window.location.href = url; else console.error('JS: Null URL for redirect.');
-          });
+    # JavaScript handlers
+    js_handlers,
+    js_inactivity_timer
+  ),
 
-          // Handler for cleaning URL query string
-          Shiny.addCustomMessageHandler('updateQueryString', function(query) {
-            console.log('JS: Updating query string to:', query);
-            const newUrl = window.location.pathname + query + window.location.hash;
-            window.history.replaceState({}, document.title, newUrl);
-          });
-
-          // --- Cookie Handlers ---
-          Shiny.addCustomMessageHandler('setAuthStateCookie', function(data) {
-             if (data && data.state) {
-               console.log('JS: Setting auth state cookie:', data.state);
-               const cookieString = `shiny_oidc_state=${encodeURIComponent(data.state)}; path=/; SameSite=Lax`;
-               document.cookie = cookieString;
-               console.log('JS: Cookie string set:', cookieString);
-             } else {
-               console.error('JS: No state received to set cookie.');
-             }
-          });
-
-          Shiny.addCustomMessageHandler('getAuthStateCookie', function(message) {
-            console.log('JS: getAuthStateCookie handler triggered.');
-            const cookies = document.cookie.split('; ');
-            let stateFromCookie = null;
-            const cookieName = 'shiny_oidc_state=';
-            for (let i = 0; i < cookies.length; i++) {
-              let cookie = cookies[i].trim();
-              if (cookie.startsWith(cookieName)) {
-                stateFromCookie = decodeURIComponent(cookie.substring(cookieName.length));
-                console.log('JS: Found state in cookie:', stateFromCookie);
-                document.cookie = `${cookieName}; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`;
-                console.log('JS: Deleted auth state cookie.');
-                break;
-              }
-            }
-            if (!stateFromCookie) {
-               console.warn('JS: Auth state cookie \"shiny_oidc_state\" not found or already deleted.');
-            }
-            Shiny.setInputValue('authStateCookieValue', stateFromCookie, {priority: 'event'});
-          });
-
-           Shiny.addCustomMessageHandler('reloadPage', function(message) {
-             console.log('JS: Received reloadPage message. Reloading...');
-             window.location.reload();
-           });
-
-          console.log('JS: Finished setting up custom message handlers.');
-        });
-        "
-    )) # End tags$script(HTML(...))
-  ), # End tags$head
-
-  # Define the dashboardPage structure
+  # Dashboard page structure
   dashboardPage(
     title = "Interactive Serology Plate Inspector",
     skin = "black",
     header = header,
     sidebar = sidebar,
-    body = body # Contains uiOutput("body_content_ui")
+    body = body
   )
-) # End tagList
+)
 
+# --------------------------------------------------------------
+# 6. AUTHENTICATED BODY CONTENT FUNCTION
+# --------------------------------------------------------------
+# This function returns the UI structure shown after successful login
 
+authenticated_body_content <- function() {
+  fluidPage(
+    useShinyjs(),
+    useShinyFeedback(),
+    uiOutput("body_tabs")
+  )
+}
 
 
 # ==============================================================
-# 3. Server Function (MERGED)
+# USAGE EXAMPLES FOR CUSTOM NOTIFICATIONS
+# ==============================================================
+#
+# In your server code, use these notification styles:
+#
+# # Large notification
+# showNotification(
+#   div(class = "big-notification", "This is an important message!"),
+#   duration = 5
+# )
+#
+# # Success notification
+# showNotification(
+#   div(class = "success-notification", "Operation completed successfully!"),
+#   type = "message",
+#   duration = 4
+# )
+#
+# # Warning notification
+# showNotification(
+#   div(class = "warning-notification", "Please review before proceeding."),
+#   type = "warning",
+#   duration = 5
+# )
+#
+# # Error notification
+# showNotification(
+#   div(class = "error-notification", "An error occurred. Please try again."),
+#   type = "error",
+#   duration = NULL  # Requires manual dismissal
+# )
+# ==============================================================
+
+
+# ==============================================================
+# 3. Server Function
 # ==============================================================
 server <- function(input, output, session) {
 
@@ -912,6 +919,7 @@ server <- function(input, output, session) {
       source("import_lumifile.R", local = TRUE)
       source("xPonentReader.R", local = TRUE)
       source("segment_reader.R", local = TRUE)
+
       source("plate_norm_server.R", local = TRUE)
       source("bead_count_analysis_ui.R", local = TRUE)
       source("bead_count_functions.R", local = TRUE)
@@ -919,7 +927,6 @@ server <- function(input, output, session) {
       source("dilution_standards_controls_ui.R", local = TRUE)
       source("blank_control_ui.R", local = TRUE)
       source('propagate_functions.R', local = TRUE)
-     # source("standard_curve_functions.R", local = TRUE)
 
       source("std_curver_ui.R", local = TRUE)
       source("std_curve_functions.R", local = TRUE)
@@ -930,11 +937,6 @@ server <- function(input, output, session) {
 
       source("std_curver_summary_ui.R", local = TRUE)
       source("std_curver_summary_functions.R", local = TRUE)
-#
-#       source("standardcurveui.R", local = TRUE)
-#       source("standard_curve_summary_ui.R", local = TRUE)
-
-
 
       source("outliers.R", local = TRUE)
       source("outlier_ui1.R", local = TRUE)

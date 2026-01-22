@@ -223,20 +223,6 @@ output$readxMapData <- renderUI({
     import_plate_data_title <- paste("Import", input$readxMap_study_accession, "Plate Data", sep = " ")
     tagList(
       fluidPage(
-        # tagList(
-        #   h3(import_plate_data_title),
-        #     bsCollapsePanel(
-        #       "Instructions",
-        #       p("This is where we can load plate data from either Raw excel files or from the xPONENT format."),
-        #       p("1. Choose an existing study OR Create a new study."),
-        #       p("2. Choose an existing experiment OR Create a new experiment."),
-        #       p("3. Choose an xPONENT format OR a RAW format to upload."),
-        #       p("4. Browse to your plate data and import it in the correct format."),
-        #       p("5. Parse the plate data into correct columns/fields appropriate and required for each data component/type."),
-        #       p("6. Upload each data component/type."),
-        #       style = "success"
-        #     )
-        # ),
         tagList(
           h3(import_plate_data_title),
           bsCollapsePanel(
@@ -464,7 +450,7 @@ output$readxMapData <- renderUI({
                      inputId = "xPonentFile",
                      label = "File Format",
                      choices = c("xPONENT", "RAW", "Layout Template"),
-                     selected = "RAW",
+                     selected = "Layout Template",
                      justified = TRUE,
                      checkIcon = list(
                        yes = icon("check", lib = "font-awesome")

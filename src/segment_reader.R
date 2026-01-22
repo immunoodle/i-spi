@@ -487,7 +487,8 @@ output$table_plates <- renderRHandsontable({
   #df_long$variable as.POSIXct(strptime(gsub(",",":",gsub(" ","",df_long[["acquisition_date"]])),format='%d-%b-%Y:%H:%M%p'), tz = "EST")
 
   # remove extension from the plate_id before displaying metadata
-  df_long[df_long$variable == "plate_id",]$value <- sub("\\.[^.]*$", "", df_long[df_long$variable == "plate_id", ]$value)
+  # df_long[df_long$variable == "plate_id",]$value <- sub("\\.[^.]*$", "", df_long[df_long$variable == "plate_id", ]$value)
+  df_long[df_long$variable == "plate_id",]$value <- clean_plate_id(df_long[df_long$variable == "plate_id", ]$value)
   # meta_long <- meta_df %>%
   #   tidyr::pivot_longer(cols = everything(), names_to = "Field", values_to = "Value")
   #
@@ -839,7 +840,8 @@ clean_plateids <- function(plates) {
   # If plateid already exists, keep it; otherwise use plateidv
   if (str_trim(str_replace_all(plates$file_name, "\\s", ""), side = "both") == plates$plateid) {
     plates$plateid <- str_remove(plates$plateidr, "\\.rbx$")
-    plates$plate_id <- str_trim(str_replace_all(plates$file_name, "\\s", ""), side = "both")
+    # plates$plate_id <- str_trim(str_replace_all(plates$file_name, "\\s", ""), side = "both")
+    plates$plate_id <- clean_plate_id(plates$file_name)
   }
   # if (!"plateid" %in% names(plates)) {
   #   cat("no plateid in header")
@@ -849,7 +851,8 @@ clean_plateids <- function(plates) {
     plates$plateid <- ifelse(is.na(plates$plateid) | plates$plateid == "",
                              plates$plateidv,
                              plates$plateid)
-    plates$plate_id <- str_trim(str_replace_all(plates$file_name, "\\s", ""), side = "both")
+    # plates$plate_id <- str_trim(str_replace_all(plates$file_name, "\\s", ""), side = "both")
+    plates$plate_id <- clean_plate_id(plates$file_name)
   }
 
   # Lowercase + cleaning for downstream extraction
@@ -879,7 +882,8 @@ parse_plate_header <- function(plates) {
   plates$plateid <- str_replace_all(plates$plateid, fixed(".."),"_")
   plates$plateid <- str_replace_all(plates$plateid, fixed("."),"_")
   plates$plateidv <- str_replace_all(plates$plateid, fixed("plate_"),"plate")
-  plates$plate_id_proc <- str_trim(str_replace_all(plates$file_name, "\\s", ""), side = "both")
+  # plates$plate_id_proc <- str_trim(str_replace_all(plates$file_name, "\\s", ""), side = "both")
+  plates$plate_id_proc <- clean_plate_id(plates$file_name)
   if (nrow(plates) > 0) {
   #  plates$needs_update <- ifelse(is.na(plates$plate), 1, plates$needs_update)
     plates$plateids <- tolower(plates$plateid)
@@ -963,12 +967,17 @@ parse_metadata_df <- function(df, meta_var_list = c("file_name","acquisition_dat
   #names(meta_df) <- gsub(" ", "_", names(meta_df))
   meta_df <- meta_df[meta_df$field %in% meta_var_list,]
 
- if (meta_df[meta_df$field == "plate_id",]$value == "") {
-    meta_df[meta_df$field == "plate_id",]$value <- meta_df[meta_df$field == "file_name",]$value
-  }
+ # if (meta_df[meta_df$field == "plate_id",]$value == "") {
+ #    meta_df[meta_df$field == "plate_id",]$value <- meta_df[meta_df$field == "file_name",]$value
+ #  }
+ #
+ #  meta_df[meta_df$field == "plate_id", "value"] <-
+ #    str_trim(str_replace_all(meta_df[meta_df$field == "plate_id", "value"], "\\s", ""), side = "both")
 
-  meta_df[meta_df$field == "plate_id", "value"] <-
-    str_trim(str_replace_all(meta_df[meta_df$field == "plate_id", "value"], "\\s", ""), side = "both")
+  if (meta_df[meta_df$field == "plate_id",]$value == "") {
+        meta_df[meta_df$field == "plate_id",]$value <- meta_df[meta_df$field == "file_name",]$value
+      }
+      meta_df[meta_df$field == "plate_id", "value"] <- clean_plate_id(meta_df[meta_df$field == "plate_id", "value"])
 
 
   if (meta_df[meta_df$field == "plate_id",]$value != "") {
