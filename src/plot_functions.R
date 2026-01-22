@@ -346,12 +346,21 @@ plot_standard_curve <- function(best_fit,
   se_all <- c(best_fit$best_pred$pcov,  samples_predicted_conc$pcov)
   se_range      <- range(se_all, na.rm = TRUE)
 
+  # se_max <- min(ceiling(quantile(se_samples ^ 2, probs = 0.95, na.rm = TRUE) * 1000), 100)
+
+
+  # se_margin <- (se_max - 0) * 0.02
+  # # se_margin <- (100 - se_range[1]) * 0.05
+  # se_axis_limits <- c(1 - se_margin, se_max + se_margin)
+  # # se_axis_limits <- c(se_range[1] - se_margin, 100 + se_margin)
+
   se_max <- min(ceiling(quantile(se_samples ^ 2, probs = 0.95, na.rm = TRUE) * 1000), 100)
+  se_min <- max(min(se_all, na.rm = TRUE), 0.1)  # Ensure positive minimum for log scale
+
+  # For log scale, work with the actual values (Plotly will handle the log transform)
+  se_axis_limits <- c(se_min * 0.8, se_max * 1.2)  # Add some padding
   dtick <- ifelse(se_max > 19, ifelse(se_max > 35,10, 5), 1)
-  se_margin <- (se_max - 0) * 0.02
-  # se_margin <- (100 - se_range[1]) * 0.05
-  se_axis_limits <- c(0 - se_margin, se_max + se_margin)
-  # se_axis_limits <- c(se_range[1] - se_margin, 100 + se_margin)
+  # dtick <- 0.301
 
   ### ------------------------
   ### 4. RAW POINTS (standards + blanks)
@@ -574,6 +583,8 @@ plot_standard_curve <- function(best_fit,
       title = y3_label,
       range = se_axis_limits,
       tickmode = "linear",
+      type = "linear",
+      # range = log10(se_axis_limits),
       dtick = dtick,
       showgrid = FALSE,
       zeroline = FALSE,

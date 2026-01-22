@@ -47,7 +47,6 @@ observeEvent(input$stored_header_rows_selected, {
   print(paste(selected_studyexpplate$plateid," nrows_control:", selected_studyexpplate$nrows_control))
 })
 
-
 observeEvent(input$readxMap_study_accession, {
 
   if (input$readxMap_study_accession != "Click here") {
@@ -156,9 +155,11 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
                                select_where = list("concat(study_accession,experiment_accession)" = paste0(input$readxMap_study_accession,input$readxMap_experiment_accession))
     )
 
-    stored_header$plateid <- gsub("[[:punct:][:blank:]]+", ".", basename(gsub("\\", "/", stored_header$plate_id, fixed=TRUE)))
-    stored_header <- stored_header[ , c("plateid", "acquisition_date", "reader_serial_number", "rp1_pmt_volts", "rp1_target", "auth0_user", "file_name", "study_accession", "experiment_accession")]
+    # stored_header$plateid <- gsub("[[:punct:][:blank:]]+", ".", basename(gsub("\\", "/", stored_header$plate_id, fixed=TRUE)))
+    stored_header <- stored_header[ , c("experiment_accession", "plateid", "plate", "sample_dilution_factor", "acquisition_date", "reader_serial_number", "rp1_pmt_volts", "rp1_target", "auth0_user", "study_accession", "plate_id")]
     stored_header$Curve_Status <- NA
+
+
 
     # print("### create the xMap standard_data object")
     stored_standard <- data.frame()
@@ -167,11 +168,12 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
                                  table_name = "xmap_standard",
                                  select_where = list("concat(study_accession,experiment_accession)" = paste0(input$readxMap_study_accession,input$readxMap_experiment_accession))
     )
+    stored_standard <- inner_join(stored_standard, stored_header[ , c("plate_id","plateid","plate")], by = "plate_id")
 
     if (length(stored_standard[ ,"experiment_accession"]) > 0) {
       # print(paste("stored_standard data:", length(stored_standard[ ,"experiment_accession"])))
 
-      stored_standard$plateid <- gsub("[[:punct:][:blank:]]+", ".", basename(gsub("\\", "/", stored_standard$plate_id, fixed=TRUE)))
+      # stored_standard$plateid <- gsub("[[:punct:][:blank:]]+", ".", basename(gsub("\\", "/", stored_standard$plate_id, fixed=TRUE)))
       names(stored_standard)[names(stored_standard) == "antibody_n"] <- "n"
       names(stored_standard)[names(stored_standard) == "antibody_mfi"] <- "mfi"
       stored_standard <- distinct(stored_standard[,!(names(stored_standard) %in% c("xmap_standard_id", "antibody_name", "plate_id"))])
@@ -188,6 +190,7 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
                                table_name = "xmap_standard_fits",
                                select_where = list("concat(study_accession,experiment_accession)" = paste0(input$readxMap_study_accession,input$readxMap_experiment_accession))
       )
+
 
       if (is.null(stored_fits)) {
         nrows_fits <- 0
@@ -331,9 +334,11 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
                                 table_name = "xmap_control",
                                 select_where = list("concat(study_accession,experiment_accession)" = paste0(input$readxMap_study_accession,input$readxMap_experiment_accession))
     )
+
     nrows_control <- nrow(stored_control)
     if (nrows_control > 0) {
-      stored_control$plateid <- gsub("[[:punct:][:blank:]]+", ".", basename(gsub("\\", "/", stored_control$plate_id, fixed=TRUE)))
+      stored_control <- inner_join(stored_control, stored_header[ , c("plate_id","plateid","plate")], by = "plate_id")
+      # stored_control$plateid <- gsub("[[:punct:][:blank:]]+", ".", basename(gsub("\\", "/", stored_control$plate_id, fixed=TRUE)))
 
       names(stored_control)[names(stored_control) == "antibody_n"] <- "n"
       names(stored_control)[names(stored_control) == "antibody_mfi"] <- "mfi"
@@ -361,7 +366,8 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
     )
     nrows_buffer <- nrow(stored_buffer)
     if (nrows_buffer > 0) {
-      stored_buffer$plateid <- gsub("[[:punct:][:blank:]]+", ".", basename(gsub("\\", "/", stored_buffer$plate_id, fixed=TRUE)))
+      stored_buffer <- inner_join(stored_buffer, stored_header[ , c("plate_id","plateid","plate")], by = "plate_id")
+      # stored_buffer$plateid <- gsub("[[:punct:][:blank:]]+", ".", basename(gsub("\\", "/", stored_buffer$plate_id, fixed=TRUE)))
       names(stored_buffer)[names(stored_buffer) == "antibody_n"] <- "n"
       names(stored_buffer)[names(stored_buffer) == "antibody_mfi"] <- "mfi"
       stored_buffer <- distinct(stored_buffer[,!(names(stored_buffer) %in% c("xmap_buffer_id", "antibody_name","plate_id"))])
@@ -392,8 +398,9 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
     stored_sampley <- stored_sampley[, !(names(stored_sampley) %in% c("gate_class_dil", "reference_dilution"))]
     nrows_sample <- nrow(stored_sampley)
     if (nrows_sample > 0) {
+      stored_sampley <- inner_join(stored_sampley, stored_header[ , c("plate_id","plateid","plate")], by = "plate_id")
       # print(paste("loaded raw xmap_sample rows:",nrows_sample))
-      stored_sampley$plateid <- gsub("[[:punct:][:blank:]]+", ".", basename(gsub("\\", "/", stored_sampley$plate_id, fixed=TRUE)))
+      # stored_sampley$plateid <- gsub("[[:punct:][:blank:]]+", ".", basename(gsub("\\", "/", stored_sampley$plate_id, fixed=TRUE)))
       names(stored_sampley)[names(stored_sampley) == "antibody_n"] <- "n"
       names(stored_sampley)[names(stored_sampley) == "antibody_mfi"] <- "mfi"
       names(stored_sampley)[names(stored_sampley) == "gate_class"] <- "gate_class_detection"
@@ -674,7 +681,6 @@ observe({
 
   remove_modal_progress(session = getDefaultReactiveDomain())
 })
-
 
 check_nsample_plate <- function(df, plate_column){
   # Count the number of samples per plate

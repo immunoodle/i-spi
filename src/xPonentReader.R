@@ -219,9 +219,14 @@ observeEvent(input$upload_xponent_type_X, {
   experiment_name_import <- as.character(input$readxMap_experiment_accession_import)
 
   # Extract plate_id
-  load_plate_id <- file.path("E:",
-                             "batch",
-                             paste0(gsub("[[:punct:][:blank:]]+", ".", lumcsv_reactive()$BatchHeader$BatchInfo$Batch),".csv"))
+  # load_plate_id <- file.path("E:",
+  #                            "batch",
+  #                            paste0(gsub("[[:punct:][:blank:]]+", ".", lumcsv_reactive()$BatchHeader$BatchInfo$Batch),".csv"))
+
+  load_plate_id_raw <- file.path("E:",
+                                 "batch",
+                                 paste0(gsub("[[:punct:][:blank:]]+", ".", lumcsv_reactive()$BatchHeader$BatchInfo$Batch),".csv"))
+  load_plate_id <- clean_plate_id(load_plate_id_raw)
 
   # Fetch existing header info
   load_auth0_user <- current_user_nocompress()
@@ -311,9 +316,14 @@ observeEvent(input$upload_xponent_type_S, {
   experiment_name_import <- as.character(input$readxMap_experiment_accession_import)
 
   # Extract plate_id
-  load_plate_id <- file.path("E:",
-                             "batch",
-                             paste0(gsub("[[:punct:][:blank:]]+", ".", lumcsv_reactive()$BatchHeader$BatchInfo$Batch),".csv"))
+  # load_plate_id <- file.path("E:",
+  #                            "batch",
+  #                            paste0(gsub("[[:punct:][:blank:]]+", ".", lumcsv_reactive()$BatchHeader$BatchInfo$Batch),".csv"))
+
+  load_plate_id_raw <- file.path("E:",
+                                 "batch",
+                                 paste0(gsub("[[:punct:][:blank:]]+", ".", lumcsv_reactive()$BatchHeader$BatchInfo$Batch),".csv"))
+  load_plate_id <- clean_plate_id(load_plate_id_raw)
 
   # Fetch existing header info
   load_auth0_user <- current_user_nocompress()
@@ -393,9 +403,14 @@ observeEvent(input$upload_xponent_type_C, {
   experiment_name_import <- as.character(input$readxMap_experiment_accession_import)
 
   # Extract plate_id
-  load_plate_id <- file.path("E:",
-                             "batch",
-                             paste0(gsub("[[:punct:][:blank:]]+", ".", lumcsv_reactive()$BatchHeader$BatchInfo$Batch),".csv"))
+  # load_plate_id <- file.path("E:",
+  #                            "batch",
+  #                            paste0(gsub("[[:punct:][:blank:]]+", ".", lumcsv_reactive()$BatchHeader$BatchInfo$Batch),".csv"))
+
+  load_plate_id_raw <- file.path("E:",
+                                 "batch",
+                                 paste0(gsub("[[:punct:][:blank:]]+", ".", lumcsv_reactive()$BatchHeader$BatchInfo$Batch),".csv"))
+  load_plate_id <- clean_plate_id(load_plate_id_raw)
 
   # Fetch existing header info
   load_auth0_user <- current_user_nocompress()
@@ -472,9 +487,14 @@ observeEvent(input$upload_xponent_type_B, {
   experiment_name_import <- as.character(input$readxMap_experiment_accession_import)
 
   # Extract plate_id
-  load_plate_id <- file.path("E:",
-                             "batch",
-                             paste0(gsub("[[:punct:][:blank:]]+", ".", lumcsv_reactive()$BatchHeader$BatchInfo$Batch),".csv"))
+  # load_plate_id <- file.path("E:",
+  #                            "batch",
+  #                            paste0(gsub("[[:punct:][:blank:]]+", ".", lumcsv_reactive()$BatchHeader$BatchInfo$Batch),".csv"))
+
+  load_plate_id_raw <- file.path("E:",
+                                 "batch",
+                                 paste0(gsub("[[:punct:][:blank:]]+", ".", lumcsv_reactive()$BatchHeader$BatchInfo$Batch),".csv"))
+  load_plate_id <- clean_plate_id(load_plate_id_raw)
 
   # Fetch existing header info
   load_auth0_user <- current_user_nocompress()
