@@ -814,12 +814,13 @@ observeEvent(input$study_level_tabs, {
       )
     })
 
+    ## Raw samples
     plot_bead_count_summary_plot <- function() {
       req(preped_data)
       req(input$analyte_selector_bead)
       req(input$specimen_selector_bead)
      # preped_data_v <- preped_data
-      bead_data <- preped_data[preped_data$specimen_type %in% c("blank", "control", "standard", "sample"), ]
+      bead_data <- preped_data[preped_data$specimen_type %in% c("blank", "control", "standard", "raw_sample"), ]
 
       if (input$specimen_selector_bead == "standard" && !is.null(input$source_selector_bead)) {
         bead_data <- bead_data[bead_data$source == input$source_selector_bead, ]
