@@ -26,6 +26,8 @@ observeEvent(list(
                                conn = conn)
 
 
+    #  loaded_data <<- loaded_data
+
       response_var <- loaded_data$response_var
       indep_var <-  loaded_data$indep_var
 
@@ -231,6 +233,8 @@ observeEvent(list(
 
     output$sc_plate_selector <- renderUI({
       req(loaded_data$standards$study_accession, loaded_data$standards$experiment_accession)
+
+
 
       updateSelectInput(session, "sc_plate_select", selected = NULL)  # Reset the plateSelection
       req(nrow(loaded_data$standards) > 0)
