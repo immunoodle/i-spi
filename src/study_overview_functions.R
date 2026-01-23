@@ -2301,16 +2301,15 @@ plot_preped_analyte_fit_summary <- function(preped_data, analyte_selector) {
  #long_df_group_v <<- long_df_group
    #print(table(long_df_group$fit_category, useNA = "ifany"))
 
-
   plot <- ggplot(long_df_group, aes(x = plate, y = proportion, fill = fit_category)) +
     geom_bar(stat = "identity", color = "black", linewidth = 0.3) +
     facet_grid(rows = vars(antigen), scales = "free_x", space = "free_x", drop = TRUE) + #cols = vars(crit),
     scale_fill_manual(values = c(
       "Below LOD"             = "#313695",
-      "Above LOD"             = "#4575b4",
       "Below LOQ"             = "#91bfdb",
       "In Quantifiable Range" = "#1a9850",  # green (center)
       "Above LOQ"             = "#fee08b",
+      "Above LOD"             = "#f46d43", #4575b4",
       "High Bead Aggregation" = "#fc8d59",
       "Low Bead Count"        = "#d73027",
       "No Model"              = "black"
