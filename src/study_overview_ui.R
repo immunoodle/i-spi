@@ -837,7 +837,7 @@ observeEvent(input$study_level_tabs, {
     output$specimen_selector_beadUI <- renderUI({
       req(preped_data)
 
-      specimen_choices <- unique(preped_data[preped_data$specimen_type %in% c("blank", "control", "standard", "sample"), "specimen_type"])
+      specimen_choices <- unique(preped_data[preped_data$specimen_type %in% c("blank", "control", "standard", "raw_sample"), "specimen_type"])
 
       shinyWidgets::radioGroupButtons(
         inputId = "specimen_selector_bead",
@@ -850,7 +850,8 @@ observeEvent(input$study_level_tabs, {
 
     output$bead_sc_sourceUI <- renderUI({
       req(preped_data)
-      source_choices <- unique(na.omit(preped_data$source))
+      # source of the raw standards pre-standard curve proccessing
+      source_choices <- unique(na.omit(preped_data$std_source))
       shinyWidgets::radioGroupButtons(
         inputId = "source_selector_bead",
         label = "Select Standard Curve Source:",
@@ -869,7 +870,7 @@ observeEvent(input$study_level_tabs, {
       bead_data <- preped_data[preped_data$specimen_type %in% c("blank", "control", "standard", "raw_sample"), ]
 
       if (input$specimen_selector_bead == "standard" && !is.null(input$source_selector_bead)) {
-        bead_data <- bead_data[bead_data$source == input$source_selector_bead, ]
+        bead_data <- bead_data[bead_data$std_source == input$source_selector_bead, ]
       }
 
       bead_data <- bead_data[, c("analyte","antigen", "plate","specimen_type","nhighbeadagg","nlowbead")]

@@ -65,6 +65,7 @@ pull_standard <- function(conn, selected_study, current_user, plates) {
 		 (s.experiment_accession || '_' || h.sample_dilution_factor) AS Analyte,
          --s.plate_id,
          h.xmap_header_id,
+         s.source as std_source,
          h.plateid,
          h.plate,
          h.sample_dilution_factor,
@@ -609,9 +610,20 @@ pull_fits <- function(conn, selected_study, current_user, plates) {
 
 # function to summarize data with gmean, gsd and count (n)
 summarise_data <- function(df) {
+  grp_vars <- c("analyte",
+                "antigen",
+                "plateid",
+                "plate",
+                "sample_dilution_factor")
+
+  if ("std_source" %in% names(df)) {
+    grp_vars <- c(grp_vars, "std_source")
+  }
+
   if (nrow(df) > 2)
     {  dfsum <- df %>%
-        group_by(analyte, antigen, plateid, plate, sample_dilution_factor) %>%
+        group_by(across(all_of(grp_vars))) %>%
+        #group_by(analyte, antigen, plateid, plate, sample_dilution_factor) %>%
         dplyr::summarise(
           gmean = gmean(mfi),
           gsd = gsd(mfi),
@@ -718,17 +730,27 @@ interplate_summarize <- function(df) {
 
 # Further summarise counts for specific conditions within active_samples
 get_condition_counts <- function(data, condition_col, condition_val, count_col_name, sample_summ) {
+  grp_vars <- c("analyte",
+                "antigen",
+                "plateid")
+
+  if ("std_source" %in% names(data)) {
+    grp_vars <- c(grp_vars, "std_source")
+  }
+
   if (nrow(data) > 2)
   {
   filtered <- data %>% dplyr::filter((!!sym(condition_col)) == condition_val)
     if (nrow(filtered) > 0) {
       dfsum <- filtered %>%
-        dplyr::group_by(analyte, antigen, plateid) %>%
+        dplyr::group_by(across(all_of(grp_vars))) %>%
+        #dplyr::group_by(analyte, antigen, plateid) %>%
         dplyr::summarise(!!count_col_name := dplyr::n(), .groups = "drop")
     } else {
       # if no rows match, create empty data.frame with zeros for all groups in sample_summ
       dfsum <- sample_summ %>%
-        dplyr::select(analyte, antigen, plateid) %>%
+        dplyr::select(all_of(grp_vars)) %>%
+       # dplyr::select(analyte, antigen, plateid) %>%
         dplyr::mutate(!!count_col_name := 0)
     }
   } else {
@@ -1011,6 +1033,12 @@ make_summspec <- function(standard,
   ## -----------------------------------------------------------------
  # standard_v <<- standard
   if (nrow(standard) > 0) {
+    cat("STAND")
+     print(names(standard))
+    # source_std <<- standard %>%
+    #   dplyr::select(analyte, antigen, plateid, plate, sample_dilution_factor, std_source) %>%
+    #   dplyr::distinct()
+
     standard_summ <- summarise_data(standard) %>%
       mutate(specimen_type = "standard")
 
@@ -1031,9 +1059,12 @@ make_summspec <- function(standard,
     )
 
     standard_summ <- standard_summ %>%
-      left_join(std_lowbead,  by = c("analyte", "antigen", "plateid")) %>%
-      left_join(std_highagg,  by = c("analyte", "antigen", "plateid")) %>%
+      left_join(std_lowbead,  by = c("analyte", "antigen", "plateid", "std_source")) %>%
+      left_join(std_highagg,  by = c("analyte", "antigen", "plateid", "std_source")) %>%
       replace_na(list(nlowbead = 0, nhighbeadagg = 0))
+
+    #standard_summ <<- standard_summ
+
   } else {
     standard_summ <- tibble::tibble()
   }
@@ -1691,6 +1722,8 @@ preprocess_plate_data <- function(conn, current_user, selected_study) {
   ## ------------------------------------------------------------
   ## 7) Convert variables to their final types (you already have a helper)
   ## ------------------------------------------------------------
+  cat("before count set")
+  print(names(summ_spec))
   count_set <- convert_vars(summ_spec)
 
   ## ------------------------------------------------------------
@@ -2416,7 +2449,16 @@ make_antigen_plate_bead <- function(data, specimen_type, analyte, title,
     pal <- RColorBrewer::brewer.pal(n = max(3, length(type_levels)), name = "Set1")
     type_colors <- setNames(pal[seq_along(type_levels)], type_levels)
 
-    plot_data$plate_factor <- factor(plot_data$plate, levels = unique(plot_data$plate))
+    # sort plates (ex: plate_1, plate_2b, plate_10a, plate_10b) optional letter
+    pat <- ".*_(\\d+)([A-Za-z]*)$"
+    plate_levels <- unique(plot_data$plate)[
+      order(
+        as.numeric( sub(pat, "\\1", unique(plot_data$plate)) ),
+        sub(pat, "\\2", unique(plot_data$plate))
+      )
+    ]
+
+    plot_data$plate_factor <- factor(plot_data$plate, levels = plate_levels)
     plot_data$plate_pos <- as.numeric(plot_data$plate_factor)
     plate_positions <- seq_along(levels(plot_data$plate_factor))
     plate_labels <- levels(plot_data$plate_factor)
