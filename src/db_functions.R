@@ -96,7 +96,7 @@ AND experiment_accession = '{experiment_accession}'
 }
 
 pull_data <- function(study_accession, experiment_accession, conn = conn) {
-  plates <<- fetch_db_header(study_accession = study_accession,
+  plates <- fetch_db_header(study_accession = study_accession,
                             experiment_accession = experiment_accession,
                             conn = conn)
   plates$plate_id <- trimws(plates$plate_id)
@@ -104,7 +104,7 @@ pull_data <- function(study_accession, experiment_accession, conn = conn) {
   antigen_constraints <- fetch_antigen_parameters(study_accession = study_accession,
                                                   experiment_accession = experiment_accession,
                                                   conn = conn)
-  standard_curve_data <<- fetch_db_standards(study_accession = study_accession,
+  standard_curve_data <- fetch_db_standards(study_accession = study_accession,
                                             experiment_accession = experiment_accession,
                                             conn = conn)
   standard_curve_data$plate_id <- trimws(standard_curve_data$plate_id)
