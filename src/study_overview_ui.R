@@ -7,19 +7,20 @@ observeEvent(input$study_level_tabs, {
   if (input$study_level_tabs == "Study Overview") {
     cat("before preproccess data")
     showNotification(id = "load_overview_notification", "Loading Study Overview...", duration = NULL)
-    pppd <<- preprocess_plate_data(conn, currentuser(),input$readxMap_study_accession)
+    pppd <- preprocess_plate_data(conn, currentuser(),input$readxMap_study_accession)
     cat("after preproccessing data")
     removeNotification("load_overview_notification")
 
     count_set <- pppd[[1]]
     plates <- pppd[[2]]
     # load the sample specimen
-    sample_specimen <<- pppd[[3]]
-    sample_specimen_qc <<- pppd[[6]]
+    sample_specimen <- pppd[[3]]
+    sample_specimen_qc <- pppd[[6]]
     # Load the summspec
-    summ_spec <<- pppd[[4]]
+    summ_spec <- pppd[[4]]
     standard_fit_data <- pppd[[5]]
-    preped_data <<- prep_analyte_fit_summary(summ_spec_in = summ_spec, standard_fit_res = standard_fit_data)
+    preped_data <- prep_analyte_fit_summary(summ_spec_in = summ_spec, standard_fit_res = standard_fit_data)
+
 
 
     #prepped_data2 <- merge(preped_data, summ)
@@ -67,32 +68,36 @@ observeEvent(input$study_level_tabs, {
           DTOutput("sample_spec_timeperiod_summary_table")
         ),
 
-
+        tabPanel(
+          "Sample Estimate Quality by Plate and Antigen",
+          uiOutput("sample_estimate_quality_ui")
+        )
         # tabPanel(
         #   "Intraplate vs Interplate CV",
         #   plotOutput("inter_intra_cv", height = "800px"),
         #   downloadButton("download_inter_intra_cv_plot", "Downlaod Plot"),
         #   downloadButton("download_inter_intra_cv_data", "Download Intraplate and Interplate CV Data")
         # ),
-        tabPanel(
-          "Sample Estimate Quality by Plate and Antigen",
-          uiOutput("fit_source_selectorUI"),
-          uiOutput("analyte_selectorUI"),
-          plotOutput("analyte_dilution_assessment", height = "800px"),#, height = "800px"),
-          downloadButton("download_plot_dilution_assessment", "Download Plot"),
-          downloadButton("download_plot_dilution_assessment_data", "Download Sample Estimate Quality by Plate and Antigen"),
-         # hr(style = "border: none; height: 1px; background-color: black; margin: 20px 0;"),
-          # fluidRow(
-          # column(6, uiOutput("plate_selectorUI")),
-          # column(6, uiOutput("plate_id_selectorUI"))),
-          # #fluidRow(
-          #   column(6, uiOutput("plateid_selectorUI")),
-          #  # column(6, br(), actionButton("delete_plate", label = "Delete Selected Plate"))
-          #  ),
-          # hr(style = "border: none; height: 1px; background-color: black; margin: 20px 0;"),
-          DTOutput("proportion_analyte_fit"),
-          downloadButton("download_proportion_dilution_assessment_data", "Download Proportion Summary")
-      ),
+
+      #   tabPanel(
+      #     "Sample Estimate Quality by Plate and Antigen",
+      #     uiOutput("fit_source_selectorUI"),
+      #     uiOutput("analyte_selectorUI"),
+      #     plotOutput("analyte_dilution_assessment", height = "800px"),#, height = "800px"),
+      #     downloadButton("download_plot_dilution_assessment", "Download Plot"),
+      #     downloadButton("download_plot_dilution_assessment_data", "Download Sample Estimate Quality by Plate and Antigen"),
+      #    # hr(style = "border: none; height: 1px; background-color: black; margin: 20px 0;"),
+      #     # fluidRow(
+      #     # column(6, uiOutput("plate_selectorUI")),
+      #     # column(6, uiOutput("plate_id_selectorUI"))),
+      #     # #fluidRow(
+      #     #   column(6, uiOutput("plateid_selectorUI")),
+      #     #  # column(6, br(), actionButton("delete_plate", label = "Delete Selected Plate"))
+      #     #  ),
+      #     # hr(style = "border: none; height: 1px; background-color: black; margin: 20px 0;"),
+      #     DTOutput("proportion_analyte_fit"),
+      #     downloadButton("download_proportion_dilution_assessment_data", "Download Proportion Summary")
+      # ),
       # tabPanel(
       #   "Sample Quality by Plate",
       #   uiOutput("antigenSelectorUI"),
@@ -134,6 +139,46 @@ observeEvent(input$study_level_tabs, {
     #   )
     # })
     #
+
+    output$sample_estimate_quality_ui <- renderUI({
+
+      # Defensive check for QC samples
+      if (is.null(preped_data) || nrow(preped_data[preped_data$specimen_type == "sample",]) == 0) {
+
+        div(
+          style = "background-color: #f0f8ff; border: 1px solid #4a90e2;
+               padding: 15px; margin-top: 15px; border-radius: 6px;",
+          tags$p(
+            "Once standard curves are saved, Sample Estimate Quality will be available for inspection."
+          )
+        )
+
+      } else {
+
+        tagList(
+          uiOutput("fit_source_selectorUI"),
+          uiOutput("analyte_selectorUI"),
+
+          plotOutput("analyte_dilution_assessment", height = "800px"),
+
+          downloadButton(
+            "download_plot_dilution_assessment",
+            "Download Plot"
+          ),
+          downloadButton(
+            "download_plot_dilution_assessment_data",
+            "Download Sample Estimate Quality by Plate and Antigen"
+          ),
+
+          DTOutput("proportion_analyte_fit"),
+
+          downloadButton(
+            "download_proportion_dilution_assessment_data",
+            "Download Proportion Summary"
+          )
+        )
+      }
+    })
 
 
 
@@ -762,6 +807,7 @@ observeEvent(input$study_level_tabs, {
     output$analyte_selectorUI <- renderUI({
       req(preped_data)
       req(input$pull_fit_source)
+     # prepped_data <<- preped_data
       preped_data <- preped_data[preped_data$source == input$pull_fit_source,]
       analyte_choices <- unique(preped_data$analyte[!is.na(preped_data$analyte)])
 
@@ -1178,8 +1224,13 @@ observeEvent(input$study_level_tabs, {
     plot_analyte_plate_model <- function() {
       req(preped_data)
       req(input$analyte_selector)
+      req(input$pull_fit_source)
+
 
     # preped_data <<- preped_data
+    # filter by standard curve source
+     preped_data <- preped_data[preped_data$source == input$pull_fit_source,]
+
      analyte_summary_plot <- plot_preped_analyte_fit_summary(preped_data =preped_data , analyte_selector = input$analyte_selector)
 
      return(analyte_summary_plot[[1]])

@@ -26,7 +26,7 @@ observeEvent(list(
                                conn = conn)
 
 
-      loaded_data <<- loaded_data
+    #  loaded_data <<- loaded_data
 
       response_var <- loaded_data$response_var
       indep_var <-  loaded_data$indep_var

@@ -1156,6 +1156,14 @@ make_summspec <- function(standard,
       sample_summ   = sample_summ
     )
 
+    sam_in_loq <- get_condition_counts(
+      data = active_samples,
+      condition_col = "gcloq",
+      condition_val = "Acceptable",
+      count_col = "ninloq",
+      sample_summ = sample_summ
+    )
+
 
 
     sample_summ <- sample_summ %>%
@@ -1165,8 +1173,10 @@ make_summspec <- function(standard,
       dplyr::left_join(sam_above_lod, by =  c("analyte", "antigen", "plateid")) %>%
       dplyr::left_join(sam_below_loq, by =  c("analyte", "antigen", "plateid")) %>%
       dplyr::left_join(sam_above_loq, by =  c("analyte", "antigen", "plateid")) %>%
+      dplyr::left_join(sam_in_loq, by =  c("analyte", "antigen", "plateid")) %>%
       tidyr::replace_na(list(nlowbead = 0, nhighbeadagg = 0, nbelowlod = 0,
-                             nabovelod = 0, nbelowloq = 0,  naboveloq = 0))
+                             nabovelod = 0, nbelowloq = 0,  naboveloq = 0,
+                             ninloq = 0))
   } else {
     sample_summ <- tibble::tibble()
   }
@@ -1989,61 +1999,123 @@ plot_preped_analyte_fit_summary <- function(preped_data, analyte_selector) {
   #        dplyr::summarise(count = dplyr::n()) %>%
   #       dplyr::pull(count)
 
-  long_df <<- preped_data
-  analyte_selector <<- analyte_selector
+  #preped_data <<- preped_data
+  #long_df <<- preped_data
+  #analyte_selector <<- analyte_selector
 
-  long_df <- preped_data[preped_data$specimen_type == "sample" & preped_data$analyte == analyte_selector,] %>%
+  # long_df <- preped_data[preped_data$specimen_type == "sample" & preped_data$analyte == analyte_selector,] %>%
+  #   pivot_longer(
+  #     #cols = c(nlinear, nhighbeadagg, nlowbead, ntooconc, ntoodilut, nabovelod, nbelowlod),
+  #     cols = c(ninloq,
+  #              nhighbeadagg,
+  #              nlowbead,
+  #              naboveloq,
+  #              nbelowloq,
+  #              nabovelod,
+  #              nbelowlod),
+  #     names_to = "fit_category",
+  #     values_to = "count"
+  #   ) %>%
+  #   # Define a readable and ordered category
+  #   mutate(
+  #     fit_category = factor(fit_category,
+  #                           # levels = c("nlinear", "nhighbeadagg", "nlowbead", "ntooconc", "ntoodilut", "nabovelod", "nbelowlod"),
+  #                           levels = c(
+  #                             "ninloq",
+  #                             "nhighbeadagg",
+  #                             "nlowbead",
+  #                             "naboveloq",
+  #                             "nbelowloq",
+  #                             "nabovelod",
+  #                             "nbelowlod"
+  #                           ),
+  #                           # labels = c("In Quantifiable Range", "High Bead Aggregation", "Low Bead Count",
+  #                           #            "Too Concentrated", "Too Diluted", "Above ULOD", "Below LLOD")
+  #                           labels = c(
+  #                             "In Quantifiable Range",
+  #                             "High Bead Aggregation",
+  #                             "Low Bead Count",
+  #                             "Above LOQ",
+  #                             "Below LOQ",
+  #                             "Above LOD",
+  #                             "Below LOD"
+  #                           )
+  #     )
+  #   ) %>%
+  #   mutate(
+  #     fit_category = if_else(crit == "No Model", "No Model", as.character(fit_category)),
+  #     count = if_else(fit_category == "No Model", failed_model_count, count),
+  #     fit_category = factor(fit_category,
+  #                           # levels = c("No Model", "In Quantifiable Range", "High Bead Aggregation",
+  #                           #            "Low Bead Count", "Too Concentrated", "Too Diluted",
+  #                           #            "Above ULOD", "Below LLOD")
+  #                           levels = c(
+  #                             "No Model",
+  #                             "In Quantifiable Range",
+  #                             "High Bead Aggregation",
+  #                             "Low Bead Count",
+  #                             "Above LOQ",
+  #                             "Below LOQ",
+  #                             "Above LOD",
+  #                             "Below LOD"
+  #                           ))
+  #   )
+
+
+  long_df <- preped_data[
+    preped_data$specimen_type == "sample" &
+      !is.na(preped_data$analyte) &
+      preped_data$analyte == analyte_selector,
+  ] %>%
     pivot_longer(
-      #cols = c(nlinear, nhighbeadagg, nlowbead, ntooconc, ntoodilut, nabovelod, nbelowlod),
-      cols = c(nhighbeadagg,
-               nlowbead,
-               naboveloq,
-               nbelowloq,
-               nabovelod,
-               nbelowlod),
-      names_to = "fit_category",
+      cols = c(
+        ninloq,
+        nhighbeadagg,
+        nlowbead,
+        naboveloq,
+        nbelowloq,
+        nabovelod,
+        nbelowlod
+      ),
+      names_to  = "fit_category",
       values_to = "count"
     ) %>%
-    # Define a readable and ordered category
+    # map column names → human labels (CHARACTER, not factor)
     mutate(
-      fit_category = factor(fit_category,
-                            # levels = c("nlinear", "nhighbeadagg", "nlowbead", "ntooconc", "ntoodilut", "nabovelod", "nbelowlod"),
-                            levels = c(
-                              "nhighbeadagg",
-                              "nlowbead",
-                              "naboveloq",
-                              "nbelowloq",
-                              "nabovelod",
-                              "nbelowlod"
-                            ),
-                            # labels = c("In Quantifiable Range", "High Bead Aggregation", "Low Bead Count",
-                            #            "Too Concentrated", "Too Diluted", "Above ULOD", "Below LLOD")
-                            labels = c(
-                              "High Bead Aggregation",
-                              "Low Bead Count",
-                              "Above LOQ",
-                              "Below LOQ",
-                              "Above LOD",
-                              "Below LOD"
-                            )
+      fit_category = dplyr::recode(
+        fit_category,
+        ninloq        = "In Quantifiable Range",
+        nhighbeadagg  = "High Bead Aggregation",
+        nlowbead      = "Low Bead Count",
+        naboveloq     = "Above LOQ",
+        nbelowloq     = "Below LOQ",
+        nabovelod     = "Above LOD",
+        nbelowlod     = "Below LOD"
       )
     ) %>%
+    # safely override to No Model
     mutate(
-      fit_category = if_else(crit == "No Model", "No Model", as.character(fit_category)),
-      count = if_else(fit_category == "No Model", failed_model_count, count),
-      fit_category = factor(fit_category,
-                            # levels = c("No Model", "In Quantifiable Range", "High Bead Aggregation",
-                            #            "Low Bead Count", "Too Concentrated", "Too Diluted",
-                            #            "Above ULOD", "Below LLOD")
-                            levels = c(
-                              "No Model",
-                              "High Bead Aggregation",
-                              "Low Bead Count",
-                              "Above LOQ",
-                              "Below LOQ",
-                              "Above LOD",
-                              "Below LOD"
-                            ))
+      fit_category = case_when(
+        crit == "No Model" ~ "No Model",
+        TRUE               ~ fit_category
+      ),
+      count = if_else(crit == "No Model", failed_model_count, count)
+    ) %>%
+    # factor ONCE, at the end
+    mutate(
+      fit_category = factor(
+        fit_category,
+        levels = c(
+          "No Model",
+          "In Quantifiable Range",
+          "High Bead Aggregation",
+          "Low Bead Count",
+          "Above LOQ",
+          "Below LOQ",
+          "Above LOD",
+          "Below LOD"
+        )
+      )
     )
 
 
@@ -2073,6 +2145,7 @@ plot_preped_analyte_fit_summary <- function(preped_data, analyte_selector) {
        "Above LOQ",
        "Low Bead Count",
        "High Bead Aggregation",
+       "In Quantifiable Range",
        "No Model"
      ))
    )
@@ -2081,6 +2154,18 @@ plot_preped_analyte_fit_summary <- function(preped_data, analyte_selector) {
    long_df_group <- long_df_group[, c("analyte", "plate", "antigen", "model_class", "crit", "fit_category", "count", "proportion")]
    plates_all <- summarise_by_fit_category_plate(long_df_group)[, c("analyte", "plate", "antigen", "model_class", "crit", "fit_category", "count", "proportion")]
    long_df_group <- rbind(long_df_group, plates_all)
+
+   #long_df_group <<- long_df_group
+   # long_df_group <- long_df_group[long_df_group$proportion > 0,]
+   # long_df_group <- droplevels(long_df_group)
+
+
+   # summsdary <<- long_df_group %>%
+   #   summarise(zero_prop = sum(proportion == 0))
+
+   # long_df_group <- long_df_group %>%
+   #   mutate(fit_category = droplevels(fit_category))
+
 
   #  fit_levels <- rev(c(
   #    "Below LLOD",
@@ -2214,13 +2299,17 @@ plot_preped_analyte_fit_summary <- function(preped_data, analyte_selector) {
    #   )
 
  #long_df_group_v <<- long_df_group
+   #print(table(long_df_group$fit_category, useNA = "ifany"))
+
+
   plot <- ggplot(long_df_group, aes(x = plate, y = proportion, fill = fit_category)) +
     geom_bar(stat = "identity", color = "black", linewidth = 0.3) +
-    facet_grid(rows = vars(antigen), scales = "free_x", space = "free_x") + #cols = vars(crit),
+    facet_grid(rows = vars(antigen), scales = "free_x", space = "free_x", drop = TRUE) + #cols = vars(crit),
     scale_fill_manual(values = c(
       "Below LOD"             = "#313695",
       "Above LOD"             = "#4575b4",
       "Below LOQ"             = "#91bfdb",
+      "In Quantifiable Range" = "#1a9850",  # green (center)
       "Above LOQ"             = "#fee08b",
       "High Bead Aggregation" = "#fc8d59",
       "Low Bead Count"        = "#d73027",
