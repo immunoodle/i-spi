@@ -47,7 +47,7 @@ intitialize_study_configurations <- function(study_accession, user, initial_sour
   ## Dilution Analysis Parameters
   node_order_insert <- paste0("INSERT INTO madi_results.xmap_study_config(
   study_accession, param_group, param_name, param_label, param_data_type, param_char_len, param_control_type, param_choices_list, param_integer_value, param_boolean_value, param_character_value, param_user)
-VALUES ('", study_accession,"', 'dilution_analysis', 'node_order' , 'Type of Sample Limit', 'string', 20, 'selectInput, multiple', 'limits_of_detection,limits_of_quantification,linear_region' , NULL, NULL, 'linear_region', '", user, "');
+VALUES ('", study_accession,"', 'dilution_analysis', 'node_order' , 'Type of Sample Limit', 'string', 20, 'selectInput, multiple', 'limits_of_detection,limits_of_quantification' , NULL, NULL, 'limits_of_quantification', '", user, "');
 ")
 
  dbExecute(conn, node_order_insert)

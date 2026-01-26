@@ -72,6 +72,9 @@ calculate_sample_concentration_status_new <- function(
 
   df <- dbGetQuery(conn, query_samples)
 
+  print("node order: \n")
+  print(node_order)
+
   # -----------------------------------------------------------------
   # 2  NA‑filter **per node** (remove rows that do not have a QC flag
   #     for any node that is part of the workflow)  AND create pass flags
@@ -3048,9 +3051,16 @@ dil_lin_regress <- function(distinct_samples, response_type, exclude_conc_sample
 
   dilutions <- sort(unique(distinct_samples$dilution))
   middle_dilution <- dilutions[ceiling(length(dilutions) / 2)]
+  cat("Middle dilution")
+  print(middle_dilution)
 
   x_dilution_df <- distinct_samples[distinct_samples$dilution == middle_dilution,]
+  cat("x dilution df")
+  print(x_dilution_df)
+
   y_dilution_df <- distinct_samples[distinct_samples$dilution != middle_dilution,]
+  print("y_ddilution_df")
+  print(y_dilution_df)
 
   # cat("x dilution df structure")
   # print(str(x_dilution_df))
@@ -3074,7 +3084,10 @@ dil_lin_regress <- function(distinct_samples, response_type, exclude_conc_sample
 
  # print(head(y_dilution_df))
   dilution_df <- merge(x_dilution_df, y_dilution_df, by = c("study_accession", "experiment_accession", "antigen", "plate", "patientid", "timeperiod"), all.x = T)
-
+  # Handle when patients are not across dilutions.
+  if (all(is.na(dilution_df$y_dilution))) {
+    dilution_df <- merge(x_dilution_df, y_dilution_df, by = c("study_accession", "experiment_accession", "antigen", "plate"), all.x = T)
+  }
   # Keep all original data including too concentrated samples
   # cat("Excluding concentrated samples")
   # print(exclude_conc_samples)
@@ -3082,8 +3095,9 @@ dil_lin_regress <- function(distinct_samples, response_type, exclude_conc_sample
  # dilution_df_full <<- dilution_df
 
   dilution_df_modeling <- dilution_df
-  # print("first df modeling ")
-  # print(head(dilution_df_modeling))
+  print("first df modeling ")
+   print(head(dilution_df_modeling))
+
   if (exclude_conc_samples) {
     dilution_df_modeling$ecs_group <- case_when(
       dilution_df_modeling$x_gate_class_loq == "Too Concentrated" ~ "Too Concentrated",
@@ -3150,7 +3164,10 @@ dil_lin_regress <- function(distinct_samples, response_type, exclude_conc_sample
     # x <- "x_au"
     # y <- "y_au"
     safe_fit_model <- safely(fit_model)
-    #dilution_df_modeling_v <<- dilution_df_modeling
+    cat("safe fit model")
+    print(safe_fit_model)
+    dilution_df_modeling_v <- dilution_df_modeling
+    print(dilution_df_modeling_v)
     results <- dilution_df_modeling %>%
       group_by(plate, y_dilution, antigen) %>%
       nest() %>%
@@ -3198,8 +3215,8 @@ dil_lin_regress <- function(distinct_samples, response_type, exclude_conc_sample
   #     )
   #   )
 
-  # cat("results")
-  # print(results)
+   cat("results")
+   print(results)
  # cat("model_out\n")
   #print(results$model_out[[1]])
  # cat("model_results\n")
