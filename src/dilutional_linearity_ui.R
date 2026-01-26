@@ -70,6 +70,8 @@ dilutionalLinearityServer <- function(id, selected_study, selected_experiment, c
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
+    showNotification(id = "load_dilution_linearity", HTML("Loading Dilutional Linearity<span class = 'dots'>"), duration = NULL, closeButton = F)
+
    # sample_data_dl <- fetch_db_samples(study_accession = selected_study(), experiment_accession = selected_experiment(), conn = conn)
     sample_data_dl <- fetch_best_sample_se_all_summary(study_accession = selected_study(),
                                      experiment_accession = selected_experiment(),
@@ -368,6 +370,8 @@ dilutionalLinearityServer <- function(id, selected_study, selected_experiment, c
       }
 
       glance_df <- glance_df[glance_df$antigen == input$antigen_da_lin_selector,]
+
+      removeNotification(id = "load_dilution_linearity")
 
       return(glance_df)
     }, caption = "Antigen Model Fit Statistics",

@@ -177,6 +177,37 @@ body <- dashboardBody(
         padding: 20px !important;
         border-left: 4px solid #dc3545 !important;
       }
+
+         /* -----------------------------------------------------------------
+         .dots – the span that lives inside the notification text
+         ----------------------------------------------------------------- */
+      .dots {
+        display: inline-block;
+        width: 1.2em;               /* keep the width constant while animating */
+        text-align: left;
+        overflow: hidden;
+        vertical-align: bottom;
+        animation: dotPulse 1.5s steps(3, start) infinite;
+      }
+
+      /* -----------------------------------------------------------------
+         The actual animation: 3 steps, each step reveals one more dot.
+         ----------------------------------------------------------------- */
+      @keyframes dotPulse {
+        0%   { content: '';          }   /* nothing  */
+        33%  { content: '.';         }   /* one dot  */
+        66%  { content: '..';        }   /* two dots */
+        100% { content: '...';       }   /* three    */
+      }
+
+      /* -----------------------------------------------------------------
+         Because ::after pseudo‑elements are easier to animate, we create a
+         helper class that actually shows the dots via ::after.
+         ----------------------------------------------------------------- */
+      .dots::after {
+        content: '';
+        animation: dotPulse 1.5s steps(3, start) infinite;
+      }
     "))
   ),
 

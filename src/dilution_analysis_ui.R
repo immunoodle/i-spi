@@ -15,6 +15,7 @@ observeEvent(list(
  # req(input$inLoadedData, input$readxMap_experiment_accession)
  # input$readxMap_experiment_accession
   if (input$advanced_qc_component == "Dilution Analysis") {
+    showNotification(id = "load_dilution_analysis", HTML("Loading Dilution Analyis<span class = 'dots'>"), duration = NULL)
     selected_study <- input$readxMap_study_accession # selected_studyexpplate$study_accession
     selected_experiment <- input$readxMap_experiment_accession #selected_studyexpplate$experiment_accession
 
@@ -589,9 +590,16 @@ observeEvent(list(
 
     # Filter the classified  merged
     classified_merged_rv <- reactive({
+
+      # id <- showNotification("Calculating Classified Merged ", duration = NULL, closeButton = F)
+      # on.exit(removeNotification(id), add = T)
+
       if (is.null(input$advanced_qc_component) || input$advanced_qc_component != "Dilution Analysis") {
         return(NULL)
       }
+
+
+
 
      # req(input$inLoadedData == "Dilution Analysis")
       # req(input$inLoadedData)
@@ -624,12 +632,16 @@ observeEvent(list(
 
      # print(table(da_subjtime$n_pass_d, da_subjtime$au_treatment))
       clm <- da_subjtime # Download this
+      removeNotification(id = "load_dilution_analysis")
+
       return(da_subjtime)
 
     })
 
 
     antigen_margin_table <- reactive({
+      # id <- showNotification("Calculating Margin Table for Dilution Analysis", duration = NULL, closeButton = F)
+      # on.exit(removeNotification(id), add = T)
       # if (is.null(input$inLoadedData) || input$inLoadedData != "Dilution Analysis") {
       #   return(NULL)
       # }

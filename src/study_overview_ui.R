@@ -6,7 +6,7 @@ observeEvent(input$study_level_tabs, {
 
   if (input$study_level_tabs == "Study Overview") {
     cat("before preproccess data")
-    showNotification(id = "load_overview_notification", "Loading Study Overview...", duration = NULL)
+    showNotification(id = "load_overview_notification", HTML("Loading Study Overview<span class = 'dots'>"), duration = NULL)
     pppd <- preprocess_plate_data(conn, currentuser(),input$readxMap_study_accession)
     cat("after preproccessing data")
     removeNotification("load_overview_notification")
