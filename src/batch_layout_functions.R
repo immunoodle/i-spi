@@ -1,5 +1,3 @@
-
-
 reset_batch_reactives <- function() {
   cat("\n╔══════════════════════════════════════════════════════════╗\n")
   cat("║         RESETTING ALL BATCH REACTIVES                    ║\n")
@@ -8,7 +6,7 @@ reset_batch_reactives <- function() {
   # Log what's being cleared
   if (!is.null(batch_plate_data())) {
     cat("  ✓ Clearing batch_plate_data:", nrow(batch_plate_data()), "rows\n")
-    cat("    Source files:", unique(batch_plate_data()$source_file), "\n")
+    cat("    Source files:", paste(unique(batch_plate_data()$source_file), collapse = ", "), "\n")
   }
 
   if (!is.null(batch_metadata())) {
@@ -17,7 +15,7 @@ reset_batch_reactives <- function() {
 
   if (length(bead_array_header_list()) > 0) {
     cat("  ✓ Clearing bead_array_header_list:", length(bead_array_header_list()), "items\n")
-    cat("    Files:", names(bead_array_header_list()), "\n")
+    cat("    Files:", paste(names(bead_array_header_list()), collapse = ", "), "\n")
   }
 
   if (length(bead_array_plate_list()) > 0) {
@@ -28,18 +26,31 @@ reset_batch_reactives <- function() {
     cat("  ✓ Clearing layout_template_sheets:", length(layout_template_sheets()), "sheets\n")
   }
 
-  # Reset batch data reactives
+  # CORE BATCH DATA REACTIVES
   batch_plate_data(NULL)
   batch_metadata(NULL)
 
-  # Reset layout template
+  # LAYOUT TEMPLATE REACTIVES
   layout_template_sheets(list())
+  inLayoutFile(NULL)
+  avaliableLayoutSheets(NULL)
 
-  # Reset bead array data
+  # BEAD ARRAY DATA
   bead_array_header_list(list())
   bead_array_plate_list(list())
 
-  # Reset validation state
+  # DESCRIPTION STATUS (NEW)
+  description_status(list(
+    has_content = TRUE,
+    has_sufficient_elements = TRUE,
+    min_elements_found = 0,
+    required_elements = 3,
+    checked = FALSE,
+    message = NULL
+  ))
+  cat("  ✓ Reset description_status to default\n")
+
+  # VALIDATION STATE
   batch_validation_state(list(
     is_validated = FALSE,
     is_uploaded = FALSE,
@@ -48,8 +59,89 @@ reset_batch_reactives <- function() {
     metadata_result = NULL,
     bead_array_result = NULL
   ))
+  cat("  ✓ Reset batch_validation_state\n")
 
   cat("  ✓ All reactives reset to NULL/empty\n")
+  cat("╚══════════════════════════════════════════════════════════╝\n\n")
+}
+
+#' Reset all batch-related UI elements
+#'
+#' This function resets file inputs, clears dynamic UI outputs, and ensures
+#' the UI reflects a clean state when switching studies or experiments.
+#'
+#' @param session The Shiny session object
+#' @param include_experiment_files Logical, whether to reset experiment file input
+#' @param include_layout_file Logical, whether to reset layout file input
+#'
+reset_batch_ui <- function(session,
+                           include_experiment_files = TRUE,
+                           include_layout_file = TRUE) {
+
+  cat("\n╔══════════════════════════════════════════════════════════╗\n")
+  cat("║         RESETTING BATCH UI ELEMENTS                      ║\n")
+  cat("╚══════════════════════════════════════════════════════════╝\n")
+
+  # Reset blank handling dropdown
+  tryCatch({
+    updateSelectInput(
+      session = session,
+      inputId = "batch_blank",
+      selected = "empty_well"
+    )
+    cat("  ✓ Reset batch_blank selector\n")
+  }, error = function(e) {
+    cat("  ⚠ Could not reset batch_blank:", conditionMessage(e), "\n")
+  })
+
+  # Reset wells selector
+  tryCatch({
+    shinyWidgets::updateRadioGroupButtons(
+      session = session,
+      inputId = "n_wells_on_plate",
+      selected = 96
+    )
+    cat("  ✓ Reset n_wells_on_plate to 96\n")
+  }, error = function(e) {
+    cat("  ⚠ Could not reset n_wells_on_plate:", conditionMessage(e), "\n")
+  })
+
+  # Reset description delimiter
+  tryCatch({
+    shinyWidgets::updateRadioGroupButtons(
+      session = session,
+      inputId = "description_delimiter",
+      selected = "_"
+    )
+    cat("  ✓ Reset description_delimiter to '_'\n")
+  }, error = function(e) {
+    cat("  ⚠ Could not reset description_delimiter:", conditionMessage(e), "\n")
+  })
+
+  # Reset optional elements checkboxes
+  tryCatch({
+    shinyWidgets::updateCheckboxGroupButtons(
+      session = session,
+      inputId = "optional_elements",
+      selected = c("SampleGroupA", "SampleGroupB")
+    )
+    cat("  ✓ Reset optional_elements checkboxes\n")
+  }, error = function(e) {
+    cat("  ⚠ Could not reset optional_elements:", conditionMessage(e), "\n")
+  })
+
+  # Reset feature value text input
+  tryCatch({
+    updateTextInput(
+      session = session,
+      inputId = "feature_value",
+      value = "Up to 15 chars"
+    )
+    cat("  ✓ Reset feature_value input\n")
+  }, error = function(e) {
+    cat("  ⚠ Could not reset feature_value:", conditionMessage(e), "\n")
+  })
+
   cat("╚══════════════════════════════════════════════════════════╝\n\n")
 }
 
@@ -187,31 +279,6 @@ add_clean_plate_id_to_identifiers <- function(identifiers_df) {
 
   return(identifiers_df)
 }
-
-# add_clean_plate_id_to_identifiers <- function(identifiers_df) {
-#   # IMPORTANT: Ensure correct assignment:
-#   # - plate_id = LONG form (full cleaned path from clean_plate_id)
-#   # - plateid = SHORT form (plate_number or simple identifier)
-#
-#   # First, set plate_id to the full cleaned path
-#   if ("source_file" %in% names(identifiers_df) && !all(is.na(identifiers_df$source_file))) {
-#     identifiers_df$plate_id <- clean_plate_id(identifiers_df$source_file)
-#   } else if ("file_name" %in% names(identifiers_df) && !all(is.na(identifiers_df$file_name))) {
-#     identifiers_df$plate_id <- clean_plate_id(identifiers_df$file_name)
-#   }
-#
-#   # Then, ensure plateid contains the SHORT identifier (plate column value)
-#   # If plateid currently has the long path, swap it to the short form
-#   if ("plateid" %in% names(identifiers_df) && "plate" %in% names(identifiers_df)) {
-#     # Check if plateid looks like a long path (contains | which indicates it's a cleaned path)
-#     if (any(grepl("\\|", identifiers_df$plateid, fixed = FALSE), na.rm = TRUE)) {
-#       # plateid has the long form - use plate column for short form instead
-#       identifiers_df$plateid <- identifiers_df$plate
-#     }
-#   }
-#
-#   return(identifiers_df)
-# }
 
 #' Apply clean_plate_id to a data frame column
 #'
