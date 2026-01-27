@@ -498,8 +498,8 @@ Y5_safe_constraint <- function(data, y_min = 1, y_max, Y5_formula, Y5_free_vars,
   .eps <- 1e-5
   .slope_max <- 2
   .slope_min <- 0.1
-  .g_min <- 0.3
-  .g_max <- 3.0
+  .g_min <- 0.5
+  .g_max <- 5.0
 
   mid_bounds <- .y_mid_bounds(y_min, y_max)
   mid_low <- as.numeric(mid_bounds["low"])
@@ -543,7 +543,7 @@ Y5_safe_constraint <- function(data, y_min = 1, y_max, Y5_formula, Y5_free_vars,
 Yd5_safe_constraint <- function(data, y_min=1, y_max, Yd5_formula, Yd5_free_vars, is_log_response, is_log_concentration, antigen_settings) {
   .eps <- 1e-5
   .slope_max <- 2
-  .g_min <- 0.1
+  .g_min <- 0.5
   .g_max <- 5
 
   mid_bounds <- .y_mid_bounds(y_min, y_max)

@@ -1,29 +1,3 @@
-
-# HELPER FUNCTION: Extract plate number from text (filename, plateid, etc.)
-# Looks for patterns like "plate_3", "plate 3", "plate.3", "plate3"
-# This function is also defined in batch_layout_functions.R but is duplicated
-# here to ensure availability in the upload_experiment_files observer.
-extract_plate_number <- function(text) {
-  if (is.na(text) || text == "") return(NA_character_)
-
-  # Try multiple patterns to extract plate number
-  # Pattern 1: "plate" followed by separator and number (plate_3, plate 3, plate.3, plate-3)
-  match1 <- regmatches(text, regexpr("[Pp]late[_\\s\\.-]+(\\d+)", text, perl = TRUE))
-  if (length(match1) > 0 && nchar(match1) > 0) {
-    num <- gsub("[^0-9]", "", match1)
-    if (nchar(num) > 0) return(paste0("plate_", num))
-  }
-
-  # Pattern 2: Just "plate" followed immediately by number (plate3, plate1IgGtot...)
-  match2 <- regmatches(text, regexpr("[Pp]late(\\d+)", text, perl = TRUE))
-  if (length(match2) > 0 && nchar(match2) > 0) {
-    num <- gsub("[^0-9]", "", match2)
-    if (nchar(num) > 0) return(paste0("plate_", num))
-  }
-
-  return(NA_character_)
-}
-
 getData <- reactive({
   if(is.null(input$upload_to_shiny)) return(NULL)
 })
@@ -55,124 +29,112 @@ all_completed <- reactive({
   all(checks)
 })
 
-plate_layout_plots <- reactive({
-  # Get layout sheets
+
+# REACTIVE: Layout render state - single source of truth for layout UI
+# This consolidates dependencies and prevents multiple render cycles
+layout_render_state <- reactive({
+  # Get sheets - this is the primary dependency
   sheets <- layout_template_sheets()
 
-  cat("\n=== plate_layout_plots REACTIVE ===\n")
-  cat("  sheets is NULL:", is.null(sheets), "\n")
-  cat("  sheets length:", length(sheets), "\n")
-
-  # Return NULL if no sheets
+  # Quick exit if no sheets
   if (is.null(sheets) || length(sheets) == 0) {
-    cat("  → Returning NULL (no sheets)\n")
     return(NULL)
   }
 
-  cat("  Sheet names:", paste(names(sheets), collapse = ", "), "\n")
-
-  # Check for required sheets
-  plates_map <- sheets[["plates_map"]]
-  plate_id_data <- sheets[["plate_id"]]
-
-  cat("  plates_map is NULL:", is.null(plates_map), "\n")
-  cat("  plate_id_data is NULL:", is.null(plate_id_data), "\n")
-
-  if (is.null(plates_map) || is.null(plate_id_data)) {
-    cat("  → Returning NULL (missing required sheets)\n")
+  # Verify minimum required sheets exist
+  if (!all(c("plates_map", "plate_id") %in% names(sheets))) {
     return(NULL)
   }
+
+  # Return state only if we have valid data
+  list(
+    sheets = sheets,
+    has_data = TRUE
+  )
+})
+
+# REACTIVE: Consolidated layout state for dependent outputs
+# This reactive provides a single source of truth for layout-related outputs
+# layout_render_state <- reactive({
+#   # Explicit dependencies - any change to these will invalidate this reactive
+#   sheets <- layout_template_sheets()
+#   plate_data <- batch_plate_data()
+#   validation_state <- batch_validation_state()
+#   desc_status <- description_status()
+#
+#   # Log state for debugging
+#   cat("\n=== layout_render_state REACTIVE ===\n")
+#   cat("  sheets length:", length(sheets), "\n")
+#   cat("  plate_data is NULL:", is.null(plate_data), "\n")
+#   cat("  validation is_validated:", validation_state$is_validated, "\n")
+#
+#   # Return NULL if no valid layout data exists
+#   # This is the key - when data is cleared, this returns NULL
+#   # and all dependent outputs will also return NULL
+#   if (is.null(sheets) || length(sheets) == 0) {
+#     cat("  → Returning NULL (no sheets)\n")
+#     return(NULL)
+#   }
+#
+#   # Verify required sheets exist
+#   required_sheets <- c("plates_map", "plate_id", "antigen_list", "subject_groups", "timepoint")
+#   available <- names(sheets)
+#
+#   if (!all(c("plates_map", "plate_id") %in% available)) {
+#     cat("  → Returning NULL (missing required sheets)\n")
+#     return(NULL)
+#   }
+#
+#   # Return consolidated state
+#   list(
+#     sheets = sheets,
+#     plates_map = sheets[["plates_map"]],
+#     plate_id = sheets[["plate_id"]],
+#     antigen_list = sheets[["antigen_list"]],
+#     subject_groups = sheets[["subject_groups"]],
+#     timepoint = sheets[["timepoint"]],
+#     has_data = TRUE,
+#     timestamp = Sys.time()  # Forces re-evaluation even if data looks the same
+#   )
+# })
+
+# REACTIVE: Plate layout plots - depends on layout_render_state
+plate_layout_plots <- reactive({
+  # Get consolidated state - this is the key dependency
+  state <- layout_render_state()
+
+  cat("\n=== plate_layout_plots REACTIVE ===\n")
+
+  # Return NULL immediately if no state
+  if (is.null(state)) {
+    cat("  → Returning NULL (no layout state)\n")
+    return(NULL)
+  }
+
+  plates_map <- state$plates_map
+  plate_id_data <- state$plate_id
 
   cat("  plates_map rows:", nrow(plates_map), "\n")
   cat("  plate_id_data rows:", nrow(plate_id_data), "\n")
 
-  # Return NULL if empty data
-  if (nrow(plates_map) == 0 || nrow(plate_id_data) == 0) {
+  # Additional validation
+  if (is.null(plates_map) || nrow(plates_map) == 0 ||
+      is.null(plate_id_data) || nrow(plate_id_data) == 0) {
     cat("  → Returning NULL (empty data)\n")
     return(NULL)
   }
 
-  # Check required columns exist in plates_map
-  required_plates_map_cols <- c("study_name", "experiment_name", "plate_number", "well", "specimen_type")
-  missing_cols <- setdiff(required_plates_map_cols, names(plates_map))
-  if (length(missing_cols) > 0) {
-    cat("  ⚠️ plates_map missing columns:", paste(missing_cols, collapse = ", "), "\n")
-    cat("  → Returning NULL\n")
-    return(NULL)
-  }
-
-  # Check required columns exist in plate_id_data
-  required_plate_id_cols <- c("study_name", "experiment_name", "plate_number", "number_of_wells")
-  missing_plate_id_cols <- setdiff(required_plate_id_cols, names(plate_id_data))
-  if (length(missing_plate_id_cols) > 0) {
-    cat("  ⚠️ plate_id_data missing columns:", paste(missing_plate_id_cols, collapse = ", "), "\n")
-    cat("  → Returning NULL\n")
-    return(NULL)
-  }
-
-  cat("  ✓ All required columns present\n")
-  cat("  Calling plot_plate_layout()...\n")
-
-  # Call the plotting function with error handling
-  result <- tryCatch({
+  # Generate plots
+  cat("  → Generating plate layout plots\n")
+  tryCatch({
     plots <- plot_plate_layout(plates_map, plate_id_data)
-    cat("  ✓ plot_plate_layout() returned", length(plots), "plots\n")
-    if (length(plots) > 0) {
-      cat("  Plot names:", paste(names(plots), collapse = ", "), "\n")
-    }
+    cat("  → Generated", length(plots), "plots\n")
     plots
   }, error = function(e) {
-    cat("  ✗ ERROR in plot_plate_layout():", conditionMessage(e), "\n")
-    cat("  Stack trace:\n")
-    print(sys.calls())
-    return(NULL)
+    cat("  → ERROR generating plots:", conditionMessage(e), "\n")
+    NULL
   })
-
-  cat("=================================\n\n")
-  return(result)
 })
-
-# plate_layout_plots <- reactive({
-#   # Get layout sheets
-#   sheets <- layout_template_sheets()
-#
-#   cat("plate_layout_plots: evaluating, sheets length =", length(sheets), "\n")
-#
-#   # Return NULL if no sheets
-#   if (is.null(sheets) || length(sheets) == 0) {
-#     cat("plate_layout_plots: returning NULL (no sheets)\n")
-#     return(NULL)
-#   }
-#
-#   # Check for required sheets
-#   plates_map <- sheets[["plates_map"]]
-#   plate_id_data <- sheets[["plate_id"]]
-#
-#   if (is.null(plates_map) || is.null(plate_id_data)) {
-#     return(NULL)
-#   }
-#
-#   # Return NULL if empty data
-#   if (nrow(plates_map) == 0 || nrow(plate_id_data) == 0) {
-#     cat("plate_layout_plots: returning NULL")
-#     return(NULL)
-#   }
-#
-#   # Call the plotting function
-#   plot_plate_layout(plates_map, plate_id_data)
-# })
-
-# plate_layout_plots <- reactive({
-#   req(layout_template_sheets()[["plates_map"]])
-#   req(layout_template_sheets()[["plate_id"]])
-#
-#   plates_map <- layout_template_sheets()[["plates_map"]]
-#   plate_id_data <- layout_template_sheets()[["plate_id"]]
-#
-#   # Call your function
-#   plot_plate_layout(plates_map, plate_id_data)
-# })
-
 
 ### Outputs
 output$upload_path_text <- renderText({
@@ -688,8 +650,7 @@ output$readxMapData <- renderUI({
                    ),
                      ),
                      conditionalPanel(
-                       condition = "output.hasLayoutTemplateSheets",
-                       uiOutput("description_warning_ui"),
+                       condition = "input.upload_layout_file != ''",
                        uiOutput("view_layout_file_ui"),
                        uiOutput("plate_layout_selector"),
                        plotlyOutput("selected_plate_layout_plot"),
@@ -731,145 +692,12 @@ output$readxMapData <- renderUI({
    }
 })
 
-output$description_warning_ui <- renderUI({
-  # Explicit dependency
-  status <- description_status()
-
-  # Also depend on batch_plate_data to clear when data is cleared
-  plate_data <- batch_plate_data()
-
-  # Return NULL if no plate data or status not checked
-  if (is.null(plate_data) || !status$checked) {
-    return(NULL)
-  }
-
-  if (!status$has_content) {
-    # Warning for completely blank Description
-    tags$div(
-      style = "background-color: #fff3cd; border: 1px solid #ffc107; padding: 15px; margin: 10px 0; border-radius: 5px;",
-      tags$h5(
-        tags$i(class = "fa fa-exclamation-triangle", style = "color: #856404;"),
-        " Description Field is Blank",
-        style = "margin-top: 0; color: #856404;"
-      ),
-      tags$p("The Description field in your plate data is empty. Default values will be used:"),
-      tags$ul(
-        tags$li("Subject ID: '1'"),
-        tags$li("Sample Dilution Factor: 1"),
-        tags$li("Timeperiod: 'T0'"),
-        tags$li("Groups: 'Unknown'")
-      ),
-      tags$p(
-        tags$strong("You will need to manually update the layout template with correct values before uploading."),
-        style = "margin-bottom: 0; color: #856404;"
-      )
-    )
-  } else if (!status$has_sufficient_elements) {
-    # Warning for insufficient elements
-    tags$div(
-      style = "background-color: #fff3cd; border: 1px solid #ffc107; padding: 15px; margin: 10px 0; border-radius: 5px;",
-      tags$h5(
-        tags$i(class = "fa fa-exclamation-triangle", style = "color: #856404;"),
-        " Insufficient Description Elements",
-        style = "margin-top: 0; color: #856404;"
-      ),
-      tags$p(sprintf(
-        "The Description field has only %d element(s), but at least %d are required.",
-        status$min_elements_found,
-        status$required_elements
-      )),
-      tags$p("Missing fields will be filled with default values. Manual update may be required.")
-    )
-  } else {
-    return(NULL)
-  }
-})
-
-# output$description_warning_ui <- renderUI({
-#   status <- description_status()
-#
-#   if (!status$checked) {
-#     return(NULL)
-#   }
-#
-#   if (!status$has_content) {
-#     # Warning for completely blank Description
-#     tags$div(
-#       style = "background-color: #fff3cd; border: 1px solid #ffc107; padding: 15px; margin: 10px 0; border-radius: 5px;",
-#       tags$h5(
-#         tags$i(class = "fa fa-exclamation-triangle", style = "color: #856404;"),
-#         " Description Field is Blank",
-#         style = "margin-top: 0; color: #856404;"
-#       ),
-#       tags$p("The Description field in your plate data is empty. Default values will be used:"),
-#       tags$ul(
-#         tags$li("Subject ID: '1'"),
-#         tags$li("Sample Dilution Factor: 1"),
-#         tags$li("Timeperiod: 'T0'"),
-#         tags$li("Groups: 'Unknown'")
-#       ),
-#       tags$p(
-#         tags$strong("You will need to manually update the layout template with correct values before uploading."),
-#         style = "margin-bottom: 0; color: #856404;"
-#       )
-#     )
-#   } else if (!status$has_sufficient_elements) {
-#     # Warning for insufficient elements
-#     tags$div(
-#       style = "background-color: #fff3cd; border: 1px solid #ffc107; padding: 15px; margin: 10px 0; border-radius: 5px;",
-#       tags$h5(
-#         tags$i(class = "fa fa-exclamation-triangle", style = "color: #856404;"),
-#         " Insufficient Description Elements",
-#         style = "margin-top: 0; color: #856404;"
-#       ),
-#       tags$p(sprintf(
-#         "The Description field has only %d element(s), but at least %d are required.",
-#         status$min_elements_found,
-#         status$required_elements
-#       )),
-#       tags$p("Missing fields will be filled with default values. Manual update may be required.")
-#     )
-#   } else {
-#     return(NULL)
-#   }
-# })
-
 output$hasExperimentPath <- reactive({
   path_df <- input$upload_experiment_files   # fileInput returns a data frame
   !is.null(path_df) && nrow(path_df) > 0
 })
 
 outputOptions(output, "hasExperimentPath", suspendWhenHidden = FALSE)
-
-# =============================================================================
-# NEW REACTIVE: hasLayoutTemplateSheets
-# =============================================================================
-# This reactive is used by the conditionalPanel to control visibility of
-# view_layout_file_ui, plate_layout_selector, selected_plate_layout_plot,
-# and description_warning_ui outputs after layout file is uploaded and processed.
-# =============================================================================
-output$hasLayoutTemplateSheets <- reactive({
-  sheets <- layout_template_sheets()
-
-  # Return TRUE only if sheets exist and contain required data
-  has_sheets <- !is.null(sheets) && length(sheets) > 0
-
-  if (has_sheets) {
-    # Additional check: verify required sheets exist
-    required <- c("plates_map", "plate_id")
-    has_required <- all(required %in% names(sheets))
-
-    cat("hasLayoutTemplateSheets: sheets=", length(sheets),
-        ", has_required=", has_required, "\n")
-
-    return(has_required)
-  }
-
-  return(FALSE)
-})
-
-# CRITICAL: Must not suspend when hidden to work with conditionalPanel
-outputOptions(output, "hasLayoutTemplateSheets", suspendWhenHidden = FALSE)
 
 output$blank_layout_file <- downloadHandler(
   filename = function() {
@@ -1044,176 +872,6 @@ output$plate_optimized_status <- renderUI({
 output$file_summary <- renderPrint({
 })
 
-output$plate_layout_selector <- renderUI({
-  cat("\n=== plate_layout_selector renderUI ===\n")
-
-  # Explicit dependency on layout_template_sheets
-  sheets <- layout_template_sheets()
-
-  cat("  sheets length:", length(sheets), "\n")
-
-  # Return NULL if no data
-  if (is.null(sheets) || length(sheets) == 0) {
-    cat("  → Returning NULL (no sheets)\n")
-    return(NULL)
-  }
-
-  # Check for required sheets
-  if (is.null(sheets[["plates_map"]]) || is.null(sheets[["plate_id"]])) {
-    cat("  → Returning NULL (missing plates_map or plate_id)\n")
-    return(NULL)
-  }
-
-  # Get the plots
-  plots <- plate_layout_plots()
-
-  cat("  plots is NULL:", is.null(plots), "\n")
-  cat("  plots length:", length(plots), "\n")
-
-  # Return NULL if no plots
-  if (is.null(plots) || length(plots) == 0) {
-    cat("  → Returning NULL (no plots generated)\n")
-    return(NULL)
-  }
-
-  cat("  ✓ Rendering radioGroupButtons with", length(plots), "choices\n")
-  cat("  Choices:", paste(names(plots), collapse = ", "), "\n")
-  cat("=====================================\n\n")
-
-  shinyWidgets::radioGroupButtons(
-    inputId = "select_plate_layout_plot",
-    label = "Select Plate Layout:",
-    choices = names(plots),
-    selected = names(plots)[1],
-    status = "success"
-  )
-})
-
-# output$plate_layout_selector <- renderUI({
-#   # Explicit dependency on layout_template_sheets
-#   sheets <- layout_template_sheets()
-#
-#   cat("plate_layout_selector: sheets length =", length(sheets), "\n")
-#
-#   # Return NULL if no data
-#   if (is.null(sheets) || length(sheets) == 0) {
-#     return(NULL)
-#   }
-#
-#   # Check for required sheets
-#   if (is.null(sheets[["plates_map"]]) || is.null(sheets[["plate_id"]])) {
-#     return(NULL)
-#   }
-#
-#   # Get the plots
-#   plots <- plate_layout_plots()
-#
-#   # Return NULL if no plots
-#   if (is.null(plots) || length(plots) == 0) {
-#     return(NULL)
-#   }
-#
-#   shinyWidgets::radioGroupButtons(
-#     inputId = "select_plate_layout_plot",
-#     label = "Select Plate Layout:",
-#     choices = names(plots),
-#     selected = names(plots)[1],
-#     status = "success"
-#   )
-# })
-
-# output$plate_layout_selector <- renderUI({
-#   req(plate_layout_plots())
-#   plots <- plate_layout_plots()
-#
-#   shinyWidgets::radioGroupButtons(
-#     inputId = "select_plate_layout_plot",
-#     label = "Select Plate Layout:",
-#     choices = names(plots),
-#     selected = names(plots)[1],
-#     status = "success"
-#   )
-# })
-
-output$selected_plate_layout_plot <- renderPlotly({
-  cat("\n=== selected_plate_layout_plot renderPlotly ===\n")
-
-  # Explicit dependencies
-  sheets <- layout_template_sheets()
-  cat("  sheets length:", length(sheets), "\n")
-
-  # Return NULL if no layout sheets
-  if (is.null(sheets) || length(sheets) == 0) {
-    cat("  → Returning NULL (no sheets)\n")
-    return(NULL)
-  }
-
-  # Get plots FIRST (before requiring input selection)
-  plots <- plate_layout_plots()
-
-  cat("  plots is NULL:", is.null(plots), "\n")
-  cat("  plots length:", length(plots), "\n")
-
-  # Return NULL if no plots
-  if (is.null(plots) || length(plots) == 0) {
-    cat("  → Returning NULL (no plots)\n")
-    return(NULL)
-  }
-
-  # Check if selection input exists and has a value
-  selection <- input$select_plate_layout_plot
-  cat("  input$select_plate_layout_plot:", selection, "\n")
-
-  # If no selection yet, default to first plot
-  if (is.null(selection) || selection == "" || !selection %in% names(plots)) {
-    selection <- names(plots)[1]
-    cat("  → Using default selection:", selection, "\n")
-  }
-
-  cat("  ✓ Rendering plot for:", selection, "\n")
-  cat("=============================================\n\n")
-
-  plots[[selection]]
-})
-
-# output$selected_plate_layout_plot <- renderPlotly({
-#   # Explicit dependencies
-#   sheets <- layout_template_sheets()
-#
-#   cat("selected_plate_layout_plot: sheets length =", length(sheets), "\n")
-#
-#   # Return NULL if no layout sheets
-#   if (is.null(sheets) || length(sheets) == 0) {
-#     return(NULL)
-#   }
-#
-#   # Require selection
-#   req(input$select_plate_layout_plot)
-#
-#   # Get plots
-#   plots <- plate_layout_plots()
-#
-#   # Return NULL if no plots or selection not in plots
-#   if (is.null(plots) || length(plots) == 0) {
-#     cat("selected_plate_layout_plot: returning NULL (no plots)\n")
-#     return(NULL)
-#   }
-#
-#   if (is.null(plots) || !input$select_plate_layout_plot %in% names(plots)) {
-#     return(NULL)
-#   }
-#
-#   cat("selected_plate_layout_plot: rendering plot for", input$select_plate_layout_plot, "\n")
-#   plots[[input$select_plate_layout_plot]]
-# })
-
-# output$selected_plate_layout_plot <- renderPlotly({
-#   req(input$select_plate_layout_plot)
-#   req(plate_layout_plots())
-#   plots <- plate_layout_plots()
-#   plots[[input$select_plate_layout_plot]]
-# })
-
 output$batch_validation_status <- renderUI({
   # Explicit dependency on batch state
   state <- batch_validation_state()
@@ -1228,12 +886,6 @@ output$batch_validation_status <- renderUI({
 
   createValidateBatchBadge(state$is_validated)
 })
-
-# output$batch_validation_status <- renderUI({
-#   state <- batch_validation_state()
-#   req(state)  # Ensure state exists
-#   createValidateBatchBadge(state$is_validated)
-# })
 
 output$batch_invalid_messages <- renderTable({
   state <- batch_validation_state()
@@ -1252,17 +904,6 @@ output$batch_invalid_messages <- renderTable({
     NULL
   }
 })
-
-# output$batch_invalid_messages <- renderTable({
-#   state <- batch_validation_state()
-#   req(state)
-#
-#   if (!state$is_validated && !is.null(state$metadata_result) && !is.null(state$bead_array_result)) {
-#     create_batch_invalid_message_table(state$metadata_result, state$bead_array_result)
-#   } else {
-#     NULL
-#   }
-# })
 
 output$upload_batch_data_button <- renderUI({
   # Explicit dependencies for proper invalidation
@@ -1314,87 +955,6 @@ output$upload_batch_data_button <- renderUI({
     button
   )
 })
-
-# output$upload_batch_data_button <- renderUI({
-#   req(batch_metadata())
-#   state <- batch_validation_state()
-#   req(state)
-#
-#   metadata_batch <<- batch_metadata()
-#   batch_study_accession <<- unique(metadata_batch$study_name)
-#   batch_experiment_accession <<- unique(metadata_batch$experiment_name)
-#   plates_to_upload <<- unique(metadata_batch$plate_id)
-#
-#   # Build SQL list
-#   plate_list_sql <<- paste0("'", paste(plates_to_upload, collapse = "', '"), "'")
-#
-#   query <- glue_sql("
-#     SELECT plate_id
-#     FROM madi_results.xmap_header
-#     WHERE study_accession = {batch_study_accession}
-#     AND experiment_accession IN ({batch_experiment_accession*})
-#     AND plate_id IN ({plate_list_sql*});
-#   ", .con = conn)
-#   existing_plates <- DBI::dbGetQuery(conn, query)
-#
-#   plates_exist_in_db <- nrow(existing_plates) > 0
-#
-#   # Determine badge status - use state$is_uploaded OR database check
-#   show_uploaded_badge <- state$is_uploaded || plates_exist_in_db
-#
-#   badge <- createUploadedBatchBadge(show_uploaded_badge)
-#
-#   # Show button only if validated AND not yet uploaded/existing
-#   button <- if (state$is_validated && !plates_exist_in_db && !state$is_uploaded) {
-#     actionButton("upload_batch_button", "Upload Batch")
-#   } else {
-#     NULL
-#   }
-#
-#   tagList(
-#     badge,
-#     br(),
-#     button
-#   )
-# })
-
-output$view_layout_file_ui <- renderUI({
-  # Explicit dependency on layout_template_sheets
-  sheets <- layout_template_sheets()
-
-  # Return NULL if sheets is NULL or empty
-  if (is.null(sheets) || length(sheets) == 0) {
-    return(NULL)
-  }
-
-  # Verify required sheets exist
-  required_sheets <- c("plate_id", "subject_groups", "timepoint", "plates_map", "antigen_list")
-  available_sheets <- names(sheets)
-
-  if (!all(required_sheets %in% available_sheets)) {
-    return(NULL)
-  }
-
-  fluidRow(
-    column(2, actionButton("view_layout_plate_id_sheet", "View Layout Plate ID")),
-    column(2, actionButton("view_layout_subject_group_sheet", "View Layout Subject Map")),
-    column(2, actionButton("view_layout_timepoint_sheet", "View Layout Timepoint")),
-    column(2, actionButton("view_layout_plates_map_sheet", "View Layout Plate Map")),
-    column(2, actionButton("view_layout_antigen_list_sheet", "View Layout Antigen List"))
-  )
-})
-
-# output$view_layout_file_ui <- renderUI({
-#   req(layout_template_sheets())
-#   req(length(layout_template_sheets()) > 0)
-#   fluidRow(
-#     column(2, actionButton("view_layout_plate_id_sheet", "View Layout Plate ID")),
-#     column(2, actionButton("view_layout_subject_group_sheet", "View Layout Subject Map")),
-#     column(2, actionButton("view_layout_timepoint_sheet", "View Layout Timepoint")),
-#     column(2, actionButton("view_layout_plates_map_sheet", "View Layout Plate Map")),
-#     column(2, actionButton("view_layout_antigen_list_sheet", "View Layout Antigen List"))
-#   )
-# })
 
 output$current_context_display <- renderText({
   req(input$readxMap_study_accession)
@@ -1473,6 +1033,313 @@ output$segment_selector <- renderUI({
 
 })
 
+# OUTPUT: view_layout_file_ui - View buttons for layout sheets
+output$view_layout_file_ui <- renderUI({
+
+  state_u <- layout_upload_state()
+
+  # GATE: Only render if layout is uploaded
+  if (!isTRUE(state_u$is_uploaded)) {
+    return(NULL)  # Return NULL, not empty tagList
+  }
+
+  # GATE: Must have layout template sheets
+  sheets <- layout_template_sheets()
+  if (is.null(sheets) || length(sheets) == 0) {
+    return(NULL)
+  }
+
+  state <- layout_render_state()
+
+  if (is.null(state)) {
+    return(NULL)
+  }
+
+  required_sheets <- c("plate_id", "subject_groups", "timepoint", "plates_map", "antigen_list")
+  if (!all(required_sheets %in% names(state$sheets))) {
+    return(NULL)
+  }
+
+  fluidRow(
+    column(2, actionButton("view_layout_plate_id_sheet", "View Layout Plate ID")),
+    column(2, actionButton("view_layout_subject_group_sheet", "View Layout Subject Map")),
+    column(2, actionButton("view_layout_timepoint_sheet", "View Layout Timepoint")),
+    column(2, actionButton("view_layout_plates_map_sheet", "View Layout Plate Map")),
+    column(2, actionButton("view_layout_antigen_list_sheet", "View Layout Antigen List"))
+  )
+})
+
+# output$view_layout_file_ui <- renderUI({
+#   # Primary dependency on consolidated state
+#   state <- layout_render_state()
+#
+#   cat("\n=== view_layout_file_ui renderUI ===\n")
+#
+#   # Return NULL if no state - this clears the output
+#   if (is.null(state)) {
+#     cat("  → Returning NULL (no layout state)\n")
+#     return(NULL)
+#   }
+#
+#   # Verify all required sheets are present
+#   required_sheets <- c("plate_id", "subject_groups", "timepoint", "plates_map", "antigen_list")
+#   available_sheets <- names(state$sheets)
+#
+#   missing <- setdiff(required_sheets, available_sheets)
+#   if (length(missing) > 0) {
+#     cat("  → Returning NULL (missing sheets:", paste(missing, collapse = ", "), ")\n")
+#     return(NULL)
+#   }
+#
+#   cat("  → Rendering view buttons\n")
+#
+#   fluidRow(
+#     column(2, actionButton("view_layout_plate_id_sheet", "View Layout Plate ID")),
+#     column(2, actionButton("view_layout_subject_group_sheet", "View Layout Subject Map")),
+#     column(2, actionButton("view_layout_timepoint_sheet", "View Layout Timepoint")),
+#     column(2, actionButton("view_layout_plates_map_sheet", "View Layout Plate Map")),
+#     column(2, actionButton("view_layout_antigen_list_sheet", "View Layout Antigen List"))
+#   )
+# })
+
+# OUTPUT: plate_layout_selector - Radio buttons to select which plate to view
+
+output$plate_layout_selector <- renderUI({
+
+  state <- layout_upload_state()
+
+  # GATE: Only render if layout is uploaded
+  if (!isTRUE(state$is_uploaded)) {
+    return(NULL)
+  }
+
+  # GATE: Must have plate_id in layout_template_sheets
+  sheets <- layout_template_sheets()
+  if (is.null(sheets) || !("plate_id" %in% names(sheets))) {
+    return(NULL)
+  }
+
+  plate_id_df <- sheets$plate_id
+  if (is.null(plate_id_df) || nrow(plate_id_df) == 0) {
+    return(NULL)
+  }
+
+  state <- layout_render_state()
+
+  if (is.null(state)) {
+    return(NULL)
+  }
+
+  plots <- plate_layout_plots()
+
+  if (is.null(plots) || length(plots) == 0) {
+    return(NULL)
+  }
+
+  shinyWidgets::radioGroupButtons(
+    inputId = "select_plate_layout_plot",
+    label = "Select Plate Layout:",
+    choices = names(plots),
+    selected = names(plots)[1],
+    status = "success"
+  )
+})
+# output$plate_layout_selector <- renderUI({
+#   cat("\n=== plate_layout_selector renderUI ===\n")
+#
+#   # Primary dependency on consolidated state
+#   state <- layout_render_state()
+#
+#   if (is.null(state)) {
+#     cat("  → Returning NULL (no layout state)\n")
+#     return(NULL)
+#   }
+#
+#   # Get plots - this has its own validation
+#   plots <- plate_layout_plots()
+#
+#   if (is.null(plots) || length(plots) == 0) {
+#     cat("  → Returning NULL (no plots available)\n")
+#     return(NULL)
+#   }
+#
+#   cat("  → Rendering selector with", length(plots), "choices\n")
+#
+#   shinyWidgets::radioGroupButtons(
+#     inputId = "select_plate_layout_plot",
+#     label = "Select Plate Layout:",
+#     choices = names(plots),
+#     selected = names(plots)[1],
+#     status = "success"
+#   )
+# })
+
+# OUTPUT: selected_plate_layout_plot - The actual plotly visualization
+output$selected_plate_layout_plot <- renderPlotly({
+
+  state <- layout_upload_state()
+
+  # GATE: Only render if layout is uploaded
+  if (!isTRUE(state$is_uploaded)) {
+    return(NULL)
+  }
+
+  # GATE: Must have plates_map
+  sheets <- layout_template_sheets()
+  if (is.null(sheets) || !("plates_map" %in% names(sheets))) {
+    return(NULL)
+  }
+
+  # GATE: Must have a selected plate
+  req(input$selected_plate_for_layout)
+
+  plates_map <- sheets$plates_map
+  if (is.null(plates_map) || nrow(plates_map) == 0) {
+    return(NULL)
+  }
+
+  state <- layout_render_state()
+
+  if (is.null(state)) {
+    return(NULL)
+  }
+
+  plots <- plate_layout_plots()
+
+  if (is.null(plots) || length(plots) == 0) {
+    return(NULL)
+  }
+
+  selection <- input$select_plate_layout_plot
+
+  if (is.null(selection) || selection == "" || !selection %in% names(plots)) {
+    selection <- names(plots)[1]
+  }
+
+  plots[[selection]]
+})
+# output$selected_plate_layout_plot <- renderPlotly({
+#   cat("\n=== selected_plate_layout_plot renderPlotly ===\n")
+#
+#   # Primary dependency on consolidated state
+#   state <- layout_render_state()
+#
+#   if (is.null(state)) {
+#     cat("  → Returning NULL (no layout state)\n")
+#     return(NULL)
+#   }
+#
+#   # Get plots
+#   plots <- plate_layout_plots()
+#
+#   if (is.null(plots) || length(plots) == 0) {
+#     cat("  → Returning NULL (no plots)\n")
+#     return(NULL)
+#   }
+#
+#   # Get selection - default to first if not yet selected
+#   selection <- input$select_plate_layout_plot
+#
+#   if (is.null(selection) || selection == "" || !selection %in% names(plots)) {
+#     selection <- names(plots)[1]
+#     cat("  → Using default selection:", selection, "\n")
+#   }
+#
+#   cat("  → Rendering plot for:", selection, "\n")
+#
+#   plots[[selection]]
+# })
+
+# OUTPUT: description_warning_ui - Warning about Description field issues
+output$description_warning_ui <- renderUI({
+  cat("\n=== description_warning_ui renderUI ===\n")
+  state <- layout_upload_state()
+
+  # GATE: Only render if layout is uploaded
+  if (!isTRUE(state$is_uploaded)) {
+    return(NULL)
+  }
+
+  # GATE: Must have plates_map
+  sheets <- layout_template_sheets()
+  if (is.null(sheets) || !("plates_map" %in% names(sheets))) {
+    return(NULL)
+  }
+
+  # GATE: Must have a selected plate
+  req(input$selected_plate_for_layout)
+
+  plates_map <- sheets$plates_map
+  if (is.null(plates_map) || nrow(plates_map) == 0) {
+    return(NULL)
+  }
+
+
+  # Primary dependency - must have plate data uploaded
+  plate_data <- batch_plate_data()
+
+  # Get description status
+  status <- description_status()
+
+  if (is.null(plate_data) || !isTRUE(status$checked)) {
+    cat("  → Returning NULL (no plate data)\n")
+    return(NULL)
+  }
+
+  # Must have been checked
+  if (!isTRUE(status$checked)) {
+    cat("  → Returning NULL (description not checked)\n")
+    return(NULL)
+  }
+
+  # Only show warnings if there are issues
+  if (status$has_content && status$has_sufficient_elements) {
+    cat("  → Returning NULL (no warnings needed)\n")
+    return(NULL)
+  }
+
+  cat("  → Rendering warning UI\n")
+
+  if (!status$has_content) {
+    # Warning for completely blank Description
+    tags$div(
+      style = "background-color: #fff3cd; border: 1px solid #ffc107; padding: 15px; margin: 10px 0; border-radius: 5px;",
+      tags$h5(
+        tags$i(class = "fa fa-exclamation-triangle", style = "color: #856404;"),
+        " Description Field is Blank",
+        style = "margin-top: 0; color: #856404;"
+      ),
+      tags$p("The Description field in your plate data is empty. Default values will be used:"),
+      tags$ul(
+        tags$li("Subject ID: '1'"),
+        tags$li("Sample Dilution Factor: 1"),
+        tags$li("Timeperiod: 'T0'"),
+        tags$li("Groups: 'Unknown'")
+      ),
+      tags$p(
+        tags$strong("You will need to manually update the layout template with correct values before uploading."),
+        style = "margin-bottom: 0; color: #856404;"
+      )
+    )
+  } else  {
+    # Warning for insufficient elements
+    tags$div(
+      style = "background-color: #fff3cd; border: 1px solid #ffc107; padding: 15px; margin: 10px 0; border-radius: 5px;",
+      tags$h5(
+        tags$i(class = "fa fa-exclamation-triangle", style = "color: #856404;"),
+        " Insufficient Description Elements",
+        style = "margin-top: 0; color: #856404;"
+      ),
+      tags$p(sprintf(
+        "The Description field has only %d element(s), but at least %d are required.",
+        status$min_elements_found,
+        status$required_elements
+      )),
+      tags$p("Missing fields will be filled with default values. Manual update may be required.")
+    )
+  }
+})
+
 ### Observes
 # Call on server start
 onSessionStart()
@@ -1529,7 +1396,8 @@ observeEvent(input$optional_elements, {
 })
 
 observeEvent(input$readxMap_study_accession, {
-  print(paste("readxMap_study_accession clicked:", input$readxMap_study_accession))
+  req(input$readxMap_study_accession != "Click here")
+  cat("\n=== STUDY CHANGED:", input$readxMap_study_accession, "===\n")
 
   if (input$readxMap_study_accession != "Click here") {
 
@@ -1542,12 +1410,6 @@ observeEvent(input$readxMap_study_accession, {
       include_experiment_files = TRUE,
       include_layout_file = TRUE
     )
-
-    # NOTE: Output invalidation is handled by clearing layout_template_sheets()
-    # in reset_batch_reactives(). The outputs view_layout_file_ui,
-    # plate_layout_selector, selected_plate_layout_plot, and description_warning_ui
-    # already check for NULL/empty layout_template_sheets() and return NULL.
-    # DO NOT re-assign outputs here as it breaks the reactive chain.
 
     # RESET EXPERIMENT DROPDOWN
     # Clear the experiment selection when study changes
@@ -1583,37 +1445,12 @@ observeEvent(input$readxMap_study_accession, {
   }
 })
 
-# observeEvent(input$readxMap_experiment_accession_import, {
-#   req(input$readxMap_study_accession)
-#
-#   print(paste("readxMap_experiment_accession_import changed to:",
-#               input$readxMap_experiment_accession_import))
-#
-#   if (input$readxMap_experiment_accession_import != "Click here" &&
-#       input$readxMap_experiment_accession_import != "") {
-#
-#     # RESET ALL BATCH REACTIVES when experiment changes
-#     reset_batch_reactives()
-#
-#     # Clear any uploaded files from UI
-#     shinyjs::reset("upload_experiment_files")
-#     shinyjs::reset("upload_layout_file")
-#
-#     # Show notification to user
-#     showNotification(
-#       paste("Experiment changed to:", input$readxMap_experiment_accession_import,
-#             "- All batch data has been cleared. Please upload new files."),
-#       type = "warning",
-#       duration = 5
-#     )
-#   }
-# })
-
 observeEvent(input$readxMap_experiment_accession_import, {
   req(input$readxMap_study_accession)
+  req(input$readxMap_experiment_accession_import != "Click here")
+  req(input$readxMap_experiment_accession_import != "")
 
-  print(paste("readxMap_experiment_accession_import changed to:",
-              input$readxMap_experiment_accession_import))
+  cat("\n=== EXPERIMENT CHANGED:", input$readxMap_experiment_accession_import, "===\n")
 
   if (input$readxMap_experiment_accession_import != "Click here" &&
       input$readxMap_experiment_accession_import != "") {
@@ -1632,18 +1469,21 @@ observeEvent(input$readxMap_experiment_accession_import, {
       include_layout_file = TRUE
     )
 
-    # NOTE: Output invalidation is handled by clearing layout_template_sheets()
-    # in reset_batch_reactives(). The outputs view_layout_file_ui,
-    # plate_layout_selector, selected_plate_layout_plot, and description_warning_ui
-    # already check for NULL/empty layout_template_sheets() and return NULL.
-    # DO NOT re-assign outputs here as it breaks the reactive chain.
+    # ========================================
+    # FORCE UI OUTPUT INVALIDATION
+    # ========================================
+    # These outputs need to be explicitly set to NULL to clear stale UI
+    # output$view_layout_file_ui <- renderUI({ NULL })
+    # output$plate_layout_selector <- renderUI({ NULL })
+    # output$selected_plate_layout_plot <- renderPlotly({ NULL })
+    # output$description_warning_ui <- renderUI({ NULL })
 
-    # cat("  ✓ Cleared dynamic UI outputs\n")
+    cat("  ✓ Cleared dynamic UI outputs\n")
 
     # Show notification to user
     showNotification(
       paste("Experiment changed to:", input$readxMap_experiment_accession_import,
-            "- All batch data has been cleared. Please upload new files."),
+            "- All previous batch data has been cleared. "),
       type = "warning",
       duration = 5
     )
@@ -1946,16 +1786,6 @@ observeEvent(input$upload_experiment_files, {
     bead_array_result = NULL
   ))
 
-  # Reset description status
-  description_status(list(
-    has_content = FALSE,
-    has_sufficient_elements = FALSE,
-    min_elements_found = 0,
-    required_elements = 3,
-    checked = FALSE,
-    message = ""
-  ))
-
   current_exp_files <- input$upload_experiment_files
   cat("Number of NEW files being uploaded:", nrow(current_exp_files), "\n")
   cat("New files:\n")
@@ -1963,6 +1793,31 @@ observeEvent(input$upload_experiment_files, {
     cat("  ", i, ". ", current_exp_files$name[i], "\n", sep="")
   }
   cat("\n")
+
+  # ============================================================================
+  # HELPER FUNCTION: Extract plate number from text (filename, plateid, etc.)
+  # Looks for patterns like "plate_3", "plate 3", "plate.3", "plate3"
+  # ============================================================================
+  extract_plate_number <- function(text) {
+    if (is.na(text) || text == "") return(NA_character_)
+
+    # Try multiple patterns to extract plate number
+    # Pattern 1: "plate" followed by separator and number (plate_3, plate 3, plate.3, plate-3)
+    match1 <- regmatches(text, regexpr("[Pp]late[_\\s\\.-]+(\\d+)", text, perl = TRUE))
+    if (length(match1) > 0 && nchar(match1) > 0) {
+      num <- gsub("[^0-9]", "", match1)
+      if (nchar(num) > 0) return(paste0("plate_", num))
+    }
+
+    # Pattern 2: Just "plate" followed immediately by number (plate3, plate1IgGtot...)
+    match2 <- regmatches(text, regexpr("[Pp]late(\\d+)", text, perl = TRUE))
+    if (length(match2) > 0 && nchar(match2) > 0) {
+      num <- gsub("[^0-9]", "", match2)
+      if (nchar(num) > 0) return(paste0("plate_", num))
+    }
+
+    return(NA_character_)
+  }
 
   batch_data_list <- list()
 
@@ -2018,7 +1873,7 @@ observeEvent(input$upload_experiment_files, {
   header_list <- add_source_column(header_list)
 
   # ============================================================================
-  # Extract plate numbers from filename or plateid
+  # REFACTORED: Extract plate numbers from filename or plateid
   # Priority: 1) plateid from header, 2) filename, 3) fallback to sequential
   # ============================================================================
   cat("\nExtracting plate numbers from filenames/plateids...\n")
@@ -2168,60 +2023,6 @@ observeEvent(input$upload_experiment_files, {
 
   batch_plate_data(all_plates)
 
-  # Update description_status (triggers description_warning_ui)
-  description_status(list(
-    has_content = desc_check$has_content,
-    has_sufficient_elements = desc_check$has_sufficient_elements,
-    min_elements_found = desc_check$min_elements_found,
-    required_elements = desc_check$required_elements,
-    checked = TRUE,
-    message = desc_check$message
-  ))
-
-  # GENERATE LAYOUT TEMPLATE SHEETS (triggers view_layout_file_ui,
-  # plate_layout_selector, and selected_plate_layout_plot)
-  cat("\n╔══════════════════════════════════════════════════════════╗\n")
-  cat("║         GENERATING LAYOUT TEMPLATE SHEETS                ║\n")
-  cat("╚══════════════════════════════════════════════════════════╝\n")
-
-  # Generate the layout template sheets from the uploaded data
-  # NOTE: You need to implement or call the appropriate function here
-  # This is a placeholder - replace with your actual layout generation logic
-  generated_sheets <- tryCatch({
-    generate_layout_template_from_plates(
-      plate_data = all_plates,
-      header_list = header_list,
-      antigen_cols = antigen_cols
-    )
-  }, error = function(e) {
-    cat("  ⚠️  Error generating layout sheets:", conditionMessage(e), "\n")
-    list()
-  })
-
-  if (length(generated_sheets) > 0) {
-    cat("  ✓ Generated layout sheets:", paste(names(generated_sheets), collapse = ", "), "\n")
-    layout_template_sheets(generated_sheets)
-  } else {
-    cat("  ⚠️  No layout sheets generated\n")
-    layout_template_sheets(list())
-  }
-
-  # Show notifications
-  if (!desc_check$has_content) {
-    showNotification(
-      "Description field is blank. Default values will be used.",
-      type = "warning",
-      duration = 10
-    )
-  } else if (!desc_check$has_sufficient_elements) {
-    showNotification(
-      sprintf("Description has insufficient elements (%d found, %d required).",
-              desc_check$min_elements_found, desc_check$required_elements),
-      type = "warning",
-      duration = 10
-    )
-  }
-
   cat("\n✓ Upload complete!\n")
   cat("╚══════════════════════════════════════════════════════════╝\n\n")
 
@@ -2256,28 +2057,90 @@ observeEvent(input$description_delimiter, {
   ))
 }, ignoreInit = TRUE)
 
-# =============================================================================
-# REFACTORED observeEvent for input$upload_layout_file
-# =============================================================================
-# Key fixes:
-# 1. Removed the problematic line that overwrites sheet names
-# 2. Added explicit logging to track reactive chain
-# 3. Added debugging to verify plates_map and plate_id data exist
-# 4. Ensured layout_template_sheets() is updated correctly to trigger downstream reactives
-# =============================================================================
-
+# observeEvent for input$upload_layout_file
+# With processing guards to prevent multiple executions
 observeEvent(input$upload_layout_file, {
   req(input$readxMap_study_accession)
   req(input$readxMap_experiment_accession_import)
+  req(input$upload_layout_file)
+
+  # Get current state to check for re-entry
+  current_state <- layout_upload_state()
+
+  # GUARD: Prevent re-entry if already processing
+  if (isTRUE(current_state$processing)) {
+    message("[Layout Upload] Ignoring - already processing")
+    return()
+  }
+
+  # Capture current context using isolate (prevents reactive dependencies)
+  current_study <- isolate(input$readxMap_study_accession)
+  current_experiment <- isolate(input$readxMap_experiment_accession)
+
+  message(sprintf("[Layout Upload] Starting - Study: %s, Experiment: %s",
+                  current_study, current_experiment))
+
+  # Mark as processing to prevent re-entry
+  layout_upload_state(list(
+    is_uploaded = FALSE,
+    upload_time = NULL,
+    current_study = current_study,
+    current_experiment = current_experiment,
+    processing = TRUE
+  ))
+
+  tryCatch({
+
+  # =========================================================================
+  # GUARD: Prevent re-entry if already processing
+  # =========================================================================
+  if (isTRUE(layout_processing_lock())) {
+    cat("⚠️  Layout processing already in progress, skipping...\n")
+    return()
+  }
+
+  # Set processing lock
+  layout_processing_lock(TRUE)
+
+  # Ensure lock is released when function exits (even on error)
+  on.exit({
+    layout_processing_lock(FALSE)
+    cat("  ✓ Released layout processing lock\n")
+  }, add = TRUE)
 
   cat("\n╔══════════════════════════════════════════════════════════╗\n")
   cat("║         UPLOADING LAYOUT FILE                            ║\n")
   cat("╚══════════════════════════════════════════════════════════╝\n")
 
-  # Reset layout-related reactives
+  input_upload_layout_file <- input$upload_layout_file
+
+  if (is.null(input_upload_layout_file)) {
+    cat("⚠️  No layout file provided\n")
+    return()
+  }
+
+  # =========================================================================
+  # GUARD: Check if this is the same file being re-processed
+  # =========================================================================
+  file_hash <- digest::digest(
+    paste(input_upload_layout_file$name,
+          input_upload_layout_file$size,
+          input$readxMap_study_accession,
+          input$readxMap_experiment_accession_import,
+          sep = "_"),
+    algo = "md5"
+  )
+
+  current_state <- batch_processing_state()
+  if (!is.null(current_state$last_layout_hash) &&
+      current_state$last_layout_hash == file_hash) {
+    cat("⚠️  This layout file has already been processed, skipping...\n")
+    return()
+  }
+
+  # Reset layout-related reactives BEFORE processing
   inLayoutFile(NULL)
   avaliableLayoutSheets(NULL)
-  layout_template_sheets(list())
 
   # Reset validation state
   batch_validation_state(list(
@@ -2289,17 +2152,11 @@ observeEvent(input$upload_layout_file, {
     bead_array_result = NULL
   ))
 
-  input_upload_layout_file <- input$upload_layout_file
   workspace_id <- userWorkSpaceID()
-  currentuser <- currentuser()
+  current_user <- currentuser()
   bead_array_header_list_data <- bead_array_header_list()
 
   inLayoutFile(input_upload_layout_file)
-
-  if (is.null(input_upload_layout_file)) {
-    cat("⚠️  No layout file provided\n")
-    return()
-  }
 
   cat("Layout file:", input_upload_layout_file$name, "\n\n")
 
@@ -2307,7 +2164,6 @@ observeEvent(input$upload_layout_file, {
   cat("Checking batch_plate_data()...\n")
   if (is.null(batch_plate_data())) {
     cat("⚠️  ERROR: batch_plate_data() is NULL!\n")
-    cat("   Cannot validate without plate data.\n")
     showNotification(
       "Error: No plate data found. Please upload experiment files first.",
       type = "error",
@@ -2323,11 +2179,6 @@ observeEvent(input$upload_layout_file, {
   metadata_cols <- c("source_file", "Well", "Type", "Description",
                      "% Agg Beads", "Sampling Errors", "Acquisition Time")
   current_antigens <- names(batch_plate_data())[!(names(batch_plate_data()) %in% metadata_cols)]
-  cat("  → Current batch antigens (", length(current_antigens), "):\n", sep="")
-  for (ag in current_antigens) {
-    cat("      •", ag, "\n")
-  }
-  cat("\n")
 
   # Validate sheet names
   cat("Reading layout file...\n")
@@ -2336,11 +2187,7 @@ observeEvent(input$upload_layout_file, {
 
   validation <- check_sheet_names(input_upload_layout_file$datapath)
   if (!validation$valid) {
-    showNotification(
-      validation$message,
-      type = "error",
-      duration = NULL
-    )
+    showNotification(validation$message, type = "error", duration = NULL)
     return()
   }
 
@@ -2359,12 +2206,7 @@ observeEvent(input$upload_layout_file, {
   cat("  ✓ Layout sheets read successfully\n")
   cat("  → Imported sheet names:", paste(names(all_sheets$data), collapse=", "), "\n\n")
 
-  # =========================================================================
-  # FIX: DO NOT overwrite sheet names - import_layout_file returns correct names
-  # REMOVED: names(all_sheets$data) <- sheets
-  # =========================================================================
-
-  # Verify required sheets exist with correct names
+  # Verify required sheets exist
   required_sheets <- c("plates_map", "plate_id", "antigen_list")
   missing_required <- setdiff(required_sheets, names(all_sheets$data))
   if (length(missing_required) > 0) {
@@ -2377,107 +2219,65 @@ observeEvent(input$upload_layout_file, {
     return()
   }
 
-  # Debug: Verify plates_map and plate_id data for plotting
+  # Debug: Verify data
   cat("\n=== DEBUG: Verifying data for plate layout plots ===\n")
-  cat("  plates_map:\n")
-  cat("    → Rows:", nrow(all_sheets$data[["plates_map"]]), "\n")
-  cat("    → Columns:", paste(names(all_sheets$data[["plates_map"]]), collapse=", "), "\n")
-  cat("  plate_id:\n")
-  cat("    → Rows:", nrow(all_sheets$data[["plate_id"]]), "\n")
-  cat("    → Columns:", paste(names(all_sheets$data[["plate_id"]]), collapse=", "), "\n")
-
-  # Check required columns for plotting
-  required_plates_map_cols <- c("study_name", "experiment_name", "plate_number", "well", "specimen_type")
-  missing_cols <- setdiff(required_plates_map_cols, names(all_sheets$data[["plates_map"]]))
-  if (length(missing_cols) > 0) {
-    cat("  ⚠️  plates_map missing columns:", paste(missing_cols, collapse=", "), "\n")
-  } else {
-    cat("  ✓ plates_map has all required columns\n")
-  }
-
-  required_plate_id_cols <- c("study_name", "experiment_name", "plate_number", "number_of_wells")
-  missing_plate_id_cols <- setdiff(required_plate_id_cols, names(all_sheets$data[["plate_id"]]))
-  if (length(missing_plate_id_cols) > 0) {
-    cat("  ⚠️  plate_id missing columns:", paste(missing_plate_id_cols, collapse=", "), "\n")
-  } else {
-    cat("  ✓ plate_id has all required columns\n")
-  }
-  cat("================================================\n\n")
-
-  # Check antigens in layout vs current data
-  layout_antigens <- unique(all_sheets$data[["antigen_list"]]$antigen_label_on_plate)
-  cat("Layout file antigens (", length(layout_antigens), "):\n", sep="")
-  for (ag in layout_antigens) {
-    cat("  •", ag, "\n")
-  }
-  cat("\n")
-
-  # Check for mismatches
-  extra_in_layout <- setdiff(layout_antigens, current_antigens)
-  missing_from_layout <- setdiff(current_antigens, layout_antigens)
-
-  if (length(extra_in_layout) > 0) {
-    cat("⚠️  WARNING: Layout has antigens NOT in current batch data:\n")
-    for (ag in extra_in_layout) {
-      cat("    ✗", ag, "\n")
-    }
-    cat("\n")
-  }
-
-  if (length(missing_from_layout) > 0) {
-    cat("⚠️  WARNING: Current batch has antigens NOT in layout:\n")
-    for (ag in missing_from_layout) {
-      cat("    ✗", ag, "\n")
-    }
-    cat("\n")
-  }
+  cat("  plates_map rows:", nrow(all_sheets$data[["plates_map"]]), "\n")
+  cat("  plate_id rows:", nrow(all_sheets$data[["plate_id"]]), "\n")
 
   # =========================================================================
-  # CRITICAL: Store the layout data - triggers downstream reactives
+  # STORE LAYOUT SHEETS - Use isolate to prevent triggering other reactives
   # =========================================================================
   cat("╔══════════════════════════════════════════════════════════╗\n")
-  cat("║  STORING LAYOUT SHEETS (triggers plot generation)       ║\n")
+  cat("║  STORING LAYOUT SHEETS                                   ║\n")
   cat("╚══════════════════════════════════════════════════════════╝\n")
 
+  # Store sheets atomically
   layout_template_sheets(all_sheets$data)
 
   cat("  ✓ layout_template_sheets() updated\n")
-  cat("  → Contains", length(all_sheets$data), "sheets:", paste(names(all_sheets$data), collapse=", "), "\n")
-  cat("╚══════════════════════════════════════════════════════════╝\n\n")
 
-  # Construct batch header metadata
-  batch_header <<- construct_batch_upload_metadata(
-    plates_map = all_sheets$data[["plates_map"]],
-    plate_metadata_list = bead_array_header_list_data,
-    workspace_id = workspace_id,
-    currentuser = currentuser
-  )
+  # =========================================================================
+  # CONSTRUCT AND VALIDATE METADATA - Do this ONCE here
+  # =========================================================================
+  cat("\n=== CONSTRUCTING BATCH METADATA ===\n")
 
-  # Verify sample_dilution_factor is present
-  batch_metadata_data <- batch_header
-  cat("\n=== DEBUG: batch_metadata_data ===\n")
-  cat("Columns:", paste(names(batch_metadata_data), collapse = ", "), "\n")
-  if ("sample_dilution_factor" %in% names(batch_metadata_data)) {
-    cat("sample_dilution_factor values:", paste(batch_metadata_data$sample_dilution_factor, collapse = ", "), "\n")
-  } else {
-    cat("⚠ WARNING: sample_dilution_factor column MISSING!\n")
+  batch_header_data <- tryCatch({
+    construct_batch_upload_metadata(
+      plates_map = all_sheets$data[["plates_map"]],
+      plate_metadata_list = bead_array_header_list_data,
+      workspace_id = workspace_id,
+      currentuser = current_user
+    )
+  }, error = function(e) {
+    cat("  ✗ Error constructing metadata:", conditionMessage(e), "\n")
+    showNotification(
+      paste("Error constructing metadata:", conditionMessage(e)),
+      type = "error",
+      duration = 10
+    )
+    return(NULL)
+  })
+
+  if (is.null(batch_header_data)) {
+    return()
   }
 
-  all_sheets_v <<- all_sheets
-
+  # Merge with plate_id data
   batch_metadata_data <- merge(
-    batch_metadata_data,
+    batch_header_data,
     all_sheets$data[["plate_id"]][, c("plateid", "number_of_wells")],
     by.x = "plateid",
     by.y = "plateid",
     all.x = TRUE
   )
-
   names(batch_metadata_data)[names(batch_metadata_data) == "number_of_wells"] <- "n_wells"
 
-  batch_metadata_data_v <<- batch_metadata_data
+  cat("  ✓ Metadata constructed, rows:", nrow(batch_metadata_data), "\n")
 
-  cat("Validating...\n")
+  # =========================================================================
+  # VALIDATE - Do this ONCE here
+  # =========================================================================
+  cat("\n=== VALIDATING BATCH DATA ===\n")
 
   # Validate metadata
   validate_metadata_result <- validate_batch_plate_metadata(
@@ -2492,8 +2292,15 @@ observeEvent(input$upload_layout_file, {
     blank_keyword = input$batch_blank
   )
 
-  # Update validation state
-  if (bead_array_validation$is_valid && validate_metadata_result$is_valid) {
+  # =========================================================================
+  # UPDATE STATE - Do this atomically at the end
+  # =========================================================================
+  is_valid <- bead_array_validation$is_valid && validate_metadata_result$is_valid
+
+  if (is_valid) {
+    # Update both states together
+    batch_metadata(batch_metadata_data)
+
     batch_validation_state(list(
       is_validated = TRUE,
       is_uploaded = FALSE,
@@ -2502,7 +2309,6 @@ observeEvent(input$upload_layout_file, {
       metadata_result = validate_metadata_result,
       bead_array_result = bead_array_validation
     ))
-    batch_metadata(batch_metadata_data)
 
     cat("✓ VALIDATION PASSED!\n")
     showNotification(
@@ -2525,297 +2331,48 @@ observeEvent(input$upload_layout_file, {
     cat("  Bead array valid:", bead_array_validation$is_valid, "\n")
 
     showNotification(
-      "Layout file uploaded but validation failed. Please review error messages.",
+      "Layout file validation failed. Please review error messages.",
       type = "error",
       duration = 10
     )
   }
 
-  cat("╚══════════════════════════════════════════════════════════╝\n\n")
-})
+  # =========================================================================
+  # UPDATE PROCESSING STATE with hash to prevent re-processing
+  # =========================================================================
+  batch_processing_state(list(
+    is_processing = FALSE,
+    last_layout_hash = file_hash,
+    last_validation_hash = NULL,
+    last_upload_hash = NULL
+  ))
 
-# observeEvent(input$upload_layout_file, {
-#   req(input$readxMap_study_accession)
-#   req(input$readxMap_experiment_accession_import)
-#
-#   cat("\n╔══════════════════════════════════════════════════════════╗\n")
-#   cat("║         UPLOADING LAYOUT FILE                            ║\n")
-#   cat("╚══════════════════════════════════════════════════════════╝\n")
-#
-#   # Reset layout-related reactives
-#   inLayoutFile(NULL)
-#   avaliableLayoutSheets(NULL)
-#   layout_template_sheets(list())
-#
-#   # Reset validation state
-#   batch_validation_state(list(
-#     is_validated = FALSE,
-#     is_uploaded = FALSE,
-#     validation_time = NULL,
-#     upload_time = NULL,
-#     metadata_result = NULL,
-#     bead_array_result = NULL
-#   ))
-#
-#   input_upload_layout_file <- input$upload_layout_file
-#   workspace_id <- userWorkSpaceID()
-#   currentuser <- currentuser()
-#   bead_array_header_list_data <- bead_array_header_list()
-#
-#   inLayoutFile(input_upload_layout_file)
-#
-#   if (is.null(input_upload_layout_file)) {
-#     cat("⚠️  No layout file provided\n")
-#     return()
-#   }
-#
-#   cat("Layout file:", input_upload_layout_file$name, "\n\n")
-#
-#   # CRITICAL: Check what data we're validating against
-#   cat("Checking batch_plate_data()...\n")
-#   if (is.null(batch_plate_data())) {
-#     cat("⚠️  ERROR: batch_plate_data() is NULL!\n")
-#     cat("   Cannot validate without plate data.\n")
-#     showNotification(
-#       "Error: No plate data found. Please upload experiment files first.",
-#       type = "error",
-#       duration = 10
-#     )
-#     return()
-#   }
-#
-#   cat("  → Rows:", nrow(batch_plate_data()), "\n")
-#   cat("  → Source files:", paste(unique(batch_plate_data()$source_file), collapse=", "), "\n")
-#
-#   # Extract antigens from current batch data
-#   metadata_cols <- c("source_file", "Well", "Type", "Description",
-#                      "% Agg Beads", "Sampling Errors", "Acquisition Time")
-#   current_antigens <- names(batch_plate_data())[!(names(batch_plate_data()) %in% metadata_cols)]
-#   cat("  → Current batch antigens (", length(current_antigens), "):\n", sep="")
-#   for (ag in current_antigens) {
-#     cat("      •", ag, "\n")
-#   }
-#   cat("\n")
-#
-#   # Validate sheet names
-#   cat("Reading layout file...\n")
-#   sheets <- readxl::excel_sheets(input_upload_layout_file$datapath)
-#   cat("  → Excel sheets found:", paste(sheets, collapse=", "), "\n")
-#
-#   validation <- check_sheet_names(input_upload_layout_file$datapath)
-#   if (!validation$valid) {
-#     showNotification(
-#       validation$message,
-#       type = "error",
-#       duration = NULL
-#     )
-#     return()
-#   }
-#
-#   # CORRECTED: Call import_layout_file with only the file_path parameter
-#   all_sheets <- import_layout_file(input_upload_layout_file$datapath)
-#
-#   if (!all_sheets$success) {
-#     showNotification(
-#       paste(all_sheets$messages, collapse = "\n"),
-#       type = "error",
-#       duration = NULL
-#     )
-#     return()
-#   }
-#
-#   cat("  ✓ Layout sheets read successfully\n")
-#   cat("  → Imported sheet names:", paste(names(all_sheets$data), collapse=", "), "\n\n")
-#
-#   # =========================================================================
-#   # FIX: DO NOT overwrite sheet names with readxl::excel_sheets() result
-#   # The import_layout_file function already returns data with correct names:
-#   # plate_id, subject_groups, timepoint, antigen_list, plates_map, cell_valid
-#   # =========================================================================
-#   # REMOVED: names(all_sheets$data) <- sheets  # This was causing the bug!
-#
-#   # Verify required sheets exist with correct names
-#   required_sheets <- c("plates_map", "plate_id", "antigen_list")
-#   missing_required <- setdiff(required_sheets, names(all_sheets$data))
-#   if (length(missing_required) > 0) {
-#     cat("⚠️  ERROR: Missing required sheets:", paste(missing_required, collapse=", "), "\n")
-#     showNotification(
-#       paste("Missing required sheets:", paste(missing_required, collapse=", ")),
-#       type = "error",
-#       duration = 10
-#     )
-#     return()
-#   }
-#
-#   # Debug: Verify plates_map and plate_id data
-#   cat("\n=== DEBUG: Verifying data for plate layout plots ===\n")
-#   cat("  plates_map:\n")
-#   cat("    → Rows:", nrow(all_sheets$data[["plates_map"]]), "\n")
-#   cat("    → Columns:", paste(names(all_sheets$data[["plates_map"]]), collapse=", "), "\n")
-#   cat("  plate_id:\n")
-#   cat("    → Rows:", nrow(all_sheets$data[["plate_id"]]), "\n")
-#   cat("    → Columns:", paste(names(all_sheets$data[["plate_id"]]), collapse=", "), "\n")
-#
-#   # Check if plates_map has the required columns for plotting
-#   required_plates_map_cols <- c("study_name", "experiment_name", "plate_number", "well", "specimen_type")
-#   missing_cols <- setdiff(required_plates_map_cols, names(all_sheets$data[["plates_map"]]))
-#   if (length(missing_cols) > 0) {
-#     cat("  ⚠️  plates_map missing columns:", paste(missing_cols, collapse=", "), "\n")
-#   } else {
-#     cat("  ✓ plates_map has all required columns for plotting\n")
-#   }
-#
-#   # Check if plate_id has the required columns
-#   required_plate_id_cols <- c("study_name", "experiment_name", "plate_number", "number_of_wells")
-#   missing_plate_id_cols <- setdiff(required_plate_id_cols, names(all_sheets$data[["plate_id"]]))
-#   if (length(missing_plate_id_cols) > 0) {
-#     cat("  ⚠️  plate_id missing columns:", paste(missing_plate_id_cols, collapse=", "), "\n")
-#   } else {
-#     cat("  ✓ plate_id has all required columns for plotting\n")
-#   }
-#   cat("================================================\n\n")
-#
-#   # Check antigens in layout vs current data
-#   layout_antigens <- unique(all_sheets$data[["antigen_list"]]$antigen_label_on_plate)
-#   cat("Layout file antigens (", length(layout_antigens), "):\n", sep="")
-#   for (ag in layout_antigens) {
-#     cat("  •", ag, "\n")
-#   }
-#   cat("\n")
-#
-#   # Check for mismatches
-#   extra_in_layout <- setdiff(layout_antigens, current_antigens)
-#   missing_from_layout <- setdiff(current_antigens, layout_antigens)
-#
-#   if (length(extra_in_layout) > 0) {
-#     cat("⚠️  WARNING: Layout has antigens NOT in current batch data:\n")
-#     for (ag in extra_in_layout) {
-#       cat("    ✗", ag, "\n")
-#     }
-#     cat("\n")
-#   }
-#
-#   if (length(missing_from_layout) > 0) {
-#     cat("⚠️  WARNING: Current batch has antigens NOT in layout:\n")
-#     for (ag in missing_from_layout) {
-#       cat("    ✗", ag, "\n")
-#     }
-#     cat("\n")
-#   }
-#
-#   # =========================================================================
-#   # CRITICAL: Store the layout data - this triggers downstream reactives
-#   # plate_layout_plots(), plate_layout_selector, selected_plate_layout_plot
-#   # =========================================================================
-#   cat("Storing layout sheets to trigger plot generation...\n")
-#   layout_template_sheets(all_sheets$data)
-#   cat("  ✓ layout_template_sheets() updated with", length(all_sheets$data), "sheets\n")
-#   cat("  → Sheet names:", paste(names(all_sheets$data), collapse=", "), "\n\n")
-#
-#   # Construct batch header metadata
-#   batch_header <<- construct_batch_upload_metadata(
-#     plates_map = all_sheets$data[["plates_map"]],
-#     plate_metadata_list = bead_array_header_list_data,
-#     workspace_id = workspace_id,
-#     currentuser = currentuser
-#   )
-#
-#   # Verify sample_dilution_factor is present
-#   batch_metadata_data <- batch_header
-#   cat("\n=== DEBUG: batch_metadata_data after combine ===\n")
-#   cat("Columns:", paste(names(batch_metadata_data), collapse = ", "), "\n")
-#   if ("sample_dilution_factor" %in% names(batch_metadata_data)) {
-#     cat("sample_dilution_factor values:", paste(batch_metadata_data$sample_dilution_factor, collapse = ", "), "\n")
-#   } else {
-#     cat("⚠ WARNING: sample_dilution_factor column MISSING!\n")
-#   }
-#
-#   all_sheets_v <<- all_sheets
-#
-#   batch_metadata_data <- merge(
-#     batch_metadata_data,
-#     all_sheets$data[["plate_id"]][, c("plateid", "number_of_wells")],
-#     by.x = "plateid",
-#     by.y = "plateid",
-#     all.x = TRUE
-#   )
-#
-#   names(batch_metadata_data)[names(batch_metadata_data) == "number_of_wells"] <- "n_wells"
-#
-#   batch_metadata_data_v <<- batch_metadata_data
-#
-#   cat("Validating...\n")
-#
-#   # Validate metadata
-#   validate_metadata_result <- validate_batch_plate_metadata(
-#     plate_metadata = batch_metadata_data,
-#     plate_id_data = all_sheets$data[["plate_id"]]
-#   )
-#
-#   # Validate bead array data
-#   bead_array_validation <- validate_batch_bead_array_data(
-#     combined_plate_data = batch_plate_data(),
-#     antigen_import_list = all_sheets$data[["antigen_list"]],
-#     blank_keyword = input$batch_blank
-#   )
-#
-#   # Update validation state
-#   if (bead_array_validation$is_valid && validate_metadata_result$is_valid) {
-#     batch_validation_state(list(
-#       is_validated = TRUE,
-#       is_uploaded = FALSE,
-#       validation_time = Sys.time(),
-#       upload_time = NULL,
-#       metadata_result = validate_metadata_result,
-#       bead_array_result = bead_array_validation
-#     ))
-#     batch_metadata(batch_metadata_data)
-#
-#     cat("✓ VALIDATION PASSED!\n")
-#     cat("╚══════════════════════════════════════════════════════════╝\n\n")
-#
-#     showNotification(
-#       "Layout file validated successfully! Ready to upload to database.",
-#       type = "message",
-#       duration = 5
-#     )
-#   } else {
-#     batch_validation_state(list(
-#       is_validated = FALSE,
-#       is_uploaded = FALSE,
-#       validation_time = Sys.time(),
-#       upload_time = NULL,
-#       metadata_result = validate_metadata_result,
-#       bead_array_result = bead_array_validation
-#     ))
-#
-#     cat("✗ VALIDATION FAILED\n")
-#     cat("  Metadata valid:", validate_metadata_result$is_valid, "\n")
-#     cat("  Bead array valid:", bead_array_validation$is_valid, "\n")
-#     cat("╚══════════════════════════════════════════════════════════╝\n\n")
-#
-#     showNotification(
-#       "Layout file uploaded but validation failed. Please review error messages.",
-#       type = "error",
-#       duration = 10
-#     )
-#   }
-#
-#   # =========================================================================
-#   # DEBUG: Verify that the reactive chain will fire
-#   # =========================================================================
-#   cat("\n=== POST-UPLOAD VERIFICATION ===\n")
-#   current_sheets <- layout_template_sheets()
-#   cat("layout_template_sheets() now contains", length(current_sheets), "sheets\n")
-#   if (length(current_sheets) > 0) {
-#     cat("  → plates_map present:", !is.null(current_sheets[["plates_map"]]), "\n")
-#     cat("  → plate_id present:", !is.null(current_sheets[["plate_id"]]), "\n")
-#     if (!is.null(current_sheets[["plates_map"]]) && !is.null(current_sheets[["plate_id"]])) {
-#       cat("  ✓ Both required sheets present - plate_layout_plots() should render\n")
-#     }
-#   }
-#   cat("================================\n\n")
-# })
+  layout_upload_state(list(
+    is_uploaded = TRUE,
+    upload_time = Sys.time(),
+    current_study = current_study,
+    current_experiment = current_experiment,
+    processing = FALSE
+  ))
+
+  message("[Layout Upload] Complete")
+
+  }, error = function(e) {
+    # Reset state on error
+    layout_upload_state(list(
+      is_uploaded = FALSE,
+      upload_time = NULL,
+      current_study = current_study,
+      current_experiment = current_experiment,
+      processing = FALSE
+    ))
+
+    showNotification(paste("Error:", e$message), type = "error")
+  })
+
+  cat("╚══════════════════════════════════════════════════════════╝\n\n")
+
+}, ignoreInit = TRUE, ignoreNULL = TRUE)
 
 # observeEvent(input$upload_layout_file, {
 #   req(input$readxMap_study_accession)
@@ -2949,20 +2506,6 @@ observeEvent(input$upload_layout_file, {
 #     workspace_id = workspace_id,
 #     currentuser = currentuser
 #   )
-#
-#   # batch_header <- transpose_batch_header(batch_header_wide)
-#   #
-#   # # Debug: Check what columns are in batch_header
-#   # cat("\n=== DEBUG: batch_header columns after construct_batch_upload_metadata ===\n")
-#   # for (nm in names(batch_header)) {
-#   #   cat("  ", nm, "columns:", paste(names(batch_header[[nm]]), collapse = ", "), "\n")
-#   #   if ("sample_dilution_factor" %in% names(batch_header[[nm]])) {
-#   #     cat("    sample_dilution_factor values:", paste(batch_header[[nm]]$sample_dilution_factor, collapse = ", "), "\n")
-#   #   }
-#   # }
-#   #
-#   # # Prepare metadata
-#   # batch_metadata_data <- combine_plate_metadata(head_list = batch_header)
 #
 #   # Verify sample_dilution_factor is present
 #   batch_metadata_data <- batch_header
@@ -3159,74 +2702,179 @@ observeEvent(input$xPonentFile, {
       bead_array_result = NULL
     ))
 
-    # NOTE: view_layout_file_ui will return NULL automatically
-    # because layout_template_sheets() was set to list() above.
-    # DO NOT re-assign the output here as it breaks the reactive chain.
+    # Remove the dynamically generated buttons
+    output$view_layout_file_ui <- renderUI({NULL})
 
   }
 })
 
 observeEvent(input$upload_batch_button, {
+  req(batch_metadata())
+  req(layout_template_sheets())
+  # Get current validation state
+  validation_state <- batch_validation_state()
 
-  # Get input data
-  batch_plates <- batch_plate_data()
-  metadata_batch <- batch_metadata()
-  layout_sheets <- layout_template_sheets()
+  # GUARD: Prevent storing if not validated
+  if (!isTRUE(validation_state$is_validated)) {
+    showNotification("Please validate data before storing.", type = "warning")
+    return()
+  }
 
-  # Debug: Check subject_groups
-  cat("\n=== DEBUG: subject_groups (subject_map) ===\n")
-  subject_map <- layout_sheets[["subject_groups"]]
-  print(head(subject_map))
-  cat("Columns:", paste(names(subject_map), collapse = ", "), "\n")
+  # GUARD: Prevent duplicate storage
+  if (isTRUE(validation_state$data_stored)) {
+    showNotification("Data has already been stored.", type = "message")
+    return()
+  }
 
-  # Perform upload
-  upload_result <- upload_batch_to_database(
-    conn = conn,
-    batch_plates = batch_plates,
-    metadata_batch = metadata_batch,
-    layout_sheets = layout_sheets
+  message("[Data Store] Starting...")
+
+  tryCatch({
+  state <- batch_validation_state()
+  req(state$is_validated)
+
+  # =========================================================================
+  # GUARD: Prevent duplicate uploads
+  # =========================================================================
+  if (isTRUE(state$is_uploaded)) {
+    cat("⚠️  Batch already uploaded, skipping...\n")
+    showNotification("This batch has already been uploaded.", type = "warning")
+    return()
+  }
+
+  # Check if upload is already in progress
+  if (isTRUE(state$upload_in_progress)) {
+    cat("⚠️  Upload already in progress, skipping...\n")
+    showNotification("Upload is already in progress. Please wait.", type = "warning")
+    return()
+  }
+
+  # Create upload hash to prevent duplicates
+  upload_hash <- digest::digest(
+    paste(
+      unique(batch_metadata()$study_name),
+      unique(batch_metadata()$experiment_name),
+      paste(unique(batch_metadata()$plate_id), collapse = "_"),
+      sep = "_"
+    ),
+    algo = "md5"
   )
 
-  if (upload_result$success) {
-    # Update validation state to reflect successful upload
-    current_state <- batch_validation_state()
-    batch_validation_state(list(
-      is_validated = current_state$is_validated,
-      is_uploaded = TRUE,  # Mark as uploaded
-      validation_time = current_state$validation_time,
-      upload_time = Sys.time(),
-      metadata_result = current_state$metadata_result,
-      bead_array_result = current_state$bead_array_result
-    ))
+  current_processing_state <- batch_processing_state()
+  if (!is.null(current_processing_state$last_upload_hash) &&
+      current_processing_state$last_upload_hash == upload_hash) {
+    cat("⚠️  This exact batch was already uploaded, skipping...\n")
+    showNotification("This batch has already been uploaded.", type = "warning")
+    return()
   }
 
-  # Handle result
-  if (upload_result$already_exists) {
-    showNotification(
-      upload_result$message,
-      type = "warning",
-      duration = 5
+  # =========================================================================
+  # MARK AS UPLOADING to prevent concurrent uploads
+  # =========================================================================
+  batch_validation_state(list(
+    is_validated = state$is_validated,
+    is_uploaded = FALSE,
+    validation_time = state$validation_time,
+    upload_time = NULL,
+    metadata_result = state$metadata_result,
+    bead_array_result = state$bead_array_result,
+    upload_in_progress = TRUE
+  ))
+
+  cat("\n╔══════════════════════════════════════════════════════════╗\n")
+  cat("║         UPLOADING BATCH TO DATABASE                      ║\n")
+  cat("╚══════════════════════════════════════════════════════════╝\n")
+
+  showNotification(
+    id = "upload_progress",
+    "Uploading batch data...",
+    type = "message",
+    duration = NULL
+  )
+
+  # Perform upload
+  upload_result <- tryCatch({
+    upload_batch_to_database(
+      conn = conn,
+      batch_plates = batch_plate_data(),
+      metadata_batch = batch_metadata(),
+      layout_sheets = layout_template_sheets()
     )
-    return(NULL)
-  }
+  }, error = function(e) {
+    cat("  ✗ Upload error:", conditionMessage(e), "\n")
+    list(
+      success = FALSE,
+      already_exists = FALSE,
+      message = conditionMessage(e),
+      errors = list(general = conditionMessage(e))
+    )
+  })
 
+  removeNotification("upload_progress")
+
+  # =========================================================================
+  # HANDLE UPLOAD RESULT
+  # =========================================================================
   if (upload_result$success) {
+    # Update processing state with hash to prevent re-upload
+    batch_processing_state(list(
+      is_processing = FALSE,
+      last_layout_hash = current_processing_state$last_layout_hash,
+      last_validation_hash = current_processing_state$last_validation_hash,
+      last_upload_hash = upload_hash
+    ))
+
+    # Final state update - mark as uploaded
+    batch_validation_state(list(
+      is_validated = state$is_validated,
+      is_uploaded = TRUE,
+      validation_time = state$validation_time,
+      upload_time = Sys.time(),
+      metadata_result = state$metadata_result,
+      bead_array_result = state$bead_array_result,
+      upload_in_progress = FALSE
+    ))
+
     counts <- upload_result$counts
     detail_message <- sprintf(
-      "Uploaded: %d headers, %d samples, %d standards, %d blanks, %d controls, %d antigens, %d visits",
-      counts$header,
-      counts$samples,
-      counts$standards,
-      counts$blanks,
-      counts$controls,
-      counts$antigens,
-      counts$visits
+      "Uploaded: %d headers, %d samples, %d standards, %d blanks, %d controls",
+      counts$header, counts$samples, counts$standards, counts$blanks, counts$controls
     )
+
+    cat("✓ Upload successful!\n")
+    cat("  ", detail_message, "\n")
 
     showNotification("Batch Uploaded Successfully", type = "message", duration = 5)
     showNotification(detail_message, type = "message", duration = 10)
 
+  } else if (upload_result$already_exists) {
+    # Plates already exist - don't mark as error, just warn
+    batch_validation_state(list(
+      is_validated = state$is_validated,
+      is_uploaded = TRUE,  # Mark as uploaded since data exists
+      validation_time = state$validation_time,
+      upload_time = Sys.time(),
+      metadata_result = state$metadata_result,
+      bead_array_result = state$bead_array_result,
+      upload_in_progress = FALSE
+    ))
+
+    cat("⚠️  Plates already exist in database\n")
+    showNotification(upload_result$message, type = "warning", duration = 5)
+
   } else {
+    # Revert upload state on failure
+    batch_validation_state(list(
+      is_validated = state$is_validated,
+      is_uploaded = FALSE,
+      validation_time = state$validation_time,
+      upload_time = NULL,
+      metadata_result = state$metadata_result,
+      bead_array_result = state$bead_array_result,
+      upload_in_progress = FALSE
+    ))
+
+    cat("✗ Upload failed:", upload_result$message, "\n")
+
     # Show main error
     showNotification(
       paste("Upload failed:", upload_result$message),
@@ -3234,16 +2882,109 @@ observeEvent(input$upload_batch_button, {
       duration = NULL
     )
 
-    # Show specific errors
-    for (error_name in names(upload_result$errors)) {
-      showNotification(
-        paste(error_name, "error:", upload_result$errors[[error_name]]),
-        type = "error",
-        duration = NULL
-      )
+    # Show specific errors if any
+    if (length(upload_result$errors) > 0) {
+      for (error_name in names(upload_result$errors)) {
+        showNotification(
+          paste(error_name, "error:", upload_result$errors[[error_name]]),
+          type = "error",
+          duration = NULL
+        )
+      }
     }
   }
-})
+  current_state <- batch_validation_state()
+  batch_validation_state(modifyList(current_state, list(data_stored = TRUE)))
+
+  showNotification("Data stored successfully!", type = "message")
+  message("[Data Store] Complete")
+
+  }, error = function(e) {
+    showNotification(paste("Storage error:", e$message), type = "error")
+  })
+
+  cat("╚══════════════════════════════════════════════════════════╝\n\n")
+
+}, ignoreInit = TRUE, ignoreNULL = TRUE)
+
+# observeEvent(input$upload_batch_button, {
+#
+#   # Get input data
+#   batch_plates <- batch_plate_data()
+#   metadata_batch <- batch_metadata()
+#   layout_sheets <- layout_template_sheets()
+#
+#   # Debug: Check subject_groups
+#   cat("\n=== DEBUG: subject_groups (subject_map) ===\n")
+#   subject_map <- layout_sheets[["subject_groups"]]
+#   print(head(subject_map))
+#   cat("Columns:", paste(names(subject_map), collapse = ", "), "\n")
+#
+#   # Perform upload
+#   upload_result <- upload_batch_to_database(
+#     conn = conn,
+#     batch_plates = batch_plates,
+#     metadata_batch = metadata_batch,
+#     layout_sheets = layout_sheets
+#   )
+#
+#   if (upload_result$success) {
+#     # Update validation state to reflect successful upload
+#     current_state <- batch_validation_state()
+#     batch_validation_state(list(
+#       is_validated = current_state$is_validated,
+#       is_uploaded = TRUE,  # Mark as uploaded
+#       validation_time = current_state$validation_time,
+#       upload_time = Sys.time(),
+#       metadata_result = current_state$metadata_result,
+#       bead_array_result = current_state$bead_array_result
+#     ))
+#   }
+#
+#   # Handle result
+#   if (upload_result$already_exists) {
+#     showNotification(
+#       upload_result$message,
+#       type = "warning",
+#       duration = 5
+#     )
+#     return(NULL)
+#   }
+#
+#   if (upload_result$success) {
+#     counts <- upload_result$counts
+#     detail_message <- sprintf(
+#       "Uploaded: %d headers, %d samples, %d standards, %d blanks, %d controls, %d antigens, %d visits",
+#       counts$header,
+#       counts$samples,
+#       counts$standards,
+#       counts$blanks,
+#       counts$controls,
+#       counts$antigens,
+#       counts$visits
+#     )
+#
+#     showNotification("Batch Uploaded Successfully", type = "message", duration = 5)
+#     showNotification(detail_message, type = "message", duration = 10)
+#
+#   } else {
+#     # Show main error
+#     showNotification(
+#       paste("Upload failed:", upload_result$message),
+#       type = "error",
+#       duration = NULL
+#     )
+#
+#     # Show specific errors
+#     for (error_name in names(upload_result$errors)) {
+#       showNotification(
+#         paste(error_name, "error:", upload_result$errors[[error_name]]),
+#         type = "error",
+#         duration = NULL
+#       )
+#     }
+#   }
+# })
 
 # SERVER: Execute deletion when confirmation is received
 observeEvent(input$delete_confirmation, {

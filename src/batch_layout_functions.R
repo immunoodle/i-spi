@@ -12,6 +12,14 @@ reset_batch_reactives <- function() {
     cat("  ✓ Clearing batch_metadata:", nrow(batch_metadata()), "rows\n")
   }
 
+  if (length(bead_array_header_list()) > 0) {
+    cat("  ✓ Clearing bead_array_header_list:", length(bead_array_header_list()), "items\n")
+  }
+
+  if (length(bead_array_plate_list()) > 0) {
+    cat("  ✓ Clearing bead_array_plate_list:", length(bead_array_plate_list()), "items\n")
+  }
+
   if (length(layout_template_sheets()) > 0) {
     cat("  ✓ Clearing layout_template_sheets:", length(layout_template_sheets()), "sheets\n")
   }
@@ -24,7 +32,6 @@ reset_batch_reactives <- function() {
   # because length(NULL) is 0 but length(list()) is also 0
   # and the reactive checks depend on this
   layout_template_sheets(list())
-
   inLayoutFile(NULL)
   avaliableLayoutSheets(NULL)
 
@@ -32,25 +39,50 @@ reset_batch_reactives <- function() {
   bead_array_header_list(list())
   bead_array_plate_list(list())
 
-  # Reset description status to unchecked state
+  # DESCRIPTION STATUS
   description_status(list(
-    has_content = TRUE,  # Default to TRUE to avoid false warnings
+    has_content = TRUE,
     has_sufficient_elements = TRUE,
     min_elements_found = 0,
     required_elements = 3,
-    checked = FALSE,  # IMPORTANT: Set to FALSE so warning UI doesn't show
+    checked = FALSE,
     message = NULL
   ))
+  cat("  ✓ Reset description_status to default\n")
 
-  # Reset validation state
+  # VALIDATION STATE
   batch_validation_state(list(
     is_validated = FALSE,
     is_uploaded = FALSE,
     validation_time = NULL,
     upload_time = NULL,
     metadata_result = NULL,
-    bead_array_result = NULL
+    bead_array_result = NULL,
+    upload_in_progress = FALSE
   ))
+  cat("  ✓ Reset batch_validation_state\n")
+
+  # PROCESSING STATE - Reset hashes to allow new uploads
+  batch_processing_state(list(
+    is_processing = FALSE,
+    last_layout_hash = NULL,
+    last_validation_hash = NULL,
+    last_upload_hash = NULL
+  ))
+  cat("  ✓ Reset batch_processing_state\n")
+
+  # RELEASE PROCESSING LOCK
+  layout_processing_lock(FALSE)
+  cat("  ✓ Released layout_processing_lock\n")
+
+  layout_upload_state(list(
+    is_uploaded = FALSE,
+    upload_time = NULL,
+    current_study = NULL,
+    current_experiment = NULL,
+    processing = FALSE
+  ))
+  cat("  ✓ Reset layout_upload_state\n")
 
   cat("  ✓ All reactives reset to NULL/empty\n")
   cat("╚══════════════════════════════════════════════════════════╝\n\n")
@@ -217,6 +249,13 @@ output$descriptionHasSufficientElements <- reactive({
 })
 outputOptions(output, "descriptionHasSufficientElements", suspendWhenHidden = FALSE)
 
+output$layoutIsUploaded <- reactive({
+  state <- layout_upload_state()
+  return(isTRUE(state$is_uploaded))
+})
+outputOptions(output, "layoutIsUploaded", suspendWhenHidden = FALSE)
+
+
 # Clear any leftover temp directories from previous sessions
 onSessionStart <- function() {
   tmpdir <- file.path(tempdir(), "uploaded_batch")
@@ -225,6 +264,32 @@ onSessionStart <- function() {
     cat("Cleared temp directory from previous session\n")
   }
 }
+
+# HELPER FUNCTION: Extract plate number from text (filename, plateid, etc.)
+# Looks for patterns like "plate_3", "plate 3", "plate.3", "plate3"
+# This function is also defined in batch_layout_functions.R but is duplicated
+# here to ensure availability in the upload_experiment_files observer.
+extract_plate_number <- function(text) {
+  if (is.na(text) || text == "") return(NA_character_)
+
+  # Try multiple patterns to extract plate number
+  # Pattern 1: "plate" followed by separator and number (plate_3, plate 3, plate.3, plate-3)
+  match1 <- regmatches(text, regexpr("[Pp]late[_\\s\\.-]+(\\d+)", text, perl = TRUE))
+  if (length(match1) > 0 && nchar(match1) > 0) {
+    num <- gsub("[^0-9]", "", match1)
+    if (nchar(num) > 0) return(paste0("plate_", num))
+  }
+
+  # Pattern 2: Just "plate" followed immediately by number (plate3, plate1IgGtot...)
+  match2 <- regmatches(text, regexpr("[Pp]late(\\d+)", text, perl = TRUE))
+  if (length(match2) > 0 && nchar(match2) > 0) {
+    num <- gsub("[^0-9]", "", match2)
+    if (nchar(num) > 0) return(paste0("plate_", num))
+  }
+
+  return(NA_character_)
+}
+
 
 #' Clean and standardize plate_id from file path
 #'
@@ -1156,30 +1221,54 @@ generate_layout_template <- function(all_plates,
     cat("  ✓ Created plate_filename from header_list names\n")
   }
 
+  # # HELPER FUNCTION: Extract plate number from text (filename, plateid, etc.)
+  # # Looks for patterns like "plate_3", "plate 3", "plate.3", "plate3"
+  # # This function is also defined in batch_layout_functions.R but is duplicated
+  # # here to ensure availability in the upload_experiment_files observer.
+  # extract_plate_number <- function(text) {
+  #   if (is.na(text) || text == "") return(NA_character_)
+  #
+  #   # Try multiple patterns to extract plate number
+  #   # Pattern 1: "plate" followed by separator and number (plate_3, plate 3, plate.3, plate-3)
+  #   match1 <- regmatches(text, regexpr("[Pp]late[_\\s\\.-]+(\\d+)", text, perl = TRUE))
+  #   if (length(match1) > 0 && nchar(match1) > 0) {
+  #     num <- gsub("[^0-9]", "", match1)
+  #     if (nchar(num) > 0) return(paste0("plate_", num))
+  #   }
+  #
+  #   # Pattern 2: Just "plate" followed immediately by number (plate3, plate1IgGtot...)
+  #   match2 <- regmatches(text, regexpr("[Pp]late(\\d+)", text, perl = TRUE))
+  #   if (length(match2) > 0 && nchar(match2) > 0) {
+  #     num <- gsub("[^0-9]", "", match2)
+  #     if (nchar(num) > 0) return(paste0("plate_", num))
+  #   }
+  #
+  #   return(NA_character_)
+  # }
 
-  # Extract plate_number from filename or plateid
-  # Looks for patterns like "plate_3", "plate 3", "plate.3", "plate3"
-
-  extract_plate_number <- function(text) {
-    if (is.na(text) || text == "") return(NA_character_)
-
-    # Try multiple patterns to extract plate number
-    # Pattern 1: "plate" followed by separator and number (plate_3, plate 3, plate.3, plate-3)
-    match1 <- regmatches(text, regexpr("[Pp]late[_\\s\\.-]+(\\d+)", text, perl = TRUE))
-    if (length(match1) > 0 && nchar(match1) > 0) {
-      num <- gsub("[^0-9]", "", match1)
-      if (nchar(num) > 0) return(paste0("plate_", num))
-    }
-
-    # Pattern 2: Just "plate" followed immediately by number (plate3, plate1IgGtot...)
-    match2 <- regmatches(text, regexpr("[Pp]late(\\d+)", text, perl = TRUE))
-    if (length(match2) > 0 && nchar(match2) > 0) {
-      num <- gsub("[^0-9]", "", match2)
-      if (nchar(num) > 0) return(paste0("plate_", num))
-    }
-
-    return(NA_character_)
-  }
+  # # Extract plate_number from filename or plateid
+  # # Looks for patterns like "plate_3", "plate 3", "plate.3", "plate3"
+  #
+  # extract_plate_number <- function(text) {
+  #   if (is.na(text) || text == "") return(NA_character_)
+  #
+  #   # Try multiple patterns to extract plate number
+  #   # Pattern 1: "plate" followed by separator and number (plate_3, plate 3, plate.3, plate-3)
+  #   match1 <- regmatches(text, regexpr("[Pp]late[_\\s\\.-]+(\\d+)", text, perl = TRUE))
+  #   if (length(match1) > 0 && nchar(match1) > 0) {
+  #     num <- gsub("[^0-9]", "", match1)
+  #     if (nchar(num) > 0) return(paste0("plate_", num))
+  #   }
+  #
+  #   # Pattern 2: Just "plate" followed immediately by number (plate3, plate1IgGtot...)
+  #   match2 <- regmatches(text, regexpr("[Pp]late(\\d+)", text, perl = TRUE))
+  #   if (length(match2) > 0 && nchar(match2) > 0) {
+  #     num <- gsub("[^0-9]", "", match2)
+  #     if (nchar(num) > 0) return(paste0("plate_", num))
+  #   }
+  #
+  #   return(NA_character_)
+  # }
 
   # Try to extract plate_number - prioritize plateid and source_file over existing 'plate' column
   # because 'plate' column may have been assigned consecutive numbers incorrectly

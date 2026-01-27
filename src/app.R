@@ -5,7 +5,7 @@ source("global.R", local = TRUE)
 
 # Set to 1 for local and do not push in prod
 # Sys.setenv(LOCAL_DEV = "1")
-local_email_user <- "seamus.owen.stein@dartmouth.edu"
+# # local_email_user <- "seamus.owen.stein@dartmouth.edu"
 # local_email_user <- "mscotzens@gmail.com"
 
 # Source authentication configuration (Step 1)
@@ -908,7 +908,8 @@ server <- function(input, output, session) {
         validation_time = NULL,
         upload_time = NULL,
         metadata_result = NULL,
-        bead_array_result = NULL
+        bead_array_result = NULL,
+        data_stored = FALSE  # NEW: Track if data has been stored to prevent duplicates
       ))
 
       description_status <- reactiveVal(list(
@@ -919,6 +920,25 @@ server <- function(input, output, session) {
         checked = FALSE,
         message = NULL
       ))
+
+      # Add these to prevent multiple executions
+      batch_processing_state <- reactiveVal(list(
+        is_processing = FALSE,
+        last_layout_hash = NULL,
+        last_validation_hash = NULL,
+        last_upload_hash = NULL
+      ))
+
+      layout_upload_state <- reactiveVal(list(
+        is_uploaded = FALSE,
+        upload_time = NULL,
+        current_study = NULL,
+        current_experiment = NULL,
+        processing = FALSE
+      ))
+
+      # Debounce flag for layout processing
+      layout_processing_lock <- reactiveVal(FALSE)
 
       delete_confirmed <- reactiveVal(FALSE)
 
@@ -963,6 +983,7 @@ server <- function(input, output, session) {
       source("std_curve_functions.R", local = TRUE)
       source("db_functions.R", local = TRUE)
       source("model_functions.R", local = TRUE)
+      # source("se_x_robust_fix.R", local = TRUE)
       source("plot_functions.R", local = TRUE)
       source("batch_fit_functions.R", local = TRUE)
 
