@@ -3,54 +3,46 @@ reset_batch_reactives <- function() {
   cat("║         RESETTING ALL BATCH REACTIVES                    ║\n")
   cat("╚══════════════════════════════════════════════════════════╝\n")
 
-  # Log what's being cleared
+  # Log what's being cleared for debugging
   if (!is.null(batch_plate_data())) {
     cat("  ✓ Clearing batch_plate_data:", nrow(batch_plate_data()), "rows\n")
-    cat("    Source files:", paste(unique(batch_plate_data()$source_file), collapse = ", "), "\n")
   }
 
   if (!is.null(batch_metadata())) {
     cat("  ✓ Clearing batch_metadata:", nrow(batch_metadata()), "rows\n")
   }
 
-  if (length(bead_array_header_list()) > 0) {
-    cat("  ✓ Clearing bead_array_header_list:", length(bead_array_header_list()), "items\n")
-    cat("    Files:", paste(names(bead_array_header_list()), collapse = ", "), "\n")
-  }
-
-  if (length(bead_array_plate_list()) > 0) {
-    cat("  ✓ Clearing bead_array_plate_list:", length(bead_array_plate_list()), "items\n")
-  }
-
   if (length(layout_template_sheets()) > 0) {
     cat("  ✓ Clearing layout_template_sheets:", length(layout_template_sheets()), "sheets\n")
   }
 
-  # CORE BATCH DATA REACTIVES
+  # CRITICAL: Set all reactives to NULL/empty - this triggers UI invalidation
   batch_plate_data(NULL)
   batch_metadata(NULL)
 
-  # LAYOUT TEMPLATE REACTIVES
+  # IMPORTANT: Use list() not NULL for layout_template_sheets
+  # because length(NULL) is 0 but length(list()) is also 0
+  # and the reactive checks depend on this
   layout_template_sheets(list())
+
   inLayoutFile(NULL)
   avaliableLayoutSheets(NULL)
 
-  # BEAD ARRAY DATA
+  # Bead array data
   bead_array_header_list(list())
   bead_array_plate_list(list())
 
-  # DESCRIPTION STATUS (NEW)
+  # Reset description status to unchecked state
   description_status(list(
-    has_content = TRUE,
+    has_content = TRUE,  # Default to TRUE to avoid false warnings
     has_sufficient_elements = TRUE,
     min_elements_found = 0,
     required_elements = 3,
-    checked = FALSE,
+    checked = FALSE,  # IMPORTANT: Set to FALSE so warning UI doesn't show
     message = NULL
   ))
-  cat("  ✓ Reset description_status to default\n")
 
-  # VALIDATION STATE
+  # Reset validation state
   batch_validation_state(list(
     is_validated = FALSE,
     is_uploaded = FALSE,
@@ -59,11 +51,77 @@ reset_batch_reactives <- function() {
     metadata_result = NULL,
     bead_array_result = NULL
   ))
-  cat("  ✓ Reset batch_validation_state\n")
 
   cat("  ✓ All reactives reset to NULL/empty\n")
   cat("╚══════════════════════════════════════════════════════════╝\n\n")
 }
+
+# reset_batch_reactives <- function() {
+#   cat("\n╔══════════════════════════════════════════════════════════╗\n")
+#   cat("║         RESETTING ALL BATCH REACTIVES                    ║\n")
+#   cat("╚══════════════════════════════════════════════════════════╝\n")
+#
+#   # Log what's being cleared
+#   if (!is.null(batch_plate_data())) {
+#     cat("  ✓ Clearing batch_plate_data:", nrow(batch_plate_data()), "rows\n")
+#     cat("    Source files:", paste(unique(batch_plate_data()$source_file), collapse = ", "), "\n")
+#   }
+#
+#   if (!is.null(batch_metadata())) {
+#     cat("  ✓ Clearing batch_metadata:", nrow(batch_metadata()), "rows\n")
+#   }
+#
+#   if (length(bead_array_header_list()) > 0) {
+#     cat("  ✓ Clearing bead_array_header_list:", length(bead_array_header_list()), "items\n")
+#     cat("    Files:", paste(names(bead_array_header_list()), collapse = ", "), "\n")
+#   }
+#
+#   if (length(bead_array_plate_list()) > 0) {
+#     cat("  ✓ Clearing bead_array_plate_list:", length(bead_array_plate_list()), "items\n")
+#   }
+#
+#   if (length(layout_template_sheets()) > 0) {
+#     cat("  ✓ Clearing layout_template_sheets:", length(layout_template_sheets()), "sheets\n")
+#   }
+#
+#   # CORE BATCH DATA REACTIVES
+#   batch_plate_data(NULL)
+#   batch_metadata(NULL)
+#
+#   # LAYOUT TEMPLATE REACTIVES
+#   layout_template_sheets(list())
+#   inLayoutFile(NULL)
+#   avaliableLayoutSheets(NULL)
+#
+#   # BEAD ARRAY DATA
+#   bead_array_header_list(list())
+#   bead_array_plate_list(list())
+#
+#   # DESCRIPTION STATUS (NEW)
+#   description_status(list(
+#     has_content = TRUE,
+#     has_sufficient_elements = TRUE,
+#     min_elements_found = 0,
+#     required_elements = 3,
+#     checked = FALSE,
+#     message = NULL
+#   ))
+#   cat("  ✓ Reset description_status to default\n")
+#
+#   # VALIDATION STATE
+#   batch_validation_state(list(
+#     is_validated = FALSE,
+#     is_uploaded = FALSE,
+#     validation_time = NULL,
+#     upload_time = NULL,
+#     metadata_result = NULL,
+#     bead_array_result = NULL
+#   ))
+#   cat("  ✓ Reset batch_validation_state\n")
+#
+#   cat("  ✓ All reactives reset to NULL/empty\n")
+#   cat("╚══════════════════════════════════════════════════════════╝\n\n")
+# }
 
 #' Reset all batch-related UI elements
 #'
