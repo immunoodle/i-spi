@@ -2446,7 +2446,7 @@ observeEvent(input$upload_layout_file, {
   cat("╚══════════════════════════════════════════════════════════╝\n\n")
 
   # Construct batch header metadata
-  batch_header <<- construct_batch_upload_metadata(
+  batch_header <- construct_batch_upload_metadata(
     plates_map = all_sheets$data[["plates_map"]],
     plate_metadata_list = bead_array_header_list_data,
     workspace_id = workspace_id,

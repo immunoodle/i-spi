@@ -1199,6 +1199,9 @@ generate_layout_template <- function(all_plates,
   # Combine header list
   plate_id <- do.call(rbind, header_list)
 
+  # plate_id_df_v <<- plate_id
+  # all_plates_v <<- all_plates
+
   # DIAGNOSTIC
   cat("\n=== GENERATE LAYOUT TEMPLATE DEBUG ===\n")
   cat("Header columns before processing:", paste(names(plate_id), collapse=", "), "\n")
@@ -1207,6 +1210,10 @@ generate_layout_template <- function(all_plates,
   plate_id$study_name <- study_accession
   plate_id$experiment_name <- experiment_accession
   plate_id$number_of_wells <- n_wells
+
+    if ("source_file" %in% names(plate_id) && !all(is.na(plate_id$source_file))) {
+      plate_id$plateid <- clean_plate_id(plate_id$source_file)
+    }
 
   # Handle plate_filename first (needed for plate_number extraction)
   if ("file_name" %in% names(plate_id)) {
@@ -2687,7 +2694,7 @@ construct_batch_upload_metadata <- function(plates_map, plate_metadata_list, cur
   cat("\n")
 
   source_file_by_plate <- extract_plate_identifiers(plate_metadata_list)
-  Source_file_by_plate_v <<- source_file_by_plate
+  # Source_file_by_plate_v <<- source_file_by_plate
   source_file_by_plate <- add_clean_plate_id_to_identifiers(source_file_by_plate)
   source_file_by_plate$plate_number <- source_file_by_plate$plate
 
