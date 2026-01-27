@@ -484,7 +484,8 @@ plot_standard_curve <- function(best_fit,
     name = "Measurement Uncertainty",
     yaxis = "y3",
     line = unc_col,
-    legendgroup = "linked_uncertainty"
+    legendgroup = "linked_uncertainty",
+    visible = "legendonly"
   ) %>% add_trace(
     data = samples_predicted_conc,
     x = ~predicted_concentration,
@@ -498,14 +499,16 @@ plot_standard_curve <- function(best_fit,
     yaxis = "y3",
     legendgroup = "linked_uncertainty",
     showlegend = FALSE,
-    hovertemplate = "%{text}<extra></extra>"
+    hovertemplate = "%{text}<extra></extra>",
+    visible = "legendonly"
   ) %>% add_lines(
     x = best_fit$best_pred$x,
     y = best_fit$best_pred$pcov_threshold,
     name = paste0("pCoV Threshold: ",best_fit$best_pred$pcov_threshold,"%"),
     yaxis = "y3",
     line = list(color = "orange", dash = "dash"),
-    legendgroup = "linked_uncertainty"
+    legendgroup = "linked_uncertainty",
+    visible = "legendonly"
   )
 
   ### ------------------------
