@@ -3024,6 +3024,42 @@ fit_raw_assay_response_model <- function(sub_df) {
   ))
 }
 
+# returns antigens valid or length
+#  check_unique_dilutions_per_antigen <- function(selected_study, selected_experiment, is_log_mfi_axis) {
+#
+#    ds <- prepare_lm_sample_data(
+#      study_accession = selected_study,
+#      experiment_accession = selected_experiment,
+#      is_log_mfi_axis = is_log_mfi_axis,
+#      response_type = "raw_assay_response"
+#    )
+#
+#    dilution_counts_multi <- ds %>%
+#      dplyr::group_by(
+#        study_accession,
+#        experiment_accession,
+#        antigen,
+#        plate,
+#        patientid,
+#        timeperiod
+#      ) %>%
+#      dplyr::summarise(
+#        n_dilutions = dplyr::n_distinct(dilution)
+#      )
+#
+#    antigen_validity <- dilution_counts_multi %>%
+#      dplyr::group_by(study_accession, experiment_accession, antigen, plate) %>%
+#      dplyr::summarise(
+#        has_multidilution = any(n_dilutions > 1),
+#        .groups = "drop"
+#      )
+#
+#    antigen_validity <<- antigen_validity[antigen_validity$has_multidilution == T,]$antigen
+#
+#    cat("end of call of antigen validity")
+#    return(antigen_validity)
+#
+# }
 # Preform dilutional linearity regression and checks if there are more than 1 unique dilution
 dil_lin_regress <- function(distinct_samples, response_type, exclude_conc_samples) {
   # cat("NAMES of Distinct Samples")
@@ -3084,10 +3120,10 @@ dil_lin_regress <- function(distinct_samples, response_type, exclude_conc_sample
 
  # print(head(y_dilution_df))
   dilution_df <- merge(x_dilution_df, y_dilution_df, by = c("study_accession", "experiment_accession", "antigen", "plate", "patientid", "timeperiod"), all.x = T)
-  # Handle when patients are not across dilutions.
-  if (all(is.na(dilution_df$y_dilution))) {
-    dilution_df <- merge(x_dilution_df, y_dilution_df, by = c("study_accession", "experiment_accession", "antigen", "plate"), all.x = T)
-  }
+  # # Handle when patients are not across dilutions.
+  # if (all(is.na(dilution_df$y_dilution))) {
+  #   dilution_df <- merge(x_dilution_df, y_dilution_df, by = c("study_accession", "experiment_accession", "antigen", "plate"), all.x = T)
+  # }
   # Keep all original data including too concentrated samples
   # cat("Excluding concentrated samples")
   # print(exclude_conc_samples)
