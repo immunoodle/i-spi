@@ -133,9 +133,9 @@ dilutionalLinearityServer <- function(id, selected_study, selected_experiment, c
         antigen_choices <-  unique(gated_data$antigen)
       }
 
-      check_length <<- length(valid_dilution_antigens())
+      check_length <- length(valid_dilution_antigens())
       if (check_length > 0) {
-      valid_antigens <<- valid_dilution_antigens()
+      valid_antigens <- valid_dilution_antigens()
       selectInput(ns("antigen_da_lin_selector"),
                   label = "Select Antigen",
                   choices = antigen_choices[antigen_choices %in% valid_antigens],
