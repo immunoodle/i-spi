@@ -15,7 +15,7 @@ observeEvent(list(
  # req(input$inLoadedData, input$readxMap_experiment_accession)
  # input$readxMap_experiment_accession
   if (input$advanced_qc_component == "Dilution Analysis") {
-    showNotification(id = "load_dilution_analysis", HTML("Loading Dilution Analyis<span class = 'dots'>"), duration = NULL)
+    showNotification(id = "load_dilution_analysis", HTML("Loading Dilution Analysis<span class = 'dots'>"), duration = NULL)
     selected_study <- input$readxMap_study_accession # selected_studyexpplate$study_accession
     selected_experiment <- input$readxMap_experiment_accession #selected_studyexpplate$experiment_accession
 
@@ -617,7 +617,7 @@ observeEvent(list(
 
       node_order_in <- strsplit(study_configuration[study_configuration$param_name == "node_order",]$param_character_value, ",")[[1]]
 
-      gated_data <- calculate_sample_concentration_status_new(conn = conn,
+      gated_data <<- calculate_sample_concentration_status_new(conn = conn,
                                                               study_accession = selected_study, experiment_accession = selected_experiment, node_order = node_order_in)
       if (nrow(gated_data) == 0) {
         return(NULL)
@@ -631,7 +631,7 @@ observeEvent(list(
       print(names(da_subjtime))
 
      # print(table(da_subjtime$n_pass_d, da_subjtime$au_treatment))
-      clm <- da_subjtime # Download this
+      clm <<- da_subjtime # Download this
       removeNotification(id = "load_dilution_analysis")
 
       return(da_subjtime)
