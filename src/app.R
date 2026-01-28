@@ -4,8 +4,8 @@
 source("global.R", local = TRUE)
 
 # Set to 1 for local and do not push in prod
-# Sys.setenv(LOCAL_DEV = "1")
-# # local_email_user <- "seamus.owen.stein@dartmouth.edu"
+#Sys.setenv(LOCAL_DEV = "1")
+local_email_user <- "seamus.owen.stein@dartmouth.edu"
 # local_email_user <- "mscotzens@gmail.com"
 
 # Source authentication configuration (Step 1)
@@ -966,6 +966,7 @@ server <- function(input, output, session) {
       source("antigen_family_ui.R", local = TRUE)
       source("load_previous_stored_data.R", local=TRUE)
       source("plate_validator_functions.R", local = TRUE)
+      source("generate_layout_template.R", local = TRUE)
       source("batch_layout_functions.R", local = TRUE)
       source("import_lumifile.R", local = TRUE)
       source("xPonentReader.R", local = TRUE)
