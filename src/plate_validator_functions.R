@@ -1172,7 +1172,11 @@ upload_batch_to_database <- function(conn, batch_plates, metadata_batch, layout_
   # Get unique identifiers
   study_accession <- unique(metadata_batch$study_name)
   experiment_accession <- unique(metadata_batch$experiment_name)
-  plateids <- unique(metadata_batch$plateid)
+
+  # The database xmap_header table stores the full cleaned plate identifier in 'plate_id'
+  # Using 'plateid' (which may have different values) caused duplicate uploads
+  plateids <- unique(metadata_batch$plate_id)
+  # plateids <- unique(metadata_batch$plateid)
 
   # Initialize result tracking
   result <- list(

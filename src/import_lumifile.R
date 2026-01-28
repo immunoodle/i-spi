@@ -1263,7 +1263,6 @@ output$batch_invalid_messages <- renderTable({
 #     NULL
 #   }
 # })
-
 output$upload_batch_data_button <- renderUI({
   # Explicit dependencies for proper invalidation
   metadata <- batch_metadata()
@@ -1277,24 +1276,36 @@ output$upload_batch_data_button <- renderUI({
 
   req(state)
 
-  metadata_batch <<- metadata
-  batch_study_accession <<- unique(metadata$study_name)
-  batch_experiment_accession <<- unique(metadata$experiment_name)
-  plates_to_upload <<- unique(metadata$plate_id)
+  metadata_batch <- metadata
+  batch_study_accession <- unique(metadata$study_name)
+  batch_experiment_accession <- unique(metadata$experiment_name)
 
-  # Build SQL list
-  plate_list_sql <<- paste0("'", paste(plates_to_upload, collapse = "', '"), "'")
+  # FIXED: Use plate_id for checking existing plates (consistent with database column)
+  plates_to_upload <- unique(metadata$plate_id)
 
+  # Debug logging
+  cat("\n=== UI DUPLICATE CHECK DEBUG ===\n")
+  cat("Checking for existing plates with plate_id values:\n")
+  cat(paste(plates_to_upload, collapse = ", "), "\n")
+  cat("================================\n")
+
+  # FIXED: Use proper parameterized query with glue_sql
+  # Do not pre-format the plate list - let glue_sql handle it
   query <- glue_sql("
     SELECT plate_id
     FROM madi_results.xmap_header
     WHERE study_accession = {batch_study_accession}
     AND experiment_accession IN ({batch_experiment_accession*})
-    AND plate_id IN ({plate_list_sql*});
+    AND plate_id IN ({plates_to_upload*});
   ", .con = conn)
   existing_plates <- DBI::dbGetQuery(conn, query)
 
   plates_exist_in_db <- nrow(existing_plates) > 0
+
+  cat("Plates already in DB:", plates_exist_in_db, "\n")
+  if (plates_exist_in_db) {
+    cat("Found existing:", paste(existing_plates$plate_id, collapse = ", "), "\n")
+  }
 
   # Determine badge status - use state$is_uploaded OR database check
   show_uploaded_badge <- state$is_uploaded || plates_exist_in_db
@@ -1314,6 +1325,57 @@ output$upload_batch_data_button <- renderUI({
     button
   )
 })
+
+# output$upload_batch_data_button <- renderUI({
+#   # Explicit dependencies for proper invalidation
+#   metadata <- batch_metadata()
+#   state <- batch_validation_state()
+#   sheets <- layout_template_sheets()
+#
+#   # Return NULL if no metadata or sheets (cleared state)
+#   if (is.null(metadata) || is.null(sheets) || length(sheets) == 0) {
+#     return(NULL)
+#   }
+#
+#   req(state)
+#
+#   metadata_batch <<- metadata
+#   batch_study_accession <<- unique(metadata$study_name)
+#   batch_experiment_accession <<- unique(metadata$experiment_name)
+#   plates_to_upload <<- unique(metadata$plate_id)
+#
+#   # Build SQL list
+#   plate_list_sql <<- paste0("'", paste(plates_to_upload, collapse = "', '"), "'")
+#
+#   query <- glue_sql("
+#     SELECT plate_id
+#     FROM madi_results.xmap_header
+#     WHERE study_accession = {batch_study_accession}
+#     AND experiment_accession IN ({batch_experiment_accession*})
+#     AND plate_id IN ({plate_list_sql*});
+#   ", .con = conn)
+#   existing_plates <- DBI::dbGetQuery(conn, query)
+#
+#   plates_exist_in_db <- nrow(existing_plates) > 0
+#
+#   # Determine badge status - use state$is_uploaded OR database check
+#   show_uploaded_badge <- state$is_uploaded || plates_exist_in_db
+#
+#   badge <- createUploadedBatchBadge(show_uploaded_badge)
+#
+#   # Show button only if validated AND not yet uploaded/existing
+#   button <- if (state$is_validated && !plates_exist_in_db && !state$is_uploaded) {
+#     actionButton("upload_batch_button", "Upload Batch")
+#   } else {
+#     NULL
+#   }
+#
+#   tagList(
+#     badge,
+#     br(),
+#     button
+#   )
+# })
 
 # output$upload_batch_data_button <- renderUI({
 #   req(batch_metadata())
