@@ -216,7 +216,7 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
        # standard_plates <- data.frame(plateid = unique(stored_fits[ , c("plateid")]),curve_plate = 1)
         # print(standard_plates)
 
-        stored_header <- merge(stored_header, stored_fits, by = c("project_id", "study_accession", "experiment_accession", "plate", "nominal_sample_dilution"), all.x = TRUE)
+        stored_header <- merge(stored_header, distinct(stored_fits[ , c("project_id", "study_accession", "experiment_accession", "plate", "nominal_sample_dilution","curve_plate")]), by = c("project_id", "study_accession", "experiment_accession", "plate", "nominal_sample_dilution"), all.x = TRUE)
        # stored_header <- merge(stored_header,standard_plates, by = "plateid", all.x = TRUE)
         # print(stored_header)
         stored_header$Curve_Status <- ifelse(stored_header$curve_plate==1,1,2)
