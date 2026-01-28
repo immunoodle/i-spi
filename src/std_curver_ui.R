@@ -751,7 +751,7 @@ observeEvent(list(
       experiment_accession,
       plateid,
       plate,
-      sample_dilution_factor,
+      nominal_sample_dilution,
       source,
       antigen
     FROM madi_results.best_glance_all
@@ -764,7 +764,7 @@ observeEvent(list(
 
       # #natural key (nk) vector for the glance
       keys <- c("study_accession", "experiment_accession", "plateid",
-                "plate", "sample_dilution_factor", "source", "antigen")
+                "plate", "nominal_sample_dilution", "source", "antigen")
 
 
       # attach the best_glance_all_id to the table

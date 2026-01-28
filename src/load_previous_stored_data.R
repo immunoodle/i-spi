@@ -27,24 +27,24 @@ observeEvent(input$stored_header_rows_selected, {
   # })
 
   ## identify if the standard curve data is present and store
-  check_standard <- stored_plates_data$stored_standard[ ,"plateid"]
-  selected_studyexpplate$nrows_standard <- length(check_standard[check_standard == selected_studyexpplate$plateid])
-  print(paste(selected_studyexpplate$plateid," nrows_standard:", selected_studyexpplate$nrows_standard))
-
-  ## identify if the 4 parameter standard curve is calculated and store
-  check_fits <- stored_plates_data$stored_fits[ ,"plateid"]
-  selected_studyexpplate$nrows_fits <- length(check_fits[check_fits == selected_studyexpplate$plateid])
-  print(paste(selected_studyexpplate$plateid," nrows_fits:", selected_studyexpplate$nrows_fits))
-
-  ## identify if the buffer data is available and store
-  check_buffer <- stored_plates_data$stored_buffer[ ,"plateid"]
-  selected_studyexpplate$nrows_buffer <- length(check_buffer[check_buffer == selected_studyexpplate$plateid])
-  print(paste(selected_studyexpplate$plateid," nrows_buffer:", selected_studyexpplate$nrows_buffer))
-
-  ## identify if the control data is available and store
-  check_control <- stored_plates_data$stored_control[ , c("plateid")]
-  selected_studyexpplate$nrows_control <- length(check_control[check_control == selected_studyexpplate$plateid])
-  print(paste(selected_studyexpplate$plateid," nrows_control:", selected_studyexpplate$nrows_control))
+  # check_standard <- stored_plates_data$stored_standard[ ,"plateid"]
+  # selected_studyexpplate$nrows_standard <- length(check_standard[check_standard == selected_studyexpplate$plateid])
+  # print(paste(selected_studyexpplate$plateid," nrows_standard:", selected_studyexpplate$nrows_standard))
+  #
+  # ## identify if the 4 parameter standard curve is calculated and store
+  # check_fits <- stored_plates_data$stored_fits[ ,"plateid"]
+  # selected_studyexpplate$nrows_fits <- length(check_fits[check_fits == selected_studyexpplate$plateid])
+  # print(paste(selected_studyexpplate$plateid," nrows_fits:", selected_studyexpplate$nrows_fits))
+  #
+  # ## identify if the buffer data is available and store
+  # check_buffer <- stored_plates_data$stored_buffer[ ,"plateid"]
+  # selected_studyexpplate$nrows_buffer <- length(check_buffer[check_buffer == selected_studyexpplate$plateid])
+  # print(paste(selected_studyexpplate$plateid," nrows_buffer:", selected_studyexpplate$nrows_buffer))
+  #
+  # ## identify if the control data is available and store
+  # check_control <- stored_plates_data$stored_control[ , c("plateid")]
+  # selected_studyexpplate$nrows_control <- length(check_control[check_control == selected_studyexpplate$plateid])
+  # print(paste(selected_studyexpplate$plateid," nrows_control:", selected_studyexpplate$nrows_control))
 })
 
 observeEvent(input$readxMap_study_accession, {
@@ -156,7 +156,8 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
     )
 
     # stored_header$plateid <- gsub("[[:punct:][:blank:]]+", ".", basename(gsub("\\", "/", stored_header$plate_id, fixed=TRUE)))
-    stored_header <- stored_header[ , c("experiment_accession", "plateid", "plate", "sample_dilution_factor", "acquisition_date", "reader_serial_number", "rp1_pmt_volts", "rp1_target", "auth0_user", "study_accession", "plate_id")]
+    stored_header <- stored_header[ , c("experiment_accession", "plateid", "plate", "nominal_sample_dilution", "acquisition_date", "reader_serial_number",
+                                        "rp1_pmt_volts", "rp1_target", "auth0_user", "project_id", "study_accession", "plate_id")]
     stored_header$Curve_Status <- NA
 
 
@@ -168,7 +169,7 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
                                  table_name = "xmap_standard",
                                  select_where = list("concat(study_accession,experiment_accession)" = paste0(input$readxMap_study_accession,input$readxMap_experiment_accession))
     )
-    stored_standard <- inner_join(stored_standard, stored_header[ , c("plate_id","plateid","plate")], by = "plate_id")
+    #stored_standard <- inner_join(stored_standard, stored_header[ , c("plate_id","plateid","plate")], by = "plate_id")
 
     if (length(stored_standard[ ,"experiment_accession"]) > 0) {
       # print(paste("stored_standard data:", length(stored_standard[ ,"experiment_accession"])))
@@ -181,30 +182,42 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
       # storedlong_plates_data$stored_standard <- stored_standard
       stored_plates_data$stored_standard <- stored_standard
 
-      wide_standard <- pivot_wider(stored_standard, id_cols = c("plateid", "sampleid", "source", "feature", "dilution", "pctaggbeads", "samplingerrors", "study_accession", "experiment_accession"), names_from = antigen, values_from = c(mfi, n))
-      output$swide_standard = DT::renderDataTable(wide_standard, options = list(scrollX = TRUE))
-      stored_plates_data$stored_standardw = wide_standard
+     # wide_standard <- pivot_wider(stored_standard, id_cols = c("plateid", "sampleid", "source", "feature", "dilution", "pctaggbeads", "samplingerrors", "study_accession", "experiment_accession"), names_from = antigen, values_from = c(mfi, n))
+      # output$swide_standard = DT::renderDataTable(wide_standard, options = list(scrollX = TRUE))
+      # stored_plates_data$stored_standardw = wide_standard
+      output$swide_standard = DT::renderDataTable(stored_standard, options = list(scrollX = TRUE))
+      #stored_plates_data$stored_standardw = stored_standard
 
+
+
+      cat("before update db stored fits\n")
       stored_fits <- update_db(operation = "select",
                                schema = "madi_results",
-                               table_name = "xmap_standard_fits",
+                               table_name = "best_glance_all",
                                select_where = list("concat(study_accession,experiment_accession)" = paste0(input$readxMap_study_accession,input$readxMap_experiment_accession))
       )
 
+      cat("stored fits:\n")
+      print(stored_fits)
 
-      if (is.null(stored_fits)) {
+
+
+      if (is.null(stored_fits) || nrow(stored_fits) == 0) {
         nrows_fits <- 0
       } else {
         nrows_fits <- nrow(stored_fits)
+        stored_fits$curve_plate <- 1
         stored_plates_data$stored_fits <- stored_fits
-        stored_fits <- stored_fits
       }
+
       if (nrows_fits > 0) {
         # print("stored_fits data ")
-        standard_source <- unique(stored_fits$source)
-        standard_plates <- data.frame(plateid = unique(stored_fits[ , c("plateid")]),curve_plate = 1)
+        #standard_source <- unique(stored_fits$source)
+       # standard_plates <- data.frame(plateid = unique(stored_fits[ , c("plateid")]),curve_plate = 1)
         # print(standard_plates)
-        stored_header <- merge(stored_header,standard_plates, by = "plateid", all.x = TRUE)
+
+        stored_header <- merge(stored_header, distinct(stored_fits[ , c("project_id", "study_accession", "experiment_accession", "plate", "nominal_sample_dilution","curve_plate")]), by = c("project_id", "study_accession", "experiment_accession", "plate", "nominal_sample_dilution"), all.x = TRUE)
+       # stored_header <- merge(stored_header,standard_plates, by = "plateid", all.x = TRUE)
         # print(stored_header)
         stored_header$Curve_Status <- ifelse(stored_header$curve_plate==1,1,2)
         # Notify the browser that there are not standard curves to calculate
@@ -218,7 +231,7 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
 
       m <- m+1
       update_modal_progress(
-        value = m / 8,
+        value = m / 5,
         text = "Loading Standard Curve data",
         session = shiny::getDefaultReactiveDomain()
       )
@@ -226,62 +239,62 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
 
       if (nrows_fits > 0) {
         # print("stored_fit_tab data ")
-        m <- m+1
-        update_modal_progress(
-          value = m / 8,
-          text = "Loading Standard Curve parameters with std.errors",
-          session = shiny::getDefaultReactiveDomain()
-        )
-        stored_fit_tab<- update_db(operation = "select",
-                                   schema = "madi_results",
-                                   table_name = "xmap_standard_fit_tab",
-                                   select_where = list("concat(study_accession,experiment_accession)" = paste0(input$readxMap_study_accession,input$readxMap_experiment_accession))        )
-        stored_fit_tab <- distinct(stored_fit_tab, study_accession, experiment_accession, antigen, plateid, term, source, .keep_all = TRUE)
-        # storedlong_plates_data$stored_fit_tab<- stored_fit_tab
-        stored_plates_data$stored_fit_tab<- stored_fit_tab
+        # m <- m+1
+        # update_modal_progress(
+        #   value = m / 8,
+        #   text = "Loading Standard Curve parameters with std.errors",
+        #   session = shiny::getDefaultReactiveDomain()
+        # )
+        # stored_fit_tab<- update_db(operation = "select",
+        #                            schema = "madi_results",
+        #                            table_name = "xmap_standard_fit_tab",
+        #                            select_where = list("concat(study_accession,experiment_accession)" = paste0(input$readxMap_study_accession,input$readxMap_experiment_accession))        )
+        # stored_fit_tab <- distinct(stored_fit_tab, study_accession, experiment_accession, antigen, plateid, term, source, .keep_all = TRUE)
+        # # storedlong_plates_data$stored_fit_tab<- stored_fit_tab
+        # stored_plates_data$stored_fit_tab<- stored_fit_tab
 
         # print("stored_preds data ")
-        m <- m+1
-        update_modal_progress(
-          value = m / 8,
-          text = "Calculating Standard Curve predictions",
-          session = shiny::getDefaultReactiveDomain()
-        )
-        newdils <- data.frame(log_dilution = seq(from = -10, to = 0, by = 0.05))
-        stored_preds <- logist.predict(stored_fits,newdils)
-        # storedlong_plates_data$stored_preds<- stored_preds
-        stored_plates_data$stored_preds<- stored_preds
+        # m <- m+1
+        # update_modal_progress(
+        #   value = m / 8,
+        #   text = "Calculating Standard Curve predictions",
+        #   session = shiny::getDefaultReactiveDomain()
+        # )
+        # newdils <- data.frame(log_dilution = seq(from = -10, to = 0, by = 0.05))
+        # stored_preds <- logist.predict(stored_fits,newdils)
+        # # storedlong_plates_data$stored_preds<- stored_preds
+        # stored_plates_data$stored_preds<- stored_preds
 
         # print("stored_fitstor data ")
-        m <- m+1
-        update_modal_progress(
-          value = m / 8,
-          text = "Loading Standard Curve corrected data",
-          session = shiny::getDefaultReactiveDomain()
-        )
-        stored_fitstor <- data.frame()
-        fit_stor <- update_db(operation = "select",
-                              schema = "madi_results",
-                              table_name = "xmap_standard_stor",
-                              select_where = list("concat(study_accession,experiment_accession)" = paste0(input$readxMap_study_accession,input$readxMap_experiment_accession))        )
-        stored_fitstor <- distinct(fit_stor, study_accession, experiment_accession, antigen, plateid, mfi, log_dilution, source, .keep_all = TRUE)
-        # storedlong_plates_data$stored_fitstor <- stored_fitstor
-        stored_plates_data$stored_fitstor <- stored_fitstor
-      } else {
-        # print("stored_fitstor data ")
-        fit_stor <- update_db(operation = "select",
-                              schema = "madi_results",
-                              table_name = "xmap_standard",
-                              select_where = list("concat(study_accession,experiment_accession)" = paste0(input$readxMap_study_accession,input$readxMap_experiment_accession))
-        )
-        names(fit_stor)[names(fit_stor) == "antibody_mfi"] <- "MFI"
-        names(fit_stor)[names(fit_stor) == "antibody_n"] <- "nbeads"
-        fit_stor$dilution <- 1 / fit_stor$dilution
-        fit_stor$log_dilution <- log10(fit_stor$dilution + 0.00001)
-        fit_stor$plateid <- gsub("[[:punct:][:blank:]]+", ".", basename(gsub("\\", "/", fit_stor$plate_id, fixed=TRUE)))
-        stored_fitstor <- distinct(fit_stor, study_accession, experiment_accession, antigen, plateid, MFI, log_dilution, source, .keep_all = TRUE)
-        # storedlong_plates_data$stored_fitstor <- stored_fitstor
-        stored_plates_data$stored_fitstor <- stored_fitstor
+        # m <- m+1
+        # update_modal_progress(
+        #   value = m / 8,
+        #   text = "Loading Standard Curve corrected data",
+        #   session = shiny::getDefaultReactiveDomain()
+        # )
+      #   stored_fitstor <- data.frame()
+      #   fit_stor <- update_db(operation = "select",
+      #                         schema = "madi_results",
+      #                         table_name = "xmap_standard_stor",
+      #                         select_where = list("concat(study_accession,experiment_accession)" = paste0(input$readxMap_study_accession,input$readxMap_experiment_accession))        )
+      #   stored_fitstor <- distinct(fit_stor, study_accession, experiment_accession, antigen, plateid, mfi, log_dilution, source, .keep_all = TRUE)
+      #   # storedlong_plates_data$stored_fitstor <- stored_fitstor
+      #   stored_plates_data$stored_fitstor <- stored_fitstor
+      # } else {
+      #   # print("stored_fitstor data ")
+      #   fit_stor <- update_db(operation = "select",
+      #                         schema = "madi_results",
+      #                         table_name = "xmap_standard",
+      #                         select_where = list("concat(study_accession,experiment_accession)" = paste0(input$readxMap_study_accession,input$readxMap_experiment_accession))
+      #   )
+      #   names(fit_stor)[names(fit_stor) == "antibody_mfi"] <- "MFI"
+      #   names(fit_stor)[names(fit_stor) == "antibody_n"] <- "nbeads"
+      #   fit_stor$dilution <- 1 / fit_stor$dilution
+      #   fit_stor$log_dilution <- log10(fit_stor$dilution + 0.00001)
+      #   fit_stor$plateid <- gsub("[[:punct:][:blank:]]+", ".", basename(gsub("\\", "/", fit_stor$plate_id, fixed=TRUE)))
+      #   stored_fitstor <- distinct(fit_stor, study_accession, experiment_accession, antigen, plateid, MFI, log_dilution, source, .keep_all = TRUE)
+      #   # storedlong_plates_data$stored_fitstor <- stored_fitstor
+      #   stored_plates_data$stored_fitstor <- stored_fitstor
       }
 
 
@@ -325,7 +338,7 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
     ### create the xMap control_data object
     m <- m+1
     update_modal_progress(
-      value = m / 8,
+      value = m / 5,
       text = "Loading Control data",
       session = shiny::getDefaultReactiveDomain()
     )
@@ -337,7 +350,7 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
 
     nrows_control <- nrow(stored_control)
     if (nrows_control > 0) {
-      stored_control <- inner_join(stored_control, stored_header[ , c("plate_id","plateid","plate")], by = "plate_id")
+     # stored_control <- inner_join(stored_control, stored_header[ , c("plate_id","plateid","plate")], by = "plate_id")
       # stored_control$plateid <- gsub("[[:punct:][:blank:]]+", ".", basename(gsub("\\", "/", stored_control$plate_id, fixed=TRUE)))
 
       names(stored_control)[names(stored_control) == "antibody_n"] <- "n"
@@ -346,16 +359,18 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
       stored_plates_data$stored_control <- stored_control
       # selected_studyexpplate$stored_control
       # storedlong_plates_data$stored_control = stored_control
-      wide_control <- pivot_wider(stored_control, names_from = antigen, values_from = c(mfi, n))
-      output$swide_control = DT::renderDataTable(wide_control, options = list(scrollX = TRUE))
-      stored_plates_data$stored_controlw <- wide_control
+      # wide_control <- pivot_wider(stored_control, names_from = antigen, values_from = c(mfi, n))
+      # output$swide_control = DT::renderDataTable(wide_control, options = list(scrollX = TRUE))
+      # stored_plates_data$stored_controlw <- wide_control
+      output$swide_control = DT::renderDataTable(stored_control, options = list(scrollX = TRUE))
+      #stored_plates_data$stored_controlw <- stored_control
 
     }
 
     ### create the xMap buffer_data object
     m <- m+1
     update_modal_progress(
-      value = m / 8,
+      value = m / 5,
       text = "Loading Buffer data",
       session = shiny::getDefaultReactiveDomain()
     )
@@ -366,7 +381,7 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
     )
     nrows_buffer <- nrow(stored_buffer)
     if (nrows_buffer > 0) {
-      stored_buffer <- inner_join(stored_buffer, stored_header[ , c("plate_id","plateid","plate")], by = "plate_id")
+    #  stored_buffer <- inner_join(stored_buffer, stored_header[ , c("plate_id","plateid","plate")], by = "plate_id")
       # stored_buffer$plateid <- gsub("[[:punct:][:blank:]]+", ".", basename(gsub("\\", "/", stored_buffer$plate_id, fixed=TRUE)))
       names(stored_buffer)[names(stored_buffer) == "antibody_n"] <- "n"
       names(stored_buffer)[names(stored_buffer) == "antibody_mfi"] <- "mfi"
@@ -375,17 +390,20 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
       stored_plates_data$stored_buffer <- stored_buffer
       # selected_studyexpplate$stored_buffer
       # storedlong_plates_data$stored_buffer = stored_buffer
-      wide_buffer <- pivot_wider(stored_buffer, id_cols = c("study_accession", "experiment_accession", "plateid", "well", "dilution", "pctaggbeads", "samplingerrors", "feature"), names_from = antigen, values_from = c(mfi, n))
-      output$swide_buffer = DT::renderDataTable(wide_buffer, options = list(scrollX = TRUE))
+      # wide_buffer <- pivot_wider(stored_buffer, id_cols = c("study_accession", "experiment_accession", "plateid", "well", "dilution", "pctaggbeads", "samplingerrors", "feature"), names_from = antigen, values_from = c(mfi, n))
+      # output$swide_buffer = DT::renderDataTable(wide_buffer, options = list(scrollX = TRUE))
+      # # Updating the stored_plates_data reactive for downloading
+      # stored_plates_data$stored_bufferw <- wide_buffer
+      output$swide_buffer = DT::renderDataTable(stored_buffer, options = list(scrollX = TRUE))
       # Updating the stored_plates_data reactive for downloading
-      stored_plates_data$stored_bufferw <- wide_buffer
+      #stored_plates_data$stored_bufferw <- stored_buffer
     }
 
     ### create the xMap sample_data object
 
     m <- m+1
     update_modal_progress(
-      value = m / 8,
+      value = m / 5,
       text = "Loading Sample data",
       session = shiny::getDefaultReactiveDomain()
     )
@@ -395,31 +413,52 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
                                 select_where = list("concat(study_accession,experiment_accession)" = paste0(input$readxMap_study_accession,input$readxMap_experiment_accession))
     )
 
-    stored_sampley <- stored_sampley[, !(names(stored_sampley) %in% c("gate_class_dil", "reference_dilution"))]
+    stored_sampley <- stored_sampley[, !(names(stored_sampley) %in% c("gate_class_dil", "reference_dilution", "gate_class", "antibody_au", "antibody_au_se", "id_imi",
+                                                                      "norm_mfi", "in_linear_region", "gate_class_loq", "in_quantifiable_range", "gate_class_linear_region",
+                                                                      "quality_score","predicted_concentration", "sample_dilution_factor"))]
     nrows_sample <- nrow(stored_sampley)
     if (nrows_sample > 0) {
-      stored_sampley <- inner_join(stored_sampley, stored_header[ , c("plate_id","plateid","plate")], by = "plate_id")
+     # stored_sampley <- inner_join(stored_sampley, stored_header[ , c("plate_id","plateid","plate")], by = "plate_id")
       # print(paste("loaded raw xmap_sample rows:",nrows_sample))
       # stored_sampley$plateid <- gsub("[[:punct:][:blank:]]+", ".", basename(gsub("\\", "/", stored_sampley$plate_id, fixed=TRUE)))
       names(stored_sampley)[names(stored_sampley) == "antibody_n"] <- "n"
       names(stored_sampley)[names(stored_sampley) == "antibody_mfi"] <- "mfi"
-      names(stored_sampley)[names(stored_sampley) == "gate_class"] <- "gate_class_detection"
+      #names(stored_sampley)[names(stored_sampley) == "gate_class"] <- "gate_class_detection"
      # names(stored_sampley)[names(stored_sampley) == "gate_class_dil"] <- "dil_gc"
-      names(stored_sampley)[names(stored_sampley) == "antibody_au"] <- "au"
-      names(stored_sampley)[names(stored_sampley) == "antibody_au_se"] <- "au_se"
+      # names(stored_sampley)[names(stored_sampley) == "antibody_au"] <- "au"
+      # names(stored_sampley)[names(stored_sampley) == "antibody_au_se"] <- "au_se"
      # names(stored_sampley)[names(stored_sampley) == "reference_dilution"] <- "ref_dil"
       # stored_sampley <- stored_sampley[,!(names(stored_sampley) %in% c("xmap_sample_id", "antibody_name"))]
       stored_samplex <- distinct(stored_sampley, study_accession, experiment_accession, plate_id, antigen, well, .keep_all = TRUE)
       # print(paste("loaded distinct xmap_sample rows:",nrow(stored_samplex)))
-      # print(names(stored_samplex))
+      begin_cols <-  c("experiment_accession", "plate", "nominal_sample_dilution")
+      stored_samplex <- stored_samplex[, c(
+        begin_cols,
+        setdiff(names(stored_samplex), begin_cols)
+      )]
+
+      stored_samplex_names <- names(stored_samplex)
+
+      i <- match("plate_id", stored_samplex_names)
+      j <- match("plateid", stored_samplex_names)
+
+      stored_samplex_names[c(i, j)] <- stored_samplex_names[c(j, i)]
+
+      stored_samplex <- stored_samplex[, stored_samplex_names]
+
+
       stored_plates_data$stored_sample <- stored_samplex
+
       # storedlong_plates_data$stored_sample = stored_samplex
-      wide_sample <- pivot_wider(stored_samplex[ , c("study_accession", "experiment_accession", "plateid", "timeperiod", "patientid", "well",
-                                                     "stype", "sampleid", "agroup","dilution", "pctaggbeads", "samplingerrors", "antigen", "mfi",
-                                                     "n", "feature", "gate_class_detection", "au", "au_se", "gate_class_linear_region", "gate_class_loq", "quality_score")],
-                                 names_from = antigen, values_from = c(mfi, n, gate_class_detection, au, au_se, gate_class_linear_region, gate_class_loq, quality_score))
-      output$swide_sample <- DT::renderDataTable(wide_sample, options = list(scrollX = TRUE))
-      stored_plates_data$stored_samplew <- wide_sample
+      # wide_sample <- pivot_wider(stored_samplex[ , c("study_accession", "experiment_accession", "plateid", "timeperiod", "patientid", "well",
+      #                                                "stype", "sampleid", "agroup","dilution", "pctaggbeads", "samplingerrors", "antigen", "mfi",
+      #                                                "n", "feature", "gate_class_detection", "au", "au_se", "gate_class_linear_region", "gate_class_loq", "quality_score")],
+      #                            names_from = antigen, values_from = c(mfi, n, gate_class_detection, au, au_se, gate_class_linear_region, gate_class_loq, quality_score))
+      # output$swide_sample <- DT::renderDataTable(wide_sample, options = list(scrollX = TRUE))
+      # stored_plates_data$stored_samplew <- wide_sample
+
+      output$swide_sample <- DT::renderDataTable(stored_samplex, options = list(scrollX = TRUE))
+      #stored_plates_data$stored_samplew <- stored_samplex
     }
 
     # Ssamples with QC metrics
@@ -521,7 +560,7 @@ observe({
     m <<- m + 1
     print(paste("plate_selected", plate_selected))
     update_modal_progress(
-      value = m / 8,
+      value = m / 5,
       text = "Rendering wide tables",
       session = shiny::getDefaultReactiveDomain()
     )

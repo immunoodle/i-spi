@@ -998,10 +998,10 @@ upload_specimen_data <- function(conn, plates_map, specimen_type, combined_plate
 
   # Define required columns for each specimen type
   required_columns <- list(
-    "X" = c("sampleid", "study_accession", "plate_id"),  # Add all NOT NULL columns
-    "S" = c("study_accession", "plate_id"),
-    "B" = c("study_accession", "plate_id"),
-    "C" = c("study_accession", "plate_id")
+    "X" = c("sampleid", "study_accession", "plate_id", "plateid", "project_id", "nominal_sample_dilution"),  # Add all NOT NULL columns
+    "S" = c("study_accession", "plate_id", "plateid", "project_id", "nominal_sample_dilution"),
+    "B" = c("study_accession", "plate_id", "plateid", "project_id", "nominal_sample_dilution"),
+    "C" = c("study_accession", "plate_id", "plateid", "project_id", "nominal_sample_dilution")
   )
 
   # Filter plates map for specimen type
@@ -1023,7 +1023,9 @@ upload_specimen_data <- function(conn, plates_map, specimen_type, combined_plate
         # Debug before preparation
         cat("\n=== DEBUG: Sample Preparation Inputs ===\n")
         cat("specimen_map rows:", nrow(specimen_map), "\n")
+        cat("specimen_map columns:",paste(names(specimen_map), collapse = ", "), "\n")
         cat("combined_plate_data rows:", nrow(combined_plate_data), "\n")
+        cat("combined_plate_data columns:",paste(names(combined_plate_data), collapse = ", "), "\n")
         cat("subject_map rows:", nrow(subject_map), "\n")
         cat("subject_map columns:", paste(names(subject_map), collapse = ", "), "\n")
 
