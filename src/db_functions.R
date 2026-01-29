@@ -29,7 +29,7 @@ fetch_study_parameters <- function(study_accession, param_user, param_group = "s
   ))
 }
 
-fetch_antigen_parameters <- function(study_accession, experiment_accession, conn) {
+fetch_antigen_parameters <- function(study_accession, experiment_accession, project_id, conn) {
   query <- glue("
   SELECT
     xmap_antigen_family_id,
@@ -42,7 +42,8 @@ fetch_antigen_parameters <- function(study_accession, experiment_accession, conn
     standard_curve_concentration,
     pcov_threshold
   FROM madi_results.xmap_antigen_family
-  WHERE study_accession = '{study_accession}'
+  WHERE project_id = {project_id}
+  AND study_accession = '{study_accession}'
   AND experiment_accession = '{experiment_accession}';
 ")
   antigen_constraints <- dbGetQuery(conn, query)
@@ -50,11 +51,12 @@ fetch_antigen_parameters <- function(study_accession, experiment_accession, conn
 }
 
 
-fetch_db_header <- function(study_accession, experiment_accession, conn) {
-  query <- glue("SELECT study_accession, experiment_accession, plateid, plate, sample_dilution_factor, plate_id,
-  assay_response_variable, assay_independent_variable
+fetch_db_header <- function(study_accession, experiment_accession, project_id, conn) {
+  query <- glue("SELECT study_accession, experiment_accession, plateid, plate, sample_dilution_factor,plate_id,
+  assay_response_variable, assay_independent_variable, nominal_sample_dilution, project_id
   FROM madi_results.xmap_header
-WHERE study_accession = '{study_accession}'
+WHERE project_id = {project_id}
+AND study_accession = '{study_accession}'
 AND experiment_accession = '{experiment_accession}'
 ")
   header_data <- dbGetQuery(conn, query)
@@ -62,9 +64,11 @@ AND experiment_accession = '{experiment_accession}'
   return(header_data)
 }
 
-fetch_db_standards <- function(study_accession, experiment_accession, conn) {
-  query <- glue("SELECT study_accession, experiment_accession, feature, plate_id, stype, source, sampleid, well, dilution, antigen, antibody_mfi AS mfi FROM madi_results.xmap_standard
-WHERE study_accession = '{study_accession}'
+fetch_db_standards <- function(study_accession, experiment_accession, project_id, conn) {
+  query <- glue("SELECT study_accession, experiment_accession, feature, plate_id, stype, source, sampleid, well, dilution, antigen, antibody_mfi AS mfi, nominal_sample_dilution
+  FROM madi_results.xmap_standard
+WHERE project_id = {project_id}
+AND study_accession = '{study_accession}'
 AND experiment_accession = '{experiment_accession}'
 ")
   standard_df  <- dbGetQuery(conn, query)
@@ -72,9 +76,10 @@ AND experiment_accession = '{experiment_accession}'
   return(standard_df)
 }
 
-fetch_db_buffer <- function(study_accession, experiment_accession, conn) {
-  query <- glue("SELECT study_accession, experiment_accession, plate_id, stype, well, antigen, dilution, feature, antibody_mfi AS mfi FROM madi_results.xmap_buffer
-WHERE study_accession = '{study_accession}'
+fetch_db_buffer <- function(study_accession, experiment_accession, project_id, conn) {
+  query <- glue("SELECT study_accession, experiment_accession, plate_id, stype, well, antigen, dilution, feature, antibody_mfi AS mfi, nominal_sample_dilution FROM madi_results.xmap_buffer
+WHERE project_id = {project_id}
+AND study_accession = '{study_accession}'
 AND experiment_accession = '{experiment_accession}'
 ")
   blank_data <- dbGetQuery(conn, query)
@@ -82,12 +87,13 @@ AND experiment_accession = '{experiment_accession}'
   return(blank_data)
 }
 
-fetch_db_samples <- function(study_accession, experiment_accession, conn) {
+fetch_db_samples <- function(study_accession, experiment_accession, project_id, conn) {
   query <- glue("SELECT study_accession,
 experiment_accession, plate_id, timeperiod, patientid,
 well, stype, sampleid,  agroup, dilution, pctaggbeads, samplingerrors, antigen, antibody_mfi AS mfi,
-antibody_n FROM madi_results.xmap_sample
-WHERE study_accession = '{study_accession}'
+antibody_n, nominal_sample_dilution FROM madi_results.xmap_sample
+WHERE project_id = {project_id}
+AND study_accession = '{study_accession}'
 AND experiment_accession = '{experiment_accession}'
 ")
   sample_data <- dbGetQuery(conn, query)
@@ -95,34 +101,58 @@ AND experiment_accession = '{experiment_accession}'
   return(sample_data)
 }
 
-pull_data <- function(study_accession, experiment_accession, conn = conn) {
+pull_data <- function(study_accession, experiment_accession, project_id, conn = conn) {
   plates <- fetch_db_header(study_accession = study_accession,
                             experiment_accession = experiment_accession,
+                            project_id = project_id,
                             conn = conn)
   plates$plate_id <- trimws(plates$plate_id)
 
   antigen_constraints <- fetch_antigen_parameters(study_accession = study_accession,
                                                   experiment_accession = experiment_accession,
+                                                  project_id = project_id,
                                                   conn = conn)
+
   standard_curve_data <- fetch_db_standards(study_accession = study_accession,
                                             experiment_accession = experiment_accession,
+                                            project_id = project_id,
                                             conn = conn)
   standard_curve_data$plate_id <- trimws(standard_curve_data$plate_id)
 
-  standards <- inner_join(standard_curve_data, plates, by = c("study_accession", "experiment_accession","plate_id"))[ ,
-                                                                                                                      c("study_accession","experiment_accession","feature","source","plateid","plate", "stype","sample_dilution_factor",
+  # joined <<- inner_join(
+  #   standard_curve_data,
+  #   plates,
+  #   by = c("study_accession", "experiment_accession", "plate_id")
+  # )
+  #
+  # print(str(joined))
+
+  standards <- inner_join(standard_curve_data, plates, by = c("study_accession", "experiment_accession","plate_id", "nominal_sample_dilution"))[ ,
+                                                                                                                      c("study_accession","experiment_accession","feature","source","plateid","plate", "stype","sample_dilution_factor", "nominal_sample_dilution",
                                                                                                                         "sampleid","well","dilution","antigen","mfi",
                                                                                                                         "assay_response_variable", "assay_independent_variable")]
+
+ standards$plate_nom <- paste(standards$plate, standards$nominal_sample_dilution, sep = "-")
+
   blanks <- inner_join(fetch_db_buffer(study_accession = study_accession,
                                        experiment_accession = experiment_accession,
+                                       project_id = project_id,
                                        conn = conn) %>% dplyr::mutate(plate_id = trimws(as.character(plate_id))),
-                       plates, by = c("study_accession", "experiment_accession","plate_id"))
+                       plates, by = c("study_accession", "experiment_accession","plate_id", "nominal_sample_dilution"))
+
+  blanks$plate_nom <- paste(blanks$plate, blanks$nominal_sample_dilution, sep = "-")
+
   samples <- inner_join(fetch_db_samples(study_accession = study_accession,
                                          experiment_accession = experiment_accession,
+                                         project_id = project_id,
                                          conn = conn) %>% dplyr::mutate(plate_id = trimws(as.character(plate_id))),
-                        plates, by = c("study_accession", "experiment_accession","plate_id"))
+                        plates, by = c("study_accession", "experiment_accession","plate_id", "nominal_sample_dilution"))
+
+  samples$plate_nom <- paste(samples$plate, samples$nominal_sample_dilution, sep = "-")
+
   response_var = unique(plates$assay_response_variable)
   indep_var = unique(plates$assay_independent_variable)
+
 
   return(list(plates=plates, standards=standards,
               blanks=blanks, samples=samples,
@@ -605,36 +635,49 @@ select_antigen_plate <- function(loaded_data,
                                  source = source,
                                  antigen = antigen,
                                  plate = plate,
-                                 sample_dilution_factor = sample_dilution_factor,
                                  antigen_constraints = antigen_constraints)
 {
+  print("select antigen plate in batch\n")
+  print("plate in\n")
+  print(plate)
+  print("standards structure\n")
+  print(str(loaded_data$standards))
+  print("antigens\n")
+  print(unique(loaded_data$standards$antigen))
+  print("source\n")
+  print(unique(loaded_data$standards$source))
+  print("plate_nom\n")
+  print(unique(loaded_data$standards$plate_nom))
+
+  print("plate\n")
+  print(unique(loaded_data$standards$plate))
+
   plate_standard  <- loaded_data$standards[loaded_data$standards$source == source &
                                              loaded_data$standards$antigen == antigen &
-                                             loaded_data$standards$plate == plate &
-                                             loaded_data$standards$sample_dilution_factor == sample_dilution_factor,]
+                                             loaded_data$standards$plate_nom == plate ,]
   # Guard against empty plate_standard data
   if (is.null(plate_standard) || nrow(plate_standard) == 0) {
     warning(paste("No standard curve data found for:",
                   "source =", source,
                   ", antigen =", antigen,
-                  ", plate =", plate,
-                  ", sample_dilution_factor =", sample_dilution_factor))
+                  ", plate =", plate))
     return(NULL)
   }
 
   plate_blanks <- loaded_data$blanks[loaded_data$blanks$antigen == antigen &
-                                       loaded_data$blanks$plate == plate &
-                                       loaded_data$blanks$sample_dilution_factor == sample_dilution_factor,]
+                                       loaded_data$blanks$plate_nom == plate,]
 
   plate_samples <- loaded_data$samples[loaded_data$samples$antigen == antigen &
-                                         loaded_data$samples$plate == plate &
-                                         loaded_data$samples$sample_dilution_factor == sample_dilution_factor,]
+                                         loaded_data$samples$plate_nom == plate,]
+
+  # anything after - is removed (nominal sample dilutions)
+  plate_c <- sub("-.*$", "", plate)
 
   antigen_settings <- obtain_lower_constraint(dat = plate_standard,
                                               antigen = antigen,
                                               study_accession = study_accession,
                                               experiment_accession = experiment_accession,
-                                              plate = plate,
+                                              plate = plate_c,
 
                                               plateid = unique(plate_standard$plateid),
 
@@ -656,49 +699,54 @@ select_antigen_plate <- function(loaded_data,
 
 
 #### Fetch saved results from std_curver
-fetch_best_plate_all <- function(study_accession, experiment_accession, conn) {
+fetch_best_plate_all <- function(study_accession, experiment_accession, project_id, conn) {
   query <- glue("
 SELECT best_plate_all_id, study_accession, experiment_accession, feature, source, plateid, plate, sample_dilution_factor, assay_response_variable, assay_independent_variable
 	FROM madi_results.best_plate_all
-	WHERE study_accession = '{study_accession}'
+	WHERE project_id = {project_id}
+	AND study_accession = '{study_accession}'
 	AND experiment_accession = '{experiment_accession}';
 ")
   best_plate_all <- dbGetQuery(conn, query)
   return(best_plate_all)
 }
 
-fetch_best_tidy_all <- function(study_accession,experiment_accession, conn) {
+fetch_best_tidy_all <- function(study_accession,experiment_accession, project_id, conn) {
   query <- glue("SELECT best_tidy_all_id, study_accession, experiment_accession, term, lower, upper, estimate, std_error, statistic, p_value, sample_dilution_factor, antigen, plateid, plate, source
 	FROM madi_results.best_tidy_all
-	WHERE study_accession = '{study_accession}'
+	WHERE project_id = {project_id}
+	AND study_accession = '{study_accession}'
   AND experiment_accession = '{experiment_accession}'")
   best_tidy_all <- dbGetQuery(conn, query)
   return(best_tidy_all)
 }
-fetch_best_pred_all <- function(study_accession, experiment_accession, conn) {
+fetch_best_pred_all <- function(study_accession, experiment_accession, project_id, conn) {
   query <- glue("SELECT best_pred_all_id, x, model, yhat, overall_se, predicted_concentration, se_x, pcov, study_accession, experiment_accession, sample_dilution_factor, plateid, plate,
   antigen, source, id_match, best_glance_all_id
 	FROM madi_results.best_pred_all
-	WHERE study_accession = '{study_accession}'
+	WHERE project_id = {project_id}
+	AND study_accession = '{study_accession}'
   AND experiment_accession = '{experiment_accession}';")
   best_pred_all <- dbGetQuery(conn, query)
   return(best_pred_all)
 }
 
-fetch_best_standard_all <- function(study_accession,experiment_accession, conn) {
+fetch_best_standard_all <- function(study_accession,experiment_accession, project_id, conn) {
   query <- glue("SELECT best_standard_all_id, study_accession, experiment_accession, feature, source, plateid, plate, stype, sample_dilution_factor, sampleid, well,
   dilution, antigen, assay_response, assay_response_variable, assay_independent_variable, concentration, g, best_glance_all_id
 	FROM madi_results.best_standard_all
-	WHERE study_accession = '{study_accession}'
+	WHERE project_id = {project_id}
+	AND study_accession = '{study_accession}'
   AND experiment_accession = '{experiment_accession}';")
   best_standard_all <- dbGetQuery(conn, query)
   return(best_standard_all)
 }
 
-fetch_best_glance_all <- function(study_accession,experiment_accession, conn) {
+fetch_best_glance_all <- function(study_accession,experiment_accession, project_id, conn) {
   query <- glue("SELECT best_glance_all_id, study_accession, experiment_accession, plateid, plate, sample_dilution_factor, antigen, iter, status, crit, a, b, c, d, lloq, uloq, lloq_y, uloq_y, llod, ulod, inflect_x, inflect_y, std_error_blank, dydx_inflect, dfresidual, nobs, rsquare_fit, aic, bic, loglik, mse, cv, source, bkg_method, is_log_response, is_log_x, apply_prozone, formula, g
 	FROM madi_results.best_glance_all
-	WHERE study_accession = '{study_accession}'
+	WHERE project_id = {project_id}
+	AND study_accession = '{study_accession}'
   AND experiment_accession = '{experiment_accession}';")
   best_glance_all <- dbGetQuery(conn, query)
   return(best_glance_all)
@@ -711,7 +759,7 @@ fetch_best_glance_all <- function(study_accession,experiment_accession, conn) {
 #' @param param_user Current user for parameter lookup
 #' @param conn Database connection
 #' @return Filtered best_glance_all dataframe matching user's current study configuration
-fetch_best_glance_all_summary <- function(study_accession, experiment_accession, param_user, conn) {
+fetch_best_glance_all_summary <- function(study_accession, experiment_accession, param_user, project_id, conn) {
   query <- glue_sql("
     WITH params AS (
       SELECT
@@ -720,7 +768,8 @@ fetch_best_glance_all_summary <- function(study_accession, experiment_accession,
         MAX(CASE WHEN param_name = 'blank_option' THEN param_character_value END) AS blank_option,
         BOOL_OR(CASE WHEN param_name = 'applyProzone' THEN param_boolean_value END) AS apply_prozone
       FROM madi_results.xmap_study_config
-      WHERE study_accession = {study_accession}
+      WHERE project_id = {project_id}
+         AND study_accession = {study_accession}
         AND param_user = {param_user}
         AND param_name IN ('is_log_mfi_axis', 'blank_option', 'applyProzone')
       GROUP BY study_accession
@@ -735,7 +784,8 @@ fetch_best_glance_all_summary <- function(study_accession, experiment_accession,
       g.is_log_x, g.apply_prozone, g.formula, g.g
     FROM madi_results.best_glance_all g
     CROSS JOIN params
-    WHERE g.study_accession = {study_accession}
+    WHERE g.project_id = {project_id}
+      AND g.study_accession = {study_accession}
       AND g.experiment_accession = {experiment_accession}
       AND g.is_log_response = params.is_log_mfi_axis
       AND g.bkg_method = params.blank_option
@@ -745,7 +795,7 @@ fetch_best_glance_all_summary <- function(study_accession, experiment_accession,
   dbGetQuery(conn, query)
 }
 
-fetch_best_sample_se_all <- function(study_accession, experiment_accession, conn) {
+fetch_best_sample_se_all <- function(study_accession, experiment_accession, project_id, conn) {
   query <- glue("
 SELECT best_sample_se_all_id, predicted_concentration, study_accession, experiment_accession, timeperiod, patientid, well, stype, sampleid,
 agroup, pctaggbeads, samplingerrors, antigen,
@@ -753,7 +803,8 @@ antibody_n, plateid, plate, sample_dilution_factor, assay_response_variable, ass
 se_concentration, au, pcov, source, gate_class_loq, gate_class_lod,
 gate_class_pcov, uid, best_glance_all_id
 	FROM madi_results.best_sample_se_all
-	WHERE study_accession = '{study_accession}'
+	WHERE project_id = {project_id}
+	AND study_accession = '{study_accession}'
 	AND experiment_accession = '{experiment_accession}';")
   best_sample_se_all <- dbGetQuery(conn, query)
   return(best_sample_se_all)
@@ -762,7 +813,7 @@ gate_class_pcov, uid, best_glance_all_id
 
 ## Specific fetch queries for the summary of standard curves accounting for
 # selected study_configuration based on glance_id
-fetch_best_pred_all_summary <- function(study_accession, experiment_accession, param_user, conn) {
+fetch_best_pred_all_summary <- function(study_accession, experiment_accession, param_user, project_id, conn) {
   query <- glue_sql("
     WITH params AS (
       SELECT
@@ -771,7 +822,8 @@ fetch_best_pred_all_summary <- function(study_accession, experiment_accession, p
         MAX(CASE WHEN param_name = 'blank_option' THEN param_character_value END) AS blank_option,
         BOOL_OR(CASE WHEN param_name = 'applyProzone' THEN param_boolean_value END) AS apply_prozone
       FROM madi_results.xmap_study_config
-      WHERE study_accession = {study_accession}
+      WHERE project_id = {project_id}
+        AND study_accession = {study_accession}
         AND param_user = {param_user}
         AND param_name IN ('is_log_mfi_axis', 'blank_option', 'applyProzone')
       GROUP BY study_accession
@@ -786,7 +838,8 @@ fetch_best_pred_all_summary <- function(study_accession, experiment_accession, p
     LEFT JOIN madi_results.best_glance_all g
       ON p.best_glance_all_id = g.best_glance_all_id
     CROSS JOIN params
-    WHERE p.study_accession = {study_accession}
+    WHERE p.project_id = {project_id}
+      AND p.study_accession = {study_accession}
       AND p.experiment_accession = {experiment_accession}
       AND g.is_log_response = params.is_log_mfi_axis
       AND g.bkg_method = params.blank_option
@@ -796,7 +849,7 @@ fetch_best_pred_all_summary <- function(study_accession, experiment_accession, p
   dbGetQuery(conn, query)
 }
 
-fetch_best_standard_all_summary <- function(study_accession, experiment_accession, param_user, conn) {
+fetch_best_standard_all_summary <- function(study_accession, experiment_accession, param_user, project_id, conn) {
   query <- glue_sql("
     WITH params AS (
       SELECT
@@ -805,7 +858,8 @@ fetch_best_standard_all_summary <- function(study_accession, experiment_accessio
         MAX(CASE WHEN param_name = 'blank_option' THEN param_character_value END) AS blank_option,
         BOOL_OR(CASE WHEN param_name = 'applyProzone' THEN param_boolean_value END) AS apply_prozone
       FROM madi_results.xmap_study_config
-      WHERE study_accession = {study_accession}
+      WHERE project_id = {project_id}
+        AND study_accession = {study_accession}
         AND param_user = {param_user}
         AND param_name IN ('is_log_mfi_axis', 'blank_option', 'applyProzone')
       GROUP BY study_accession
@@ -821,7 +875,8 @@ fetch_best_standard_all_summary <- function(study_accession, experiment_accessio
     LEFT JOIN madi_results.best_glance_all g
       ON s.best_glance_all_id = g.best_glance_all_id
     CROSS JOIN params
-    WHERE s.study_accession = {study_accession}
+    WHERE s.project_id = {project_id}
+      AND s.study_accession = {study_accession}
       AND s.experiment_accession = {experiment_accession}
       AND g.is_log_response = params.is_log_mfi_axis
       AND g.bkg_method = params.blank_option
@@ -831,7 +886,7 @@ fetch_best_standard_all_summary <- function(study_accession, experiment_accessio
   dbGetQuery(conn, query)
 }
 
-fetch_best_sample_se_all_summary <- function(study_accession, experiment_accession, param_user, conn) {
+fetch_best_sample_se_all_summary <- function(study_accession, experiment_accession, param_user, project_id, conn) {
   query <- glue_sql("
     WITH params AS (
       SELECT
@@ -840,7 +895,8 @@ fetch_best_sample_se_all_summary <- function(study_accession, experiment_accessi
         MAX(CASE WHEN param_name = 'blank_option' THEN param_character_value END) AS blank_option,
         BOOL_OR(CASE WHEN param_name = 'applyProzone' THEN param_boolean_value END) AS apply_prozone
       FROM madi_results.xmap_study_config
-      WHERE study_accession = {study_accession}
+      WHERE project_id = {project_id}
+        AND study_accession = {study_accession}
         AND param_user = {param_user}
         AND param_name IN ('is_log_mfi_axis', 'blank_option', 'applyProzone')
       GROUP BY study_accession
@@ -860,7 +916,8 @@ fetch_best_sample_se_all_summary <- function(study_accession, experiment_accessi
     LEFT JOIN madi_results.best_glance_all g
       ON ss.best_glance_all_id = g.best_glance_all_id
     CROSS JOIN params
-    WHERE ss.study_accession = {study_accession}
+    WHERE ss.project_id = {project_id}
+      AND ss.study_accession = {study_accession}
       AND ss.experiment_accession = {experiment_accession}
       AND g.is_log_response = params.is_log_mfi_axis
       AND g.bkg_method = params.blank_option
@@ -870,7 +927,7 @@ fetch_best_sample_se_all_summary <- function(study_accession, experiment_accessi
   dbGetQuery(conn, query)
 }
 
-fetch_current_sc_options_wide <- function(currentuser, study_accession, conn) {
+fetch_current_sc_options_wide <- function(currentuser, study_accession, project_id, conn) {
   query <- glue_sql(
     "
 SELECT
@@ -880,7 +937,8 @@ SELECT
   MAX(CASE WHEN param_name = 'blank_option' THEN param_character_value END) AS blank_option,
   BOOL_OR(CASE WHEN param_name = 'applyProzone' THEN param_boolean_value END) AS apply_prozone
 FROM madi_results.xmap_study_config
-WHERE study_accession = {study_accession}
+WHERE project_id = {project_id}
+  AND study_accession = {study_accession}
   AND param_user = {currentuser}
   AND param_name IN ('is_log_mfi_axis', 'blank_option', 'applyProzone')
 GROUP BY study_accession, param_user

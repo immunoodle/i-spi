@@ -463,6 +463,7 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
 
     # Ssamples with QC metrics
     qc_best_samples_se <- fetch_best_sample_se_all(study_accession = input$readxMap_study_accession, experiment_accession = input$readxMap_experiment_accession,
+                                                   project_id = userWorkSpaceID(),
                                                    conn = conn)
     # stored_best_sample_se <- qc_best_samples_se
     stored_plates_data$stored_best_sample_se <- qc_best_samples_se

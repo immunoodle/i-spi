@@ -24,6 +24,7 @@ observeEvent(list(
 
       best_plate_all <- fetch_best_plate_all(study_accession = selected_study,
                                              experiment_accession = selected_experiment,
+                                             project_id = userWorkSpaceID(),
                                              conn = conn)
 
       # best_standard_all <- fetch_best_standard_all(study_accession = selected_study,
@@ -32,6 +33,7 @@ observeEvent(list(
       best_standard_all <- fetch_best_standard_all_summary(study_accession = selected_study,
                                                            experiment_accession = selected_experiment,
                                                            param_user = currentuser(),
+                                                           project_id = userWorkSpaceID(),
                                                            conn = conn)
 
 
@@ -42,6 +44,7 @@ observeEvent(list(
       best_pred_all <- fetch_best_pred_all_summary(study_accession = selected_study,
                                                    experiment_accession = selected_experiment,
                                                    param_user = currentuser(),
+                                                   project_id = userWorkSpaceID(),
                                                    conn = conn)
 
 
@@ -57,6 +60,7 @@ observeEvent(list(
       best_glance_all <- fetch_best_glance_all_summary(study_accession = selected_study,
                                                        experiment_accession = selected_experiment,
                                                        param_user = currentuser(),
+                                                       project_id = userWorkSpaceID(),
                                                        conn = conn)
 
       # best_sample_se_all <- fetch_best_sample_se_all(study_accession = selected_study,
@@ -66,6 +70,7 @@ observeEvent(list(
       best_sample_se_all <- fetch_best_sample_se_all_summary(study_accession = selected_study,
                                                              experiment_accession = selected_experiment,
                                                              param_user = currentuser(),
+                                                             project_id = userWorkSpaceID(),
                                                              conn = conn)
 
 
@@ -73,6 +78,7 @@ observeEvent(list(
       antigen_settings <- fetch_antigen_parameters(
         study_accession = selected_study,
         experiment_accession = selected_experiment,
+        project_id = userWorkSpaceID(),
         conn = conn
       )
 
@@ -125,7 +131,9 @@ observeEvent(list(
           )))
         } else {
           current_sc_options <- fetch_current_sc_options_wide(currentuser = currentuser(),
-                                                              study_accession = selected_study, conn = conn)
+                                                              study_accession = selected_study,
+                                                              project_id = userWorkSpaceID(),
+                                                              conn = conn)
           is_log_response <- unique(current_sc_options$is_log_mfi_axis)
           #print(is_log_response)
           blank_option <- unique(current_sc_options$blank_option)

@@ -925,6 +925,7 @@ fit_qc_glance <- function(best_fit,
   # coefficient of variation.
   cv <- (sqrt(mse) / mean_obs_mfi) * 100
 
+
   glance_df <-  data.frame(
     study_accession = unique(best_fit$best_data$study_accession),
     experiment_accession = unique(best_fit$best_data$experiment_accession),
@@ -950,7 +951,8 @@ fit_qc_glance <- function(best_fit,
     is_log_response = antigen_fit_options$is_log_response,
     is_log_x = antigen_fit_options$is_log_concentration,
     apply_prozone  = antigen_fit_options$apply_prozone,
-    formula = model_formula)
+    formula = model_formula,
+    nominal_sample_dilution = unique(best_fit$best_data$nominal_sample_dilution))
 
   best_fit$best_glance <- glance_df
   return(best_fit)
@@ -1189,6 +1191,7 @@ tidy.nlsLM <- function(best_fit, fixed_a_result, model_constraints, antigen_sett
   tidy_df$study_accession <- unique(best_fit$best_data$study_accession)
   tidy_df$experiment_accession <- unique(best_fit$best_data$experiment_accession)
   tidy_df$sample_dilution_factor <- unique(best_fit$best_data$sample_dilution_factor)
+  tidy_df$nominal_sample_dilution <- unique(best_fit$best_data$nominal_sample_dilution)
   tidy_df$antigen <- unique(best_fit$best_data$antigen)
   tidy_df$plateid <- unique(best_fit$best_data$plateid)
   tidy_df$plate <- unique(best_fit$best_data$plate)
@@ -1204,6 +1207,7 @@ tidy.nlsLM <- function(best_fit, fixed_a_result, model_constraints, antigen_sett
       study_accession = unique(best_fit$best_data$study_accession),
       experiment_accession = unique(best_fit$best_data$experiment_accession),
       sample_dilution_factor = unique(best_fit$best_data$sample_dilution_factor),
+      nominal_sample_dilution = unique(best_fit$best_data$nominal_sample_dilution),
       antigen = unique(best_fit$best_data$antigen),
       plateid = unique(best_fit$best_data$plateid),
       plate = unique(best_fit$best_data$plate),
@@ -2256,6 +2260,7 @@ predict_and_propagate_error <- function(best_fit,
   pred_se$study_accession <- unique(best_fit$best_data$study_accession)
   pred_se$experiment_accession <- unique(best_fit$best_data$experiment_accession)
   pred_se$sample_dilution_factor <- unique(best_fit$best_data$sample_dilution_factor)
+  pred_se$nominal_sample_dilution <- unique(best_fit$best_data$nominal_sample_dilution)
   pred_se$plateid <- unique(best_fit$best_data$plateid)
   pred_se$plate <- unique(best_fit$best_data$plate)
   pred_se$antigen <- unique(best_fit$best_data$antigen)
@@ -2326,6 +2331,9 @@ predict_and_propagate_error <- function(best_fit,
   # remove plate_id and y_new; rename se_x to se_concentration for later use.
   sample_se <- sample_se[, !names(sample_se) %in% c("y_new")]
   names(sample_se)[names(sample_se) == "se_x"] <- "se_concentration"
+  # add nominal sample dilution
+  sample_se$nominal_sample_dilution <- unique(best_fit$best_data$nominal_sample_dilution)
+
   best_fit$sample_se <- sample_se
 
   if (verbose) {
