@@ -15,28 +15,34 @@ build_antigen_list <- function(exp_list, loaded_data_list, study_accession, verb
   for (experiment_accession in exp_list) {
     loaded_data <- loaded_data_list[[experiment_accession]]
     standards <- loaded_data$standards
-    valid_combos <- unique(standards[, c("experiment_accession","plate", "source", "sample_dilution_factor")])
+    print("standards antigen_list")
+    print(names(standards))
+    valid_combos <- unique(standards[, c("experiment_accession","plate", "source", "plate_nom")])
     print(valid_combos)
     for (i in seq_len(nrow(valid_combos))) {
       current_combo <- valid_combos[i, ]
       exp_standards <- standards[standards$experiment_accession == current_combo$experiment_accession &
-                                   standards$plate == current_combo$plate & standards$source == current_combo$source &
-                                   standards$sample_dilution_factor == current_combo$sample_dilution_factor, ]
+                                  # standards$plate == current_combo$plate &
+                                   standards$source == current_combo$source &
+                                   standards$plate_nom == current_combo$plate_nom, ]
+                                   #standards$sample_dilution_factor == current_combo$sample_dilution_factor, ]
 
       antigens <- unique(exp_standards$antigen)
       antigens <- antigens[!is.na(antigens) & antigens != ""]
 
       if (length(antigens) > 0) {
         id <- paste0(experiment_accession, "_",
-                     current_combo$plate, "_",
-                     current_combo$sample_dilution_factor, "_",
+                     current_combo$plate_nom, "_",
+                     # current_combo$plate, "_",
+                     # current_combo$sample_dilution_factor, "_",
                      current_combo$source)
         antigen_list[[id]] <- list(
           antigens = unique(exp_standards$antigen),
           study_accession = study_accession,
           experiment_accession = experiment_accession,
           plate = current_combo$plate,
-          sample_dilution_factor = current_combo$sample_dilution_factor,
+         # sample_dilution_factor = current_combo$sample_dilution_factor,
+          plate_nom = current_combo$plate_nom,
           source = current_combo$source
         )
 
@@ -58,6 +64,8 @@ build_antigen_plate_list <- function(antigen_list_result, loaded_data_list, verb
   antigen_plate_list_ids <- c()
   for (antigen_id in antigen_list_ids) {
     info <- antigen_list[[antigen_id]]
+    print("info diagnositic:\n")
+    print(info)
     for (antigen in info$antigens) {
       print(antigen)
       antigen_constraints <- loaded_data_list[[info$experiment_accession]]$antigen_constraints[
@@ -67,9 +75,9 @@ build_antigen_plate_list <- function(antigen_list_result, loaded_data_list, verb
       current_unique_id <- paste0(
         info$study_accession, "|",
         info$experiment_accession, "|",
-        info$plate, "|",
+        info$plate_nom, "|",
         info$source, "|",
-        info$sample_dilution_factor, "|",
+       #info$sample_dilution_factor, "|",
         antigen
       )
 
@@ -79,8 +87,8 @@ build_antigen_plate_list <- function(antigen_list_result, loaded_data_list, verb
         experiment_accession = info$experiment_accession,
         source = info$source,
         antigen = antigen,
-        plate = info$plate,
-        sample_dilution_factor = info$sample_dilution_factor,
+        plate = info$plate_nom,
+       # sample_dilution_factor = info$sample_dilution_factor,
         antigen_constraints = antigen_constraints
       )
 
@@ -140,7 +148,7 @@ fit_experiment_plate_batch <- function(prepped_data_list_res,
                                        study_params,
                                        se_antigen_table = NULL,
                                        verbose = TRUE) {
-  prepped_data_list_res_v <<- prepped_data_list_res
+  #prepped_data_list_res_v <<- prepped_data_list_res
   prepped_data_list <- prepped_data_list_res$prepped_data_list
   formula_list <- prepped_data_list_res$formula_list
   antigen_plate_list <- antigen_plate_list_res$antigen_plate_list
@@ -158,8 +166,7 @@ fit_experiment_plate_batch <- function(prepped_data_list_res,
 
     # Split the name string into components
     components <- strsplit(prep_dat_name, "\\|")[[1]]
-    field_names <- c("Study", "Experiment", "Plate", "Source", "Dilution", "Antigen")
-
+    field_names <- c("Study", "Experiment", "Plate - Sample Dilution(s)", "Dilution","Source", "Antigen")
     # Create labeled lines
     labeled_lines <- paste0("<b>", field_names, ":</b> ", components, collapse = "<br>")
 
@@ -319,7 +326,8 @@ create_batch_fit_outputs <- function(batch_fit_res, antigen_plate_list_res) {
     })
   )
 
-  best_plate_all <- dplyr::distinct(best_standard_all[ , c("study_accession","experiment_accession","feature","source","plateid","plate","sample_dilution_factor","assay_response_variable","assay_independent_variable")])
+  best_plate_all <- dplyr::distinct(best_standard_all[ , c("study_accession","experiment_accession","feature","source","plateid","plate","sample_dilution_factor","assay_response_variable",
+                                                           "assay_independent_variable", "nominal_sample_dilution")])
 
   return(list(
     best_tidy_all     = best_tidy_all,
@@ -335,7 +343,8 @@ create_batch_fit_outputs <- function(batch_fit_res, antigen_plate_list_res) {
 
 
 # add unique identifiers and rename the response variable to be generic for saving
-process_batch_outputs <- function(batch_outputs, response_var) {
+# as well as project_id
+process_batch_outputs <- function(batch_outputs, response_var, project_id) {
 
   #batch_outputs <<- batch_outputs
 
@@ -382,6 +391,21 @@ process_batch_outputs <- function(batch_outputs, response_var) {
 
   batch_outputs$best_standard_all <- batch_outputs$best_standard_all %>%
     dplyr::rename(assay_response = all_of(response_var))
+
+
+  # add project_id
+  batch_outputs$best_tidy_all$project_id <- as.numeric(project_id)
+  batch_outputs$best_glance_all$project_id <- as.numeric(project_id)
+  batch_outputs$best_pred_all$project_id <- as.numeric(project_id)
+  batch_outputs$best_sample_se_all$project_id <- as.numeric(project_id)
+  batch_outputs$best_standard_all$project_id <- as.numeric(project_id)
+  batch_outputs$best_plate_all$project_id <- as.numeric(project_id)
+
+  batch_outputs <- lapply(batch_outputs, function(x) {
+    if (is.data.frame(x)) {
+      x[, !names(x) %in% "plate_nom", drop = FALSE]
+    } else x
+  })
 
   return(batch_outputs)
 }

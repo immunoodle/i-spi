@@ -77,6 +77,7 @@ dilutionalLinearityServer <- function(id, selected_study, selected_experiment, c
     sample_data_dl <- fetch_best_sample_se_all_summary(study_accession = selected_study(),
                                      experiment_accession = selected_experiment(),
                                      param_user = currentuser(),
+                                     project_id = userWorkSpaceID(),
                                      conn = conn)
 
       if (!is.null(selected_study()) && length(selected_study()) > 0 &&

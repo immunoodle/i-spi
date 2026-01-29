@@ -1,6 +1,3 @@
-# ============================================================================
-# Navigation Observer - handles UI setup when navigating to Standard Curve tab
-# ============================================================================
 observeEvent(list(
   input$readxMap_experiment_accession,
   input$readxMap_study_accession,
@@ -624,6 +621,47 @@ observeEvent(list(
    )
 
 
+    # observeEvent(input$show_samples_above_ulod, {
+    #   showModal(
+    #     modalDialog(
+    #       title = "Sample Values above the Upper Limit of Detection",
+    #       size = "xl",
+    #       div(class = "table-container",tableOutput("samples_above_ulod")),
+    #       easyClose = TRUE,
+    #       footer = modalButton("Close")
+    #     )
+    #   )
+    # })
+    # output$samples_above_ulod <- renderTable({
+    #   req(best_fit())
+    #   best_fit()$sample_se[best_fit()$sample_se$gate_class_lod == "Too Concentrated",
+    #                        !(names(best_fit()$sample_se) %in% c("plate_id", "assay_response_variable",
+    #                                                            "assay_independent_variable", "y_new", "overall_se"))]
+    # }, caption = "Sample Values above the Upper Limit of Detection",
+    # caption.placement = getOption("xtable.caption.placement", "top"))
+
+    # observeEvent(input$show_samples_below_llod, {
+    #   showModal(
+    #     modalDialog(
+    #       title = "Sample Values below the Lower Limit of Detection",
+    #       size = "xl",
+    #       div(class = "table-container",tableOutput("samples_below_llod")),
+    #       easyClose = TRUE,
+    #       footer = modalButton("Close")
+    #     )
+    #   )
+    # })
+    #
+    # output$samples_below_llod <- renderTable({
+    #   req(best_fit())
+    #   best_fit()$sample_se[best_fit()$sample_se$gate_class_lod == "Too Diluted",
+    #                        !(names(best_fit()$sample_se) %in% c("plate_id", "assay_response_variable",
+    #                                                             "assay_independent_variable", "y_new", "overall_se"))]
+    # }, caption = "Sample Values below the Lower Limit of Detection",
+    # caption.placement = getOption("xtable.caption.placement", "top"))
+    #
+
+
     output$download_samples_below_llod <- downloadHandler(
       filename = function() {
         paste(input$readxMap_study_accession, input$readxMap_experiment_accession, input$sc_plate_select, "x",
@@ -643,139 +681,81 @@ observeEvent(list(
     )
 
 
-} # end if
+    # showNotification(
+    #   div(class = "big-notification", "This is an important message!"),
+    #   duration = 5
+    # )
 
-}) # end navigation observer
+    observeEvent(input$run_batch_fit, {
+      showNotification(id = "batch_sc_fit_notify", div(class = "big-notification", "Fitting standard curves for all experiments."), duration = NULL)
+      response_var <- loaded_data$response_var
+      headers <- fetch_db_header_experiments(study_accession = input$readxMap_study_accession, conn = conn)
+      exp_list <- unique(headers$experiment_accession) #[1]
 
+      loaded_data_list <- list()
+      for(exp in exp_list) {
+        loaded_data_list[[exp]] <- pull_data(study_accession = input$readxMap_study_accession,
+                                             experiment_accession = exp,
+                                             project_id = userWorkSpaceID(),
+                                             conn = conn)
+      }
 
-# ============================================================================
-# Batch Processing Button Observer - completely separate from navigation
-# ============================================================================
+      # Compute SE table for all antigens across all experiments
+      all_standards <- do.call(rbind, lapply(loaded_data_list, function(x) x$standards))
 
-# Reactive value to track if batch processing is currently running
-is_batch_processing <- reactiveVal(FALSE)
+      se_antigen_table <- compute_antigen_se_table(
+        standards_data = all_standards,
+        response_col = response_var,
+        dilution_col = "dilution",
+        plate_col = "plate",
+        grouping_cols = c("study_accession", "experiment_accession", "source", "antigen"),
+        method = "pooled_within",
+        verbose = TRUE
+      )
 
-observeEvent(input$run_batch_fit, ignoreInit = TRUE, {
+      antigen_list_res <- build_antigen_list(exp_list = exp_list, loaded_data_list = loaded_data_list, study_accession = input$readxMap_study_accession)
 
-  # First check: Is processing already running?
-  if (is_batch_processing()) {
-    showNotification("Batch processing is already running. Please wait for it to complete.",
-                    type = "warning", duration = 3)
-    return()
-  }
+      cat(paste("after antigen_list_res", exp))
+      antigen_plate_list_res <- build_antigen_plate_list(antigen_list_result = antigen_list_res, loaded_data_list = loaded_data_list)
 
-  # Second check: Ensure we're on the right tab and have the required data
-  req(input$qc_component == "Standard Curve",
-      input$readxMap_study_accession != "Click here",
-      input$readxMap_experiment_accession != "Click here",
-      input$study_level_tabs == "Experiments",
-      input$main_tabs == "view_files_tab")
+      prepped_data_list_res <- prep_plate_data_batch(antigen_plate_list_res = antigen_plate_list_res, study_params = study_params, verbose = verbose)
 
-  # Third check: Validate that study accession is available
-  if (is.null(input$readxMap_study_accession) || input$readxMap_study_accession == "") {
-    showNotification("Please select a study before running batch processing.",
-                    type = "error", duration = 5)
-    return()
-  }
+      # the list of antigen and plates is truncated to exclude standard data with < 6 points
+      antigen_plate_list_res$antigen_plate_list_ids <- prepped_data_list_res$antigen_plate_name_list
 
-  # Set flag to indicate processing has started
-  is_batch_processing(TRUE)
+      cat(paste("after prepped_data_list_res", exp))
+      batch_fit_res <- fit_experiment_plate_batch(prepped_data_list_res = prepped_data_list_res,
+                                                  antigen_plate_list_res = antigen_plate_list_res,
+                                                  model_names = model_names,
+                                                  study_params = study_params,
+                                                  se_antigen_table = se_antigen_table,
+                                                  verbose = verbose)
 
-  # Use tryCatch to ensure flag is reset even if there's an error
-  tryCatch({
+      # cat(paste("after antigen_list_res", exp))
+      batch_outputs <- create_batch_fit_outputs(batch_fit_res = batch_fit_res, antigen_plate_list_res)
 
-    showNotification(id = "batch_sc_fit_notify",
-                    div(class = "big-notification", "Fitting standard curves for all experiments."),
-                    duration = NULL)
-
-    # Pull fresh data for the batch processing
-    headers <- fetch_db_header_experiments(study_accession = input$readxMap_study_accession, conn = conn)
-    exp_list <- unique(headers$experiment_accession)
-
-    loaded_data_list <- list()
-    for(exp in exp_list) {
-      loaded_data_list[[exp]] <- pull_data(study_accession = input$readxMap_study_accession,
-                                           experiment_accession = exp,
-                                           project_id = userWorkSpaceID(),
-                                           conn = conn)
-    }
-
-    # Get response variable from first experiment's loaded data
-    response_var <- loaded_data_list[[exp_list[1]]]$response_var
-
-    # Compute SE table for all antigens across all experiments
-    all_standards <- do.call(rbind, lapply(loaded_data_list, function(x) x$standards))
-
-    se_antigen_table <- compute_antigen_se_table(
-      standards_data = all_standards,
-      response_col = response_var,
-      dilution_col = "dilution",
-      plate_col = "plate",
-      grouping_cols = c("study_accession", "experiment_accession", "source", "antigen"),
-      method = "pooled_within",
-      verbose = TRUE
-    )
-
-    # Get study parameters
-    verbose = FALSE
-    model_names <- c("Y5", "Yd5", "Y4", "Yd4", "Ygomp4")
-    param_group = "standard_curve_options"
-
-    study_params <- fetch_study_parameters(study_accession = input$readxMap_study_accession,
-                                           param_user = currentuser(),
-                                           param_group = param_group,
-                                           conn = conn)
-
-    antigen_list_res <- build_antigen_list(exp_list = exp_list,
-                                           loaded_data_list = loaded_data_list,
-                                           study_accession = input$readxMap_study_accession)
-
-    cat(paste("after antigen_list_res", exp))
-    antigen_plate_list_res <- build_antigen_plate_list(antigen_list_result = antigen_list_res,
-                                                       loaded_data_list = loaded_data_list)
-
-    prepped_data_list_res <- prep_plate_data_batch(antigen_plate_list_res = antigen_plate_list_res,
-                                                   study_params = study_params,
-                                                   verbose = verbose)
-
-    # the list of antigen and plates is truncated to exclude standard data with < 6 points
-    antigen_plate_list_res$antigen_plate_list_ids <- prepped_data_list_res$antigen_plate_name_list
-
-    cat(paste("after prepped_data_list_res", exp))
-    batch_fit_res <- fit_experiment_plate_batch(prepped_data_list_res = prepped_data_list_res,
-                                                antigen_plate_list_res = antigen_plate_list_res,
-                                                model_names = model_names,
-                                                study_params = study_params,
-                                                se_antigen_table = se_antigen_table,
-                                                verbose = verbose)
-
-    batch_outputs <- create_batch_fit_outputs(batch_fit_res = batch_fit_res, antigen_plate_list_res)
-
-    # add unique identifiers and rename the response variable to be generic for saving
-    batch_outputs_processed <- process_batch_outputs(batch_outputs = batch_outputs,
-                                                     response_var = response_var,
-                                                     project_id = userWorkSpaceID())
+      # add unique identifiers and rename the response variable to be generic for saving
+     batch_outputs_processed <-  process_batch_outputs(batch_outputs = batch_outputs, response_var = response_var,
+                                                        project_id = userWorkSpaceID())
 
 
 
 
-    upsert_best_curve(
-      conn   = conn,
-      df     = batch_outputs_processed$best_glance_all,
-      schema = "madi_results",
-      table  = "best_glance_all",
-      notify = shiny_notify(session)
-    )
-    showNotification(id = "batch_sc_fit_notify",
-                    div(class = "big-notification", "Best Fit Statistics saved"),
-                    duration = NULL)
+     upsert_best_curve(
+       conn   = conn,
+       df     = batch_outputs_processed$best_glance_all,
+       schema = "madi_results",
+       table  = "best_glance_all",
+       notify = shiny_notify(session)
+     )
+     showNotification(id = "batch_sc_fit_notify",div(class = "big-notification", "Best Fit Statistics saved"), duration = NULL)
 
-    # Retrieve lookup of IDs using NK
-    study_to_save <- unique(batch_outputs_processed$best_glance_all$study_accession)
+  #    # Retrieve lookup of IDs using NK
+     study_to_save <- unique(batch_outputs_processed$best_glance_all$study_accession)
 
-    glance_lookup <- DBI::dbGetQuery(
-      conn,
-      glue::glue("
+     glance_lookup <- DBI::dbGetQuery(
+       conn,
+       glue::glue("
     SELECT
       best_glance_all_id,
       study_accession,
@@ -788,90 +768,84 @@ observeEvent(input$run_batch_fit, ignoreInit = TRUE, {
     FROM madi_results.best_glance_all
     WHERE study_accession = '{study_to_save}';
   ")
-    )
+     )
 
     glance_lookup$best_glance_all_id <- as.integer(glance_lookup$best_glance_all_id)
 
 
-    # natural key (nk) vector for the glance
-    keys <- c("study_accession", "experiment_accession", "plateid",
-              "plate", "nominal_sample_dilution", "source", "antigen")
+      # #natural key (nk) vector for the glance
+      keys <- c("study_accession", "experiment_accession", "plateid",
+                "plate", "nominal_sample_dilution", "source", "antigen")
 
 
-    # attach the best_glance_all_id to the table
-    batch_outputs_processed$best_pred_all <-
-      dplyr::inner_join(
-        batch_outputs_processed$best_pred_all,
-        glance_lookup,
-        by = keys
+      # attach the best_glance_all_id to the table
+      batch_outputs_processed$best_pred_all <-
+        dplyr::inner_join(
+          batch_outputs_processed$best_pred_all,
+          glance_lookup,
+          by = keys
+        )
+
+      batch_outputs_processed$best_sample_se_all <-
+        dplyr::inner_join(
+          batch_outputs_processed$best_sample_se_all,
+          glance_lookup,
+          by = keys
+        )
+
+      batch_outputs_processed$best_standard_all <-
+        dplyr::inner_join(
+          batch_outputs_processed$best_standard_all,
+          glance_lookup,
+          by = keys
+        )
+
+
+      upsert_best_curve(
+        conn   = conn,
+        df     = batch_outputs_processed$best_plate_all,
+        schema = "madi_results",
+        table  = "best_plate_all",
+        notify = shiny_notify(session)
       )
 
-    batch_outputs_processed$best_sample_se_all <-
-      dplyr::inner_join(
-        batch_outputs_processed$best_sample_se_all,
-        glance_lookup,
-        by = keys
+      showNotification(id = "batch_sc_fit_notify",div(class = "big-notification", "Best Plates saved"), duration = NULL)
+
+      showNotification(id = "batch_sc_fit_notify",div(class = "big-notification", "Saving parameter estimates..."), duration = NULL)
+
+      upsert_best_curve(
+        conn   = conn,
+        df     = batch_outputs_processed$best_tidy_all,
+        schema = "madi_results",
+        table  = "best_tidy_all",
+        notify = shiny_notify(session)
+      )
+      showNotification(id = "batch_sc_fit_notify",div(class = "big-notification", "Best parameter estimates saved"), duration = NULL)
+
+     # batch_outputs$best_pred_all$id_match <- match(batch_outputs$best_pred_all$x, unique(batch_outputs$best_pred_all$x))
+
+
+      showNotification(id = "batch_sc_fit_notify",div(class = "big-notification", "Saving predicted standards..."), duration = NULL)
+
+      #print(str(batch_outputs_processed$best_pred_all))
+
+      upsert_best_curve(
+        conn   = conn,
+        df     = batch_outputs_processed$best_pred_all,
+        schema = "madi_results",
+        table  = "best_pred_all",
+        notify = shiny_notify(session)
       )
 
-    batch_outputs_processed$best_standard_all <-
-      dplyr::inner_join(
-        batch_outputs_processed$best_standard_all,
-        glance_lookup,
-        by = keys
-      )
+
+      showNotification(id = "batch_sc_fit_notify",div(class = "big-notification", "Best Predicted standards saved"), duration = NULL)
 
 
-    upsert_best_curve(
-      conn   = conn,
-      df     = batch_outputs_processed$best_plate_all,
-      schema = "madi_results",
-      table  = "best_plate_all",
-      notify = shiny_notify(session)
-    )
+      showNotification(id = "batch_sc_fit_notify",div(class = "big-notification", "Saving Predicted samples..."), duration = NULL)
 
-    showNotification(id = "batch_sc_fit_notify",
-                    div(class = "big-notification", "Best Plates saved"),
-                    duration = NULL)
+      #print(str(batch_outputs_processed$best_sample_se_all))
 
-    showNotification(id = "batch_sc_fit_notify",
-                    div(class = "big-notification", "Saving parameter estimates..."),
-                    duration = NULL)
-
-    upsert_best_curve(
-      conn   = conn,
-      df     = batch_outputs_processed$best_tidy_all,
-      schema = "madi_results",
-      table  = "best_tidy_all",
-      notify = shiny_notify(session)
-    )
-    showNotification(id = "batch_sc_fit_notify",
-                    div(class = "big-notification", "Best parameter estimates saved"),
-                    duration = NULL)
-
-
-    showNotification(id = "batch_sc_fit_notify",
-                    div(class = "big-notification", "Saving predicted standards..."),
-                    duration = NULL)
-
-    upsert_best_curve(
-      conn   = conn,
-      df     = batch_outputs_processed$best_pred_all,
-      schema = "madi_results",
-      table  = "best_pred_all",
-      notify = shiny_notify(session)
-    )
-
-
-    showNotification(id = "batch_sc_fit_notify",
-                    div(class = "big-notification", "Best Predicted standards saved"),
-                    duration = NULL)
-
-
-    showNotification(id = "batch_sc_fit_notify",
-                    div(class = "big-notification", "Saving Predicted samples..."),
-                    duration = NULL)
-
-    upsert_best_curve(
+      upsert_best_curve(
       conn   = conn,
       df     = batch_outputs_processed$best_sample_se_all,
       schema = "madi_results",
@@ -879,44 +853,33 @@ observeEvent(input$run_batch_fit, ignoreInit = TRUE, {
       notify = shiny_notify(session)
     )
 
-    showNotification(id = "batch_sc_fit_notify",
-                    div(class = "big-notification", "Best Predicted Samples saved"),
-                    duration = NULL)
+      showNotification(id = "batch_sc_fit_notify",div(class = "big-notification", "Best Predicted Samples saved"), duration = NULL)
 
-    showNotification(id = "batch_sc_fit_notify",
-                    div(class = "big-notification", "Saving Best Standards..."),
-                    duration = NULL)
+      showNotification(id = "batch_sc_fit_notify",div(class = "big-notification", "Saving Best Standards..."), duration = NULL)
 
-    upsert_best_curve(
-      conn   = conn,
-      df     = batch_outputs_processed$best_standard_all,
-      schema = "madi_results",
-      table  = "best_standard_all",
-      notify = shiny_notify(session)
-    )
+      upsert_best_curve(
+        conn   = conn,
+        df     = batch_outputs_processed$best_standard_all,
+        schema = "madi_results",
+        table  = "best_standard_all",
+        notify = shiny_notify(session)
 
-    showNotification(id = "batch_sc_fit_notify",
-                    div(class = "big-notification", "Best Standards saved"),
-                    duration = NULL)
+
+      )
+
+      showNotification(id = "batch_sc_fit_notify",div(class = "big-notification", "Best Standards saved"), duration = NULL)
 
 
 
-    showNotification(id = "batch_sc_fit_notify",
-                    div(class = "big-notification", "Standard Curves Calculated for all Experiments"),
-                    duration = NULL)
-    removeNotification("batch_sc_fit_notify")
+      showNotification(id = "batch_sc_fit_notify",div(class = "big-notification", "Standard Curves Calculated for all Experiments"), duration = NULL)
+      removeNotification("batch_sc_fit_notify")
 
-  }, error = function(e) {
-    # Handle errors
-    showNotification(
-      paste("Error during batch processing:", e$message),
-      type = "error",
-      duration = 10
-    )
-    removeNotification("batch_sc_fit_notify")
-  }, finally = {
-    # Always reset the processing flag, even if there was an error
-    is_batch_processing(FALSE)
-  })
+    })
 
-})
+
+} # end if
+
+}) # end in the tab
+
+
+
