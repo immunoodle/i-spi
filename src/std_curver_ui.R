@@ -115,7 +115,7 @@ observeEvent(list(
       blank_labels <- c(
         ignored        = "Ignored",
         included       = "Included",
-        subtracted_1x  = "Subtracted 1 × Geometric Mean",
+        subtracted     = "Subtracted 1 × Geometric Mean",
         subtracted_3x  = "Subtracted 3 × Geometric Mean",
         subtracted_5x  = "Subtracted 5 × Geometric Mean",
         subtracted_10x = "Subtracted 10 × Geometric Mean"
@@ -463,9 +463,45 @@ observeEvent(list(
                              model_names = model_names,
                              x_var = indep_var,
                              y_var = response_var,
+                             is_display_log_response = input$display_log_response,
+                             is_display_log_independent = input$display_log_independent,
                              use_patchwork = TRUE)
 
     })
+
+    output$download_model_comparisons <- downloadHandler(
+      filename = function() {
+        paste0("model_comparison_", unique(plot_data()$dat$study_accession), unique(plot_data()$dat$experiment_accession),
+               unique(plot_data()$dat$plate_nom), unique(plot_data()$dat$antigen), ".pdf")
+      },
+
+      content = function(file) {
+        req(plot_data())
+
+        response_var <- loaded_data$response_var
+        indep_var    <- loaded_data$indep_var
+
+        p <- plot_model_comparisons(
+          plot_data   = plot_data(),
+          model_names = model_names,
+          x_var       = indep_var,
+          y_var       = response_var,
+          is_display_log_response = input$display_log_response,
+          is_display_log_independent = input$display_log_independent,
+          use_patchwork = TRUE
+        )
+
+        ggsave(
+          filename = file,
+          plot     = p,
+          device   = "pdf",
+          width    = 8,
+          height   = 10,
+          units    = "in"
+        )
+      }
+    )
+
 #
 #
     observeEvent(input$show_comparisions, {
@@ -496,6 +532,7 @@ observeEvent(list(
           title = title,
           size = "l",    # "s", "m", or "l"
           plotOutput("model_comparisions"),
+          downloadButton("download_model_comparisons", "Downlaod Model Comparisons"),
           easyClose = TRUE,
           footer = modalButton("Close")
         )
