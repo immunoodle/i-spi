@@ -129,7 +129,14 @@ dilutionalLinearityServer <- function(id, selected_study, selected_experiment, c
       if (all(is.na(antigen_choices))) {
         node_order_in <- strsplit(study_configuration[study_configuration$param_name == "node_order",]$param_character_value, ",")[[1]]
 
-        gated_data <- calculate_sample_concentration_status(study_accession = selected_study(), experiment_accession = selected_experiment(), node_order = node_order_in)
+
+        gated_data <- calculate_sample_concentration_status_new(conn = conn,
+                                                  study_accession = selected_study,
+                                                  experiment_accession = selected_experiment,
+                                                  project_id = userWorkSpaceID(),
+                                                  node_order = node_order_in)
+
+        # gated_data <- calculate_sample_concentration_status(study_accession = selected_study(), experiment_accession = selected_experiment(), node_order = node_order_in)
 
         antigen_choices <-  unique(gated_data$antigen)
       }

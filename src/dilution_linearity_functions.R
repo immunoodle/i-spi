@@ -1,42 +1,42 @@
 
-get_dilution_parameters <- function(study_accession) {
-  query <- paste0("SELECT study_accession, node_order, valid_gate_class, is_binary_gate
-  FROM madi_results.xmap_dilution_parameters
-  WHERE study_accession IN ('", study_accession,"');")
+# get_dilution_parameters <- function(study_accession, project_id) {
+#   query <- paste0("SELECT study_accession, node_order, valid_gate_class, is_binary_gate
+#   FROM madi_results.xmap_dilution_parameters
+#   WHERE project_id = ", project_id, " AND study_accession IN ('", study_accession,"');")
+#
+#   result_df <- dbGetQuery(conn, query)
+# }
 
-  result_df <- dbGetQuery(conn, query)
-}
+# fetch_sample_data_linearity <- function(study_accession, experiment_accession) {
+#   query <- paste0("SELECT study_accession, experiment_accession, patientid, plate_id, timeperiod, antigen, dilution, agroup, antibody_mfi, gate_class, floor(100000*antibody_au)/100 AS AU, in_linear_region, in_quantifiable_range
+# 	FROM madi_results.xmap_sample
+# 	WHERE study_accession IN ('",study_accession,"')
+# 	AND experiment_accession IN ('",experiment_accession,"')
+#                   ORDER BY patientid, timeperiod, dilution;")
+#
+#   # Run the query and fetch the result as a data frame
+#   result_df <- dbGetQuery(conn, query)
+# }
 
-fetch_sample_data_linearity <- function(study_accession, experiment_accession) {
-  query <- paste0("SELECT study_accession, experiment_accession, patientid, plate_id, timeperiod, antigen, dilution, agroup, antibody_mfi, gate_class, floor(100000*antibody_au)/100 AS AU, in_linear_region, in_quantifiable_range
-	FROM madi_results.xmap_sample
-	WHERE study_accession IN ('",study_accession,"')
-	AND experiment_accession IN ('",experiment_accession,"')
-                  ORDER BY patientid, timeperiod, dilution;")
-
-  # Run the query and fetch the result as a data frame
-  result_df <- dbGetQuery(conn, query)
-}
-
-fetch_standard_curves_dilution <- function(study_accession, experiment_accession, bkg_method, is_log_mfi) {
-  query <- paste0("
-    SELECT DISTINCT ON (study_accession, experiment_accession, plateid,
-           antigen) study_accession, experiment_accession, plateid,
-           antigen,  iter, status, crit, l_asy, r_asy, x_mid, scale, bendlower, bendupper,
-           llod, ulod, loglik, aic, bic, deviance, dfresidual, nobs, rsquare_fit, source, g, lloq, uloq, loq_method, bkg_method
-    FROM madi_results.xmap_standard_fits
-    WHERE study_accession = '", study_accession, "'
-    AND experiment_accession = '", experiment_accession, "'
-    AND bkg_method = '", bkg_method, "'
-    and is_log_mfi_axis = '", is_log_mfi,"'
-    ORDER BY study_accession, experiment_accession, plateid,
-           antigen, loglik")
-
-
-  # Run the query and fetch the result as a data frame
-  result_df <- dbGetQuery(conn, query)
-
-}
+# fetch_standard_curves_dilution <- function(study_accession, experiment_accession, bkg_method, is_log_mfi) {
+#   query <- paste0("
+#     SELECT DISTINCT ON (study_accession, experiment_accession, plateid,
+#            antigen) study_accession, experiment_accession, plateid,
+#            antigen,  iter, status, crit, l_asy, r_asy, x_mid, scale, bendlower, bendupper,
+#            llod, ulod, loglik, aic, bic, deviance, dfresidual, nobs, rsquare_fit, source, g, lloq, uloq, loq_method, bkg_method
+#     FROM madi_results.xmap_standard_fits
+#     WHERE study_accession = '", study_accession, "'
+#     AND experiment_accession = '", experiment_accession, "'
+#     AND bkg_method = '", bkg_method, "'
+#     and is_log_mfi_axis = '", is_log_mfi,"'
+#     ORDER BY study_accession, experiment_accession, plateid,
+#            antigen, loglik")
+#
+#
+#   # Run the query and fetch the result as a data frame
+#   result_df <- dbGetQuery(conn, query)
+#
+# }
 
 # Helper: map a node name → the column that stores its
 node_to_col <- function(node) {
@@ -54,6 +54,7 @@ calculate_sample_concentration_status_new <- function(
     conn,                # DBI connection object
     study_accession,
     experiment_accession,
+    project_id,
     node_order = c("limits_of_quantification")   # any permutation of the two nodes
 ) {
 
@@ -67,7 +68,8 @@ calculate_sample_concentration_status_new <- function(
                   FROM madi_results.best_sample_se_all se
                   LEFT JOIN madi_results.best_glance_all g
                       ON se.best_glance_all_id = g.best_glance_all_id
-                  WHERE se.study_accession = '{study_accession}'
+                  WHERE se.project_id = {project_id}
+                  AND se.study_accession = '{study_accession}'
                   AND se.experiment_accession = '{experiment_accession}';")
 
   df <- dbGetQuery(conn, query_samples)
@@ -178,116 +180,116 @@ calculate_sample_concentration_status_new <- function(
 }
 
 
-### Read in data and find concentration status
-calculate_sample_concentration_status <- function(study_accession, experiment_accession, node_order) {
-  query_samples <- glue::glue("SELECT xmap_sample_id, study_accession, experiment_accession, plate_id, timeperiod, patientid, well, stype, sampleid, id_imi, agroup, dilution, pctaggbeads, samplingerrors, antigen, antibody_mfi, antibody_n, antibody_name, feature, antibody_au, antibody_au_se, norm_mfi, gate_class, in_linear_region, gate_class_linear_region,in_quantifiable_range, gate_class_loq,  quality_score
-	FROM madi_results.xmap_sample
-	WHERE study_accession = '{study_accession}'
-	AND experiment_accession = '{experiment_accession}';")
-
-  sample_data_da <-  dbGetQuery(conn, query_samples)
-
-  # filter out samples with not evaluated on all 3
-  sample_data_da <- sample_data_da[sample_data_da$gate_class != "Not Evaluated" & sample_data_da$gate_class_linear_region != "Not Evaluated"
-                                   & sample_data_da$gate_class_loq != "Not Evaluated",]
-
-  cat("node_order")
-  print(node_order)
- # sample_data_da_v <- sample_data_da
-
-  if (identical(node_order, c("limits_of_quantification"))) {
-    sample_data_da <- sample_data_da[sample_data_da$gate_class_loq != "Not Evaluated",]
-    sample_data_da$concentration_status <- sample_data_da$gate_class_loq
-  }  else if (identical(node_order, c("linear_region"))) {
-    sample_data_da <- sample_data_da[sample_data_da$gate_class_linear_region != "Not Evaluated",]
-    sample_data_da$concentration_status <- sample_data_da$gate_class_linear_region
-  } else if (identical(node_order, c("linear_region", "limits_of_quantification"))) {
-    linear_passed <- sample_data_da$gate_class_linear == "Acceptable"
-    sample_data_da <- sample_data_da[linear_passed, ]
-    sample_data_da <- sample_data_da[sample_data_da$gate_class_loq != "Not Evaluated",]
-    sample_data_da$concentration_status <- sample_data_da$gate_class_loq
-  } else if (identical(node_order, c("limits_of_quantification", "linear_region"))) {
-    quantifiable_passed <- sample_data_da$gate_class_loq == "Acceptable"
-    sample_data_da <- sample_data_da[quantifiable_passed, ]
-    sample_data_da <- sample_data_da[sample_data_da$gate_class_linear_region != "Not Evaluated",]
-    sample_data_da$concentration_status <- sample_data_da$gate_class_linear_region
-  } else if (identical(node_order, c("limits_of_detection"))) {
-    sample_data_da <- sample_data_da[sample_data_da$gate_class != "Not Evaluated",]
-    sample_data_da$concentration_status <- sample_data_da$gate_class
-  } else if (identical(node_order, c("limits_of_detection", "linear_region"))) {
-    gate_class_passed <- sample_data_da$gate_class == "Acceptable"
-    sample_data_da <- sample_data_da[gate_class_passed,]
-    sample_data_da <- sample_data_da[sample_data_da$gate_class_linear_region != "Not Evaluated",]
-    sample_data_da$concentration_status <- sample_data_da$gate_class_linear_region
-  } else if (identical(node_order, c("linear_region", "limits_of_detection"))) {
-    linear_passed <- sample_data_da$gate_class_linear_region == "Acceptable"
-    sample_data_da <- sample_data_da[linear_passed, ]
-    sample_data_da <- sample_data_da[sample_data_da$gate_class != "Not Evaluated",]
-    sample_data_da$concentration_status <- sample_data_da$gate_class
-  } else if (identical(node_order, c("limits_of_detection", "limits_of_quantification"))) {
-    gate_class_passed <- sample_data_da$gate_class == "Acceptable"
-    sample_data_da <- sample_data_da[gate_class_passed,]
-    sample_data_da <- sample_data_da[sample_data_da$gate_class_loq != "Not Evaluated",]
-    sample_data_da$concentration_status <- sample_data_da$gate_class_loq
-  } else if (identical(node_order, c("limits_of_quantification", "limits_of_detection"))) {
-    quantifiable_passed <- sample_data_da$gate_class_loq == "Acceptable"
-    sample_data_da <- sample_data_da[quantifiable_passed, ]
-    sample_data_da <- sample_data_da[sample_data_da$gate_class != "Not Evaluated",]
-    sample_data_da$concentration_status <- sample_data_da$gate_class
-  } else if (identical(node_order, c("limits_of_detection", "linear_region", "limits_of_quantification"))) {
-    gate_class_passed <- sample_data_da$gate_class == "Acceptable"
-    sample_data_da <- sample_data_da[gate_class_passed,]
-    linear_passed <- sample_data_da$gate_class_linear_region == "Acceptable"
-    sample_data_da <- sample_data_da[linear_passed, ]
-    sample_data_da <- sample_data_da[sample_data_da$gate_class_loq != "Not Evaluated",]
-    sample_data_da$concentration_status <- sample_data_da$gate_class_loq
-  } else if (identical(node_order, c("limits_of_detection", "limits_of_quantification", "linear_region"))) {
-    gate_class_passed <- sample_data_da$gate_class == "Acceptable"
-    sample_data_da <- sample_data_da[gate_class_passed,]
-    quantifiable_passed <- sample_data_da$gate_class_loq == "Acceptable"
-    sample_data_da <- sample_data_da[quantifiable_passed, ]
-    sample_data_da <- sample_data_da[sample_data_da$gate_class_linear_region != "Not Evaluated",]
-    sample_data_da$concentration_status <- sample_data_da$gate_class_linear_region
-  } else if (identical(node_order, c("linear_region", "limits_of_detection", "limits_of_quantification"))) {
-    linear_passed <- sample_data_da$gate_class_linear_region == "Acceptable"
-    sample_data_da <- sample_data_da[linear_passed, ]
-    gate_class_passed <- sample_data_da$gate_class == "Acceptable"
-    sample_data_da <- sample_data_da[gate_class_passed,]
-    sample_data_da <- sample_data_da[sample_data_da$gate_class_loq != "Not Evaluated",]
-    sample_data_da$concentration_status <- sample_data_da$gate_class_loq
-  } else if (identical(node_order, c("linear_region", "limits_of_quantification", "limits_of_detection"))) {
-    linear_passed <- sample_data_da$gate_class_linear_region == "Acceptable"
-    sample_data_da <- sample_data_da[linear_passed, ]
-    quantifiable_passed <- sample_data_da$gate_class_loq == "Acceptable"
-    sample_data_da <- sample_data_da[quantifiable_passed, ]
-    sample_data_da <- sample_data_da[sample_data_da$gate_class != "Not Evaluated",]
-    sample_data_da$concentration_status <- sample_data_da$gate_class
-  } else if (identical(node_order, c("limits_of_quantification", "limits_of_detection", "linear_region"))){
-    quantifiable_passed <- sample_data_da$gate_class_loq == "Acceptable"
-    sample_data_da <- sample_data_da[quantifiable_passed, ]
-    gate_class_passed <- sample_data_da$gate_class == "Acceptable"
-    sample_data_da <- sample_data_da[gate_class_passed,]
-    sample_data_da <- sample_data_da[sample_data_da$gate_class_linear_region != "Not Evaluated",]
-    sample_data_da$concentration_status <- sample_data_da$gate_class_linear_region
-  } else if (identical(node_order, c("limits_of_quantification", "linear_region", "limits_of_detection"))) {
-    quantifiable_passed <- sample_data_da$gate_class_loq == "Acceptable"
-    sample_data_da <- sample_data_da[quantifiable_passed, ]
-    linear_passed <- sample_data_da$gate_class_linear_region == "Acceptable"
-    sample_data_da <- sample_data_da[linear_passed, ]
-    sample_data_da <- sample_data_da[sample_data_da$gate_class != "Not Evaluated",]
-    sample_data_da$concentration_status <- sample_data_da$gate_class
-  }
-
-  ## Classification based on tree (node order)
-  sample_data_da$Classification <- ifelse(sample_data_da$concentration_status == "Acceptable", "Pass Classification", "Does Not Pass Classification")
-
-  # add plateid
-  sample_data_da$plateid <- gsub("[[:punct:][:blank:]]+", ".", basename(gsub("\\", "/", sample_data_da$plate_id, fixed=TRUE)))
-
-
-  return(sample_data_da)
-
-}
+# ### Read in data and find concentration status
+# calculate_sample_concentration_status <- function(study_accession, experiment_accession, node_order) {
+#   query_samples <- glue::glue("SELECT xmap_sample_id, study_accession, experiment_accession, plate_id, timeperiod, patientid, well, stype, sampleid, id_imi, agroup, dilution, pctaggbeads, samplingerrors, antigen, antibody_mfi, antibody_n, antibody_name, feature, antibody_au, antibody_au_se, norm_mfi, gate_class, in_linear_region, gate_class_linear_region,in_quantifiable_range, gate_class_loq,  quality_score
+# 	FROM madi_results.xmap_sample
+# 	WHERE study_accession = '{study_accession}'
+# 	AND experiment_accession = '{experiment_accession}';")
+#
+#   sample_data_da <-  dbGetQuery(conn, query_samples)
+#
+#   # filter out samples with not evaluated on all 3
+#   sample_data_da <- sample_data_da[sample_data_da$gate_class != "Not Evaluated" & sample_data_da$gate_class_linear_region != "Not Evaluated"
+#                                    & sample_data_da$gate_class_loq != "Not Evaluated",]
+#
+#   cat("node_order")
+#   print(node_order)
+#  # sample_data_da_v <- sample_data_da
+#
+#   if (identical(node_order, c("limits_of_quantification"))) {
+#     sample_data_da <- sample_data_da[sample_data_da$gate_class_loq != "Not Evaluated",]
+#     sample_data_da$concentration_status <- sample_data_da$gate_class_loq
+#   }  else if (identical(node_order, c("linear_region"))) {
+#     sample_data_da <- sample_data_da[sample_data_da$gate_class_linear_region != "Not Evaluated",]
+#     sample_data_da$concentration_status <- sample_data_da$gate_class_linear_region
+#   } else if (identical(node_order, c("linear_region", "limits_of_quantification"))) {
+#     linear_passed <- sample_data_da$gate_class_linear == "Acceptable"
+#     sample_data_da <- sample_data_da[linear_passed, ]
+#     sample_data_da <- sample_data_da[sample_data_da$gate_class_loq != "Not Evaluated",]
+#     sample_data_da$concentration_status <- sample_data_da$gate_class_loq
+#   } else if (identical(node_order, c("limits_of_quantification", "linear_region"))) {
+#     quantifiable_passed <- sample_data_da$gate_class_loq == "Acceptable"
+#     sample_data_da <- sample_data_da[quantifiable_passed, ]
+#     sample_data_da <- sample_data_da[sample_data_da$gate_class_linear_region != "Not Evaluated",]
+#     sample_data_da$concentration_status <- sample_data_da$gate_class_linear_region
+#   } else if (identical(node_order, c("limits_of_detection"))) {
+#     sample_data_da <- sample_data_da[sample_data_da$gate_class != "Not Evaluated",]
+#     sample_data_da$concentration_status <- sample_data_da$gate_class
+#   } else if (identical(node_order, c("limits_of_detection", "linear_region"))) {
+#     gate_class_passed <- sample_data_da$gate_class == "Acceptable"
+#     sample_data_da <- sample_data_da[gate_class_passed,]
+#     sample_data_da <- sample_data_da[sample_data_da$gate_class_linear_region != "Not Evaluated",]
+#     sample_data_da$concentration_status <- sample_data_da$gate_class_linear_region
+#   } else if (identical(node_order, c("linear_region", "limits_of_detection"))) {
+#     linear_passed <- sample_data_da$gate_class_linear_region == "Acceptable"
+#     sample_data_da <- sample_data_da[linear_passed, ]
+#     sample_data_da <- sample_data_da[sample_data_da$gate_class != "Not Evaluated",]
+#     sample_data_da$concentration_status <- sample_data_da$gate_class
+#   } else if (identical(node_order, c("limits_of_detection", "limits_of_quantification"))) {
+#     gate_class_passed <- sample_data_da$gate_class == "Acceptable"
+#     sample_data_da <- sample_data_da[gate_class_passed,]
+#     sample_data_da <- sample_data_da[sample_data_da$gate_class_loq != "Not Evaluated",]
+#     sample_data_da$concentration_status <- sample_data_da$gate_class_loq
+#   } else if (identical(node_order, c("limits_of_quantification", "limits_of_detection"))) {
+#     quantifiable_passed <- sample_data_da$gate_class_loq == "Acceptable"
+#     sample_data_da <- sample_data_da[quantifiable_passed, ]
+#     sample_data_da <- sample_data_da[sample_data_da$gate_class != "Not Evaluated",]
+#     sample_data_da$concentration_status <- sample_data_da$gate_class
+#   } else if (identical(node_order, c("limits_of_detection", "linear_region", "limits_of_quantification"))) {
+#     gate_class_passed <- sample_data_da$gate_class == "Acceptable"
+#     sample_data_da <- sample_data_da[gate_class_passed,]
+#     linear_passed <- sample_data_da$gate_class_linear_region == "Acceptable"
+#     sample_data_da <- sample_data_da[linear_passed, ]
+#     sample_data_da <- sample_data_da[sample_data_da$gate_class_loq != "Not Evaluated",]
+#     sample_data_da$concentration_status <- sample_data_da$gate_class_loq
+#   } else if (identical(node_order, c("limits_of_detection", "limits_of_quantification", "linear_region"))) {
+#     gate_class_passed <- sample_data_da$gate_class == "Acceptable"
+#     sample_data_da <- sample_data_da[gate_class_passed,]
+#     quantifiable_passed <- sample_data_da$gate_class_loq == "Acceptable"
+#     sample_data_da <- sample_data_da[quantifiable_passed, ]
+#     sample_data_da <- sample_data_da[sample_data_da$gate_class_linear_region != "Not Evaluated",]
+#     sample_data_da$concentration_status <- sample_data_da$gate_class_linear_region
+#   } else if (identical(node_order, c("linear_region", "limits_of_detection", "limits_of_quantification"))) {
+#     linear_passed <- sample_data_da$gate_class_linear_region == "Acceptable"
+#     sample_data_da <- sample_data_da[linear_passed, ]
+#     gate_class_passed <- sample_data_da$gate_class == "Acceptable"
+#     sample_data_da <- sample_data_da[gate_class_passed,]
+#     sample_data_da <- sample_data_da[sample_data_da$gate_class_loq != "Not Evaluated",]
+#     sample_data_da$concentration_status <- sample_data_da$gate_class_loq
+#   } else if (identical(node_order, c("linear_region", "limits_of_quantification", "limits_of_detection"))) {
+#     linear_passed <- sample_data_da$gate_class_linear_region == "Acceptable"
+#     sample_data_da <- sample_data_da[linear_passed, ]
+#     quantifiable_passed <- sample_data_da$gate_class_loq == "Acceptable"
+#     sample_data_da <- sample_data_da[quantifiable_passed, ]
+#     sample_data_da <- sample_data_da[sample_data_da$gate_class != "Not Evaluated",]
+#     sample_data_da$concentration_status <- sample_data_da$gate_class
+#   } else if (identical(node_order, c("limits_of_quantification", "limits_of_detection", "linear_region"))){
+#     quantifiable_passed <- sample_data_da$gate_class_loq == "Acceptable"
+#     sample_data_da <- sample_data_da[quantifiable_passed, ]
+#     gate_class_passed <- sample_data_da$gate_class == "Acceptable"
+#     sample_data_da <- sample_data_da[gate_class_passed,]
+#     sample_data_da <- sample_data_da[sample_data_da$gate_class_linear_region != "Not Evaluated",]
+#     sample_data_da$concentration_status <- sample_data_da$gate_class_linear_region
+#   } else if (identical(node_order, c("limits_of_quantification", "linear_region", "limits_of_detection"))) {
+#     quantifiable_passed <- sample_data_da$gate_class_loq == "Acceptable"
+#     sample_data_da <- sample_data_da[quantifiable_passed, ]
+#     linear_passed <- sample_data_da$gate_class_linear_region == "Acceptable"
+#     sample_data_da <- sample_data_da[linear_passed, ]
+#     sample_data_da <- sample_data_da[sample_data_da$gate_class != "Not Evaluated",]
+#     sample_data_da$concentration_status <- sample_data_da$gate_class
+#   }
+#
+#   ## Classification based on tree (node order)
+#   sample_data_da$Classification <- ifelse(sample_data_da$concentration_status == "Acceptable", "Pass Classification", "Does Not Pass Classification")
+#
+#   # add plateid
+#   sample_data_da$plateid <- gsub("[[:punct:][:blank:]]+", ".", basename(gsub("\\", "/", sample_data_da$plate_id, fixed=TRUE)))
+#
+#
+#   return(sample_data_da)
+#
+# }
 
 ## 1st table independently get sample and standards joined
 join_sample_standard_data <- function(study_accession, experiment_accession, bkg_method, is_log_mfi_axis, node_order, valid_gate_class) {
@@ -733,10 +735,11 @@ produce_contigency_summary <- function(joined_data) {
   return(contigency_wide)
 }
 
-fetch_antigen_family_df <- function(study_accession) {
+fetch_antigen_family_df <- function(study_accession, project_id) {
   query <- paste0("SELECT xmap_antigen_family_id, study_accession, antigen, antigen_family
   	FROM madi_results.xmap_antigen_family
-  	WHERE study_accession IN ('",study_accession,"');")
+  	WHERE project_id = ",project_id,"
+    AND study_accession IN ('",study_accession,"');")
   antigen_family_df <- dbGetQuery(conn, query)
   return(antigen_family_df)
 }
