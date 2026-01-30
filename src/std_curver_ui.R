@@ -532,7 +532,7 @@ observeEvent(list(
           title = title,
           size = "l",    # "s", "m", or "l"
           plotOutput("model_comparisions"),
-          downloadButton("download_model_comparisons", "Downlaod Model Comparisons"),
+          downloadButton("download_model_comparisons", "Download Model Comparisons"),
           easyClose = TRUE,
           footer = modalButton("Close")
         )
