@@ -246,6 +246,7 @@ include_blanks_conc <- function(blank_data, data, response_variable, independent
     plate  =  unique(data$plate),
     stype = "B", # blanks are B and recognized in standard curve plot as such
     sample_dilution_factor = unique(data$sample_dilution_factor),
+    nominal_sample_dilution = unique(data$nominal_sample_dilution),
     sampleid = "blank_mean",
     well = "geometric_mean_blank",
     dilution = NA_real_,
@@ -257,6 +258,17 @@ include_blanks_conc <- function(blank_data, data, response_variable, independent
 
   )
 
+  # if plate nom is present place in correct spot
+  if ("plate_nom" %in% names(data)) {
+    new_point$plate_nom <- unique(data$plate_nom)[1]
+
+    nm <- names(new_point)
+    i  <- match("assay_independent_variable", nm)
+
+    new_point <- new_point[
+      , c(nm[1:i], "plate_nom", nm[(i + 1):(length(nm) - 1)])
+    ]
+  }
 
 
   # new_point <- data.frame(

@@ -148,8 +148,9 @@ plot_model_comparisons <- function(plot_data,
                                    model_names = c("Y5","Yd5","Y4","Yd4","Ygomp4"),
                                    x_var = "concentration",
                                    y_var = "mfi",
+                                   is_display_log_response = TRUE,
+                                   is_display_log_independent = TRUE,
                                    use_patchwork = TRUE) {
-
   ## 1.Extract data
   pred_df <- plot_data$pred_df
   resid_df <- plot_data$resid_df
@@ -158,6 +159,22 @@ plot_model_comparisons <- function(plot_data,
   dat <- plot_data$dat
   x <- dat[[x_var]]
   y <- dat[[y_var]]
+
+ ## 2. format names of cols
+ x_var <- format_assay_terms(x_var)
+ y_var <- format_assay_terms(y_var)
+ if (is_display_log_independent) {
+   x_var <- bquote(log[10]~.(x_var))
+
+ } else {
+   x_var <- x_var
+ }
+ if(is_display_log_response) {
+   y_var <- bquote(log[10]~.(y_var))
+
+ } else {
+   y_var <- y_var
+ }
 
 
   ## 2. Plot: data + fitted curves
@@ -240,7 +257,12 @@ plot_model_comparisons <- function(plot_data,
   # Arrange: top row = data+fits, info; bottom row = resid, qq
   combined <- (p_data_fit) /
     (p_resid)/
-    (p_ci_params)
+    (p_ci_params) +
+    plot_annotation(title = paste("Comparision of Model Fits for", unique(dat$antigen), "on", unique(dat$plate_nom)), tag_levels = "A",
+                    theme = theme(
+                      plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+                      plot.tag   = element_text(size = 12, face = "bold")
+                    ))
 
   combined
 }
