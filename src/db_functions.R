@@ -87,6 +87,21 @@ AND experiment_accession = '{experiment_accession}'
   return(blank_data)
 }
 
+fetch_db_controls <- function(study_accession, experiment_accession, project_id, conn) {
+  query <- glue("SELECT study_accession, experiment_accession, plate_id, well, stype, sampleid,
+                    source, dilution, pctaggbeads, samplingerrors, antigen, antibody_mfi as MFI, antibody_n
+                    feature, project_id, plateid, nominal_sample_dilution, plate
+                  	FROM madi_results.xmap_control
+              WHERE project_id = {project_id}
+              AND study_accession = '{study_accession}'
+              AND experiment_accession = '{experiment_accession}';")
+
+  control_data <- dbGetQuery(conn, query)
+  control_data <- distinct(control_data)
+
+  return(control_data)
+}
+
 fetch_db_samples <- function(study_accession, experiment_accession, project_id, conn) {
   query <- glue("SELECT study_accession,
 experiment_accession, plate_id, timeperiod, patientid,

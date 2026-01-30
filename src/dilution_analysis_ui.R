@@ -20,8 +20,12 @@ observeEvent(list(
     selected_experiment <- input$readxMap_experiment_accession #selected_studyexpplate$experiment_accession
 
 
+    standard_data_curve <- fetch_db_standards(study_accession = selected_study,
+                       experiment_accession = selected_experiment,
+                       project_id = userWorkSpaceID(),
+                       conn = conn)
 
-    standard_data_curve <- stored_plates_data$stored_standard
+    # standard_data_curve <- stored_plates_data$stored_standard
     if (!is.null(selected_study) && length(selected_study) > 0 &&
         !is.null(selected_experiment) && length(selected_experiment) > 0 &&
         !is.null(standard_data_curve) && length(standard_data_curve) > 0){
@@ -44,10 +48,15 @@ observeEvent(list(
     }
 
     # load controls
-    controls <- stored_plates_data$stored_control
+    controls <- fetch_db_controls(study_accession = selected_study, experiment_accession = selected_experiment,
+                                  project_id = userWorkSpaceID(), conn = conn)
+    # controls <- stored_plates_data$stored_control
 
     # load buffer data
-    buffer_data <- stored_plates_data$stored_buffer
+    buffer_data <- fetch_db_buffer(study_accession = selected_study, experiment_accession = selected_experiment,
+                    project_id = userWorkSpaceID(),
+                    conn = conn)
+    # buffer_data <- stored_plates_data$stored_buffer
     if (!is.null(selected_study) && length(selected_study) >0 &&
         !is.null(selected_experiment) && length(selected_experiment) > 0 &&
         !is.null(buffer_data) && length(buffer_data) > 0) {
@@ -61,8 +70,8 @@ observeEvent(list(
     background_control_method <- study_configuration[study_configuration$param_name == "blank_option",]$param_character_value
     is_log_mfi_axis <- as.logical(toupper(study_configuration[study_configuration$param_name == "is_log_mfi_axis",]$param_boolean_value))
 
-    fitted_curve_parameters <- fetch_standard_curves_dilution(selected_study, selected_experiment, bkg_method = background_control_method,
-                                                              is_log_mfi = is_log_mfi_axis)
+    # fitted_curve_parameters <- fetch_standard_curves_dilution(selected_study, selected_experiment, bkg_method = background_control_method,
+    #                                                           is_log_mfi = is_log_mfi_axis)
 
     dilution_table_cols <- c("study_accession", "experiment_accession", "plateid", "timeperiod", "patientid", "agroup", "dilution",
                              "antigen", "n_pass_dilutions", "concentration_status", "au_treatment", "decision_nodes", "bkg_method", "processed_au")
@@ -457,12 +466,13 @@ observeEvent(list(
 
       gated_data_n <- calculate_sample_concentration_status_new(conn = conn,                # DBI connection object
                                                                 study_accession = selected_study,
-                                                                experiment_accession = selected_experiment ,
+                                                                experiment_accession = selected_experiment,
+                                                                project_id = userWorkSpaceID(),
                                                                 node_order = node_order_in)
 
       #gated_data <- calculate_sample_concentration_status(study_accession = selected_study, experiment_accession = selected_experiment, node_order = node_order_in)
 
-      antigen_family_df <- fetch_antigen_family_df(study_accession = selected_study)
+      antigen_family_df <- fetch_antigen_family_df(study_accession = selected_study, project_id = userWorkSpaceID())
       antigen_family_order_in <- strsplit(study_configuration[study_configuration$param_name == "antigen_family_order",]$param_character_value, ",")[[1]]
       contigency_summary_dilution <- produce_contigency_summary(gated_data_n)
       summary_dilution_plot(dilution_summary_df = contigency_summary_dilution,
@@ -500,6 +510,7 @@ observeEvent(list(
         gated_data <- calculate_sample_concentration_status_new(conn = conn,
                                                                 study_accession = selected_study,
                                                                 experiment_accession = selected_experiment,
+                                                                project_id = userWorkSpaceID(),
                                                                 node_order = node_order_in)
 
         contigency_summary_dilution <- produce_contigency_summary(gated_data)
@@ -522,6 +533,7 @@ observeEvent(list(
       gated_data <- calculate_sample_concentration_status_new(conn = conn,
                                                               study_accession = selected_study,
                                                               experiment_accession = selected_experiment,
+                                                              project_id = userWorkSpaceID(),
                                                               node_order = node_order_in)
 
       # req(summary_gated_data_rv())
@@ -553,7 +565,9 @@ observeEvent(list(
 
         gated_data <- calculate_sample_concentration_status_new(conn = conn,
                                                                 study_accession = selected_study,
-                                                                experiment_accession = selected_experiment, node_order = node_order_in)
+                                                                experiment_accession = selected_experiment,
+                                                                project_id = userWorkSpaceID(),
+                                                                node_order = node_order_in)
 
         antigen_choices <-  unique(gated_data$antigen)
       }
@@ -618,7 +632,9 @@ observeEvent(list(
       node_order_in <- strsplit(study_configuration[study_configuration$param_name == "node_order",]$param_character_value, ",")[[1]]
 
       gated_data <- calculate_sample_concentration_status_new(conn = conn,
-                                                              study_accession = selected_study, experiment_accession = selected_experiment, node_order = node_order_in)
+                                                              study_accession = selected_study, experiment_accession = selected_experiment,
+                                                              project_id = userWorkSpaceID(),
+                                                              node_order = node_order_in)
       if (nrow(gated_data) == 0) {
         return(NULL)
       }
@@ -904,7 +920,9 @@ observeEvent(list(
      final_average_au_table_rv(final_average_table)
 
       DT::datatable(final_average_table, caption = "Dilution Analysis Sample Output",
-                    colnames = colnames(final_average_table), filter = "top")
+                    colnames = colnames(final_average_table), filter = "top", options = list(
+                      scrollX = TRUE,  autoWidth = FALSE
+                    ))
     })
 
 
