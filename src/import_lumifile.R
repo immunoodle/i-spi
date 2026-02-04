@@ -116,6 +116,24 @@ plate_layout_plots <- reactive({
   # Call the plotting function with error handling
   result <- tryCatch({
     plots <- plot_plate_layout(plates_map, plate_id_data)
+    # add nominal sample dilution
+    names(plots) <- vapply(names(plots), function(nm) {
+
+      idx <- which(vapply(
+        plate_id_data$plate_number,
+        function(pn) grepl(pn, nm),
+        logical(1)
+      ))
+
+      if (length(idx) == 1) {
+        paste0(nm, "-", plate_id_data$nominal_sample_dilution[idx])
+      } else {
+        nm
+      }
+
+    }, character(1))
+
+
     cat("  ✓ plot_plate_layout() returned", length(plots), "plots\n")
     if (length(plots) > 0) {
       cat("  Plot names:", paste(names(plots), collapse = ", "), "\n")
@@ -1687,7 +1705,7 @@ observeEvent(input$upload_experiment_files, {
     batch_plate_data(processed$combined_plates)
 
     # For debugging (remove in production)
-    all_plates_v <<- processed$combined_plates
+    #all_plates_v <<- processed$combined_plates
 
 
     # CHECK DESCRIPTION FIELD
@@ -2795,7 +2813,7 @@ observeEvent(input$upload_batch_button, {
   cat("  Preparing antigen family data...\n")
 
   antigen_cols_needed <- c(
-    "study_name", "experiment_name", "antigen_abbreviation", "antigen_family",
+    "project_id", "study_name", "experiment_name", "antigen_abbreviation", "antigen_family",
     "standard_curve_max_concentration", "antigen_name", "virus_bacterial_strain",
     "antigen_source", "catalog_number", "l_asy_min_constraint",
     "l_asy_max_constraint", "l_asy_constraint_method"
