@@ -790,3 +790,230 @@ TRULY STRANDED FUNCTIONS:
   - get_max_value  (subgroup_summary_functions.R:189)
 
 Done.
+
+validate_batch_bead_array <- function(plate_data_list, antigen_import_list, blank_keyword) {
+  plate_data_list <<- plate_data_list
+  message_list <- list()
+  plate_names <- names(plate_data_list)
+
+  for (name in plate_names) {
+    # Get current dataset
+    df <- plate_data_list[[name]]
+
+    # Replace dots with spaces except for "%.Agg.Beads" and "Sampling.Errors"
+    col_names <- ifelse(names(df) %in% c("Sampling.Errors", "%.Agg.Beads"),
+                        names(df),                 # keep as-is
+                        gsub("\\.", " ", names(df)))  # replace . with space
+
+    # Assign new names
+    names(df) <- col_names
+
+    # Store updated data set
+    plate_data_list[[name]] <- df
+  }
+
+
+
+  antigens_check <- unique(antigen_import_list$antigen_label_on_plate)
+  check_antigens <- lapply(plate_data_list, function(df) {
+    sapply(antigens_check, function(name) name %in% names(df))
+  })
+
+  # check on each plate and then all plates results together
+  all_antigens_present <- all(sapply(check_antigens, function(x) all(x)))
+  if (!all_antigens_present) {
+    check_antigens_with_falses <- check_antigens[sapply(check_antigens, function(x) any(!x))]
+    if (length(check_antigens_with_falses) > 0) {
+      # For each plate with FALSE antigens
+      for (plate_name in names(check_antigens_with_falses)) {
+        missing_antigens <- names(check_antigens_with_falses[[plate_name]])[!check_antigens_with_falses[[plate_name]]]
+        # Create a formatted message
+        msg <- paste0(
+          "Plate ", plate_name,
+          " is missing the following antigens in the layout file: ",
+          paste(missing_antigens, collapse = ", ")
+        )
+        message_list <- c(message_list, msg)
+      }
+    }
+  }
+
+  #pass_agg_bead_check_list <- lapply(plate_list, check_agg_bead_column)
+  pass_agg_bead_check_list <- lapply(plate_data_list, check_batch_agg_bead_column)
+  all_true <- all(sapply(pass_agg_bead_check_list, function(x) x$result))
+  if (!all_true) {
+    failed <- names(pass_agg_bead_check_list)[!sapply(pass_agg_bead_check_list, function(x) x$result)]
+    agg_bead_message <- paste(
+      "The following plates are missing a % Agg Beads column:\n",
+      paste("-", failed, collapse = "\n"),
+      "\nEnsure each plate has a % Agg Beads column after the last antigen."
+    )
+    message_list <- c(message_list, agg_bead_message)
+  } else {
+    pass_bead_count_check_list <- lapply(plate_data_list, check_bead_count)
+
+    # Determine if all passed
+    all_true_bead <- all(sapply(pass_bead_count_check_list, function(x) x[[1]]))
+
+    if (!all_true_bead) {
+      failed_bead <- names(pass_bead_count_check_list)[!sapply(pass_bead_count_check_list, function(x) x[[1]])]
+
+      # Gather all detailed messages for failed plates
+      bead_messages <- sapply(failed_bead, function(plate) {
+        paste0("Plate: ", plate, "\n", pass_bead_count_check_list[[plate]][[2]])
+      }, USE.NAMES = FALSE)
+
+      # Combine into one final message
+      bead_count_message <- paste(
+        "Ensure the bead count is present after all MFI values in parentheses for the following plates:\n",
+        paste(bead_messages, collapse = "\n\n"),
+        sep = ""
+      )
+
+      # Add to message list
+      message_list <- c(message_list, bead_count_message)
+    }
+
+  }
+
+
+  # examine blanks in type column
+  # Loop over all plate data frames
+  for (i in seq_along(plate_data_list)) {
+    plate_data <- plate_data_list[[i]]
+    plate_name <- names(plate_data_list)[i]
+
+    #  Check if blank correction is needed
+    procceed_to_blank_check <- check_blank_in_sample_boolean(plate_data)
+    if (!procceed_to_blank_check) {
+      # Update plate data based on user keyword choice
+      plate_data <- check_blank_in_sample(plate_data, blank_keyword = blank_keyword)
+    }
+
+    # Check blank description format
+    pass_blank_description <- check_blank_description(plate_data)
+    if (!pass_blank_description[[1]]) {
+      message_list <- c(
+        message_list,
+        paste("Plate:", plate_name, "-", pass_blank_description[[2]])
+      )
+    }
+
+    # Update modified plate back into list
+    plate_data_list[[i]] <- plate_data
+  }
+
+  is_valid <- length(message_list) == 0
+
+  if (is_valid)  {
+    return(list(
+      is_valid = is_valid,
+      messages = message_list
+    ))
+  } else {
+    return(list(
+      is_valid = is_valid,
+      messages = message_list
+    ))
+  }
+
+}
+
+
+validate_batch_plate <- function(plate_metadata, plate_data_list, plate_id_data) {
+    # plate_data_list <<- plate_data_list
+    message_list <- c()
+
+    check_uploaded_file_in_layout <- plate_metadata$file_name %in% plate_id_data$plate_filename
+    if (!all(check_uploaded_file_in_layout)) {
+      message_list <- c("Some uploaded plates are missing in the layout file. plate.")
+    }
+    # validate the required columns
+    required_cols <- c("file_name", "rp1_pmt_volts", "rp1_target", "acquisition_date")
+    missing_cols <- setdiff(required_cols, names(plate_metadata))
+
+    if (length(missing_cols) > 0) {
+      message_list <- c(
+        message_list,
+        paste("The following required plate metadata columns are missing so further parsing cannot be conducted:",
+              paste(missing_cols, collapse = ", "))
+      )
+      # If critical metadata is missing, return early
+      return(list(
+        is_valid = FALSE,
+        messages = message_list
+      ))
+    }
+
+    # plate_metadata <<- plate_metadata
+
+    # check to see if all files passes file Path
+    pass_file_path <- all(looks_like_file_path(plate_metadata$file_name))
+    if (!pass_file_path) {
+      message_list <- c(message_list, "Ensure that alll file paths have foward or backward slashes based on Mac or Windows")
+    }
+
+    pass_rp1_pmt_volts <- all(check_rp1_numeric(plate_metadata$rp1_pmt_volts))
+    is_numeric <- check_rp1_numeric(plate_metadata$rp1_pmt_volts)
+    if (!pass_rp1_pmt_volts) {
+      bad_rp1_pmt_volts <- plate_metadata[!is_numeric, c("plateid", "rp1_pmt_volts")]
+      labeled_vals <- paste(bad_rp1_pmt_volts$plateid, bad_rp1_pmt_volts$rp1_pmt_volts, sep = ":")
+
+      message_list <- c(message_list, paste(
+        "Ensure that all files have an RP1 PMT (Volts) field that is numeric and if it is a decimal only one period is present. Values by plateid:",
+        paste(labeled_vals, collapse = ", "))
+      )
+    }
+    pass_rp1_target <- all(check_rp1_numeric(plate_metadata$rp1_target))
+    is_target_numeric <- check_rp1_numeric(plate_metadata$rp1_target)
+    if (!pass_rp1_target) {
+      invalid_rp1_target <- plate_metadata[!is_target_numeric, c("plateid", "rp1_target")]
+      labeled_bad_rp1_target <- paste(invalid_rp1_target$plateid, invalid_rp1_target$rp1_target, sep = ":")
+      message_list <- c(message_list, paste("Ensure that the RP1 Target is numeric and if it is a decimal only one period is present. Values by plateid:",
+                                            paste(labeled_bad_rp1_target,collapse = ", ")))
+    }
+
+    pass_time_format <- all(check_time_format(capitalize_am_pm(plate_metadata$acquisition_date)))
+    is_time_format <- check_time_format(capitalize_am_pm(plate_metadata$acquisition_date))
+    if (!pass_time_format) {
+      invalid_time_format <- plate_metadata[!is_time_format, c("plateid", "aquisition_date")]
+      labeled_invalid_time_format <- paste(invalid_time_format$plateid, invalid_time_format$aquisition_date)
+      message_list <- c(message_list, paste("Ensure the acquisition date is in the following date time format: DD-MMM-YYYY, HH:MM AM/PM Example: 01-Oct-2025, 12:12 PM  |Current Value by plateid:",
+                                            paste(labeled_invalid_time_format, collapse = ", ")))
+    }
+
+    # validate main data sets
+
+
+    # if no invalid messages then it is good to pass
+    is_valid <- length(message_list) == 0
+
+    if (is_valid)  {
+      return(list(
+        is_valid = is_valid,
+        messages = message_list
+        # updated_plate_data = plate_data
+      ))
+    } else {
+      return(list(
+        is_valid = is_valid,
+        messages = message_list
+      ))
+    }
+}
+
+output$delete_study_ui <- renderUI({
+  tabRefreshCounter()$import_tab
+  if (input$main_tabs != "home_page" & input$main_tabs != "manage_project_tab" & input$study_tabs == "delete_study") {
+    if (input$readxMap_study_accession != "Click here") {
+      import_plate_data_title <- paste("Delete", input$readxMap_study_accession, "Plate Data", sep = " ")
+      tagList(
+        fluidPage(
+
+        )
+      )
+    } else {
+      import_plate_data_title<- paste("Choose a study for deleting plate data")
+    }
+  }
+})

@@ -1,6 +1,6 @@
 
 fetch_study_header <- function(selected_study) {
-#   header_query <- glue::glue_sql("SELECT experiment_accession, plate_id, plateid, plate, sample_dilution_factor
+#   header_query <- glue::glue_sql("SELECT experiment_accession, plate_id, plateid, plate, nominal_sample_dilution
 # FROM madi_results.xmap_header
 # WHERE study_accession = {selected_study}",
 #                                   .con = conn)
@@ -10,7 +10,7 @@ fetch_study_header <- function(selected_study) {
     h.plate_id,
     h.plateid,
     h.plate,
-    h.sample_dilution_factor,
+    h.nominal_sample_dilution,
     STRING_AGG( DISTINCT s.source, ',') AS standard_curve_sources
 FROM
     madi_results.xmap_header as h
@@ -25,7 +25,7 @@ GROUP BY
     h.plate_id,
     h.plateid,
     h.plate,
-    h.sample_dilution_factor;
+    h.nominal_sample_dilution;
 ", .con = conn)
 
   study_header <- dbGetQuery(conn, header_query)
@@ -164,7 +164,7 @@ update_plate_var <- function(selected_study, selected_experiment, selected_plate
 }
 
 # update the sample dilution factor variable in the header
-update_sample_dilution_factor <- function(selected_study, selected_experiment, selected_plate_id, edited_sample_dilution_factor) {
+update_nominal_sample_dilution <- function(selected_study, selected_experiment, selected_plate_id, edited_nominal_sample_dilution) {
   # check if data is in header for original plate (this should be true)
   original_header_query <- glue::glue_sql("SELECT *
   	FROM madi_results.xmap_header
@@ -176,7 +176,7 @@ update_sample_dilution_factor <- function(selected_study, selected_experiment, s
   if (nrow(original_header) > 0) {
     print(head(original_header))
       update_sample_dilution_query <- glue::glue_sql("UPDATE madi_results.xmap_header
-                                                      SET sample_dilution_factor = {edited_sample_dilution_factor}
+                                                      SET nominal_sample_dilution = {edited_nominal_sample_dilution}
                                                       WHERE study_accession = {selected_study}
                                                       AND experiment_accession = {selected_experiment}
                                                       AND plate_id = {selected_plate_id}", .con = conn)
@@ -297,8 +297,8 @@ WHERE study_accession = {selected_study}
                                  uiOutput("edit_plateUI")
                         ), # end second grouped div
                         tags$div(style = "flex: 1;",
-                                selectInput("original_sample_dilution_factor", "Original Sample Dilution Factor",choices = NULL),
-                                uiOutput("edit_sample_dilution_factorUI")
+                                selectInput("original_nominal_sample_dilution", "Original Sample Dilution Factor",choices = NULL),
+                                uiOutput("edit_nominal_sample_dilutionUI")
                         ),# end third grouped div
                         tags$div(style = "flex: 1;",
                                  selectInput("original_sc_source", "Original Standard Curve Source", choices = NULL),
@@ -319,7 +319,7 @@ WHERE study_accession = {selected_study}
                                  uiOutput("rename_plate_UI")
                         ), # end div rename plate column
                         tags$div(style = "flex: 1;",
-                                 uiOutput("update_sample_dilution_factorUI")
+                                 uiOutput("update_nominal_sample_dilutionUI")
                         ), # end div update sample dilution factor
                         tags$div(style = "flex: 1;",
                           uiOutput("rename_plate_sc_source")
@@ -352,7 +352,7 @@ WHERE study_accession = {selected_study}
     textInput("edit_plate", "Edit plate", value = "plate_")
   })
 
-  output$edit_sample_dilution_factorUI <- renderUI({
+  output$edit_nominal_sample_dilutionUI <- renderUI({
     numericInput("edit_sample_dil_factor", "Edit Sample Dilution Factor", value = NULL)
   })
 
@@ -383,11 +383,11 @@ WHERE study_accession = {selected_study}
 
     actionButton("rename_plate_var", "Rename Selected 'plate'")
   })
-  ## button to update sample_dilution_factor
-  output$update_sample_dilution_factorUI <- renderUI({
+  ## button to update nominal_sample_dilution
+  output$update_nominal_sample_dilutionUI <- renderUI({
     req(input$edit_sample_dil_factor > 0)
-    req(input$edit_sample_dil_factor != input$original_sample_dilution_factor)
-    actionButton("update_sample_dilution_factor", "Update Sample Dilution Factor")
+    req(input$edit_sample_dil_factor != input$original_nominal_sample_dilution)
+    actionButton("update_nominal_sample_dilution", "Update Sample Dilution Factor")
   })
   ## button for rename standard curve source for plate
   output$rename_plate_sc_source <- renderUI({
@@ -408,7 +408,7 @@ WHERE study_accession = {selected_study}
      enable("selected_plate_id")
      enable("selected_plateid_to_edit")
      enable("original_plate_to_edit")
-     enable("original_sample_dilution_factor")
+     enable("original_nominal_sample_dilution")
      enable("original_sc_source")
      selected_row_index <- input$plate_header_rows_selected
      if (length(selected_row_index)) {
@@ -431,9 +431,9 @@ WHERE study_accession = {selected_study}
                          choices = selected_row_data$plate,
                          selected = selected_row_data$plate)
 
-       updateSelectInput(session, "original_sample_dilution_factor",
-                         choices = selected_row_data$sample_dilution_factor,
-                         selected = selected_row_data$sample_dilution_factor)
+       updateSelectInput(session, "original_nominal_sample_dilution",
+                         choices = selected_row_data$nominal_sample_dilution,
+                         selected = selected_row_data$nominal_sample_dilution)
 
        updateSelectInput(session, "original_sc_source",
                          choices = strsplit(selected_row_data$standard_curve_sources, ",")[[1]],
@@ -444,7 +444,7 @@ WHERE study_accession = {selected_study}
        disable("selected_plate_id")
        disable("selected_plateid_to_edit")
        disable("original_plate_to_edit")
-       disable("original_sample_dilution_factor")
+       disable("original_nominal_sample_dilution")
 
        updateTextInput(session, "edit_plateid", value = selected_row_data$plateid)
        if (is.null(selected_row_data$plate) || is.na(selected_row_data$plate) || selected_row_data$plate == "") {
@@ -453,7 +453,7 @@ WHERE study_accession = {selected_study}
         updateTextInput(session, "edit_plate", value = selected_row_data$plate)
        }
 
-       updateNumericInput(session, "edit_sample_dil_factor", value = selected_row_data$sample_dilution_factor)
+       updateNumericInput(session, "edit_sample_dil_factor", value = selected_row_data$nominal_sample_dilution)
 
        updateTextInput(session, "edit_sc_source", value = strsplit(selected_row_data$standard_curve_sources, ",")[[1]][1])
      }
@@ -501,13 +501,13 @@ WHERE study_accession = {selected_study}
        hideFeedback("edit_sc_source")
      }
 
-   #  if (input$original_sample_dilution_factor != input$edit_sample_dil_factor) {
-     if (!is.null(input$original_sample_dilution_factor) &&
+   #  if (input$original_nominal_sample_dilution != input$edit_sample_dil_factor) {
+     if (!is.null(input$original_nominal_sample_dilution) &&
          !is.null(input$edit_sample_dil_factor) &&
-         !is.na(input$original_sample_dilution_factor) &&
+         !is.na(input$original_nominal_sample_dilution) &&
          !is.na(input$edit_sample_dil_factor) &&
          input$edit_sample_dil_factor != -1 &&
-         input$original_sample_dilution_factor != input$edit_sample_dil_factor) {
+         input$original_nominal_sample_dilution != input$edit_sample_dil_factor) {
        showFeedbackWarning("edit_sample_dil_factor", text = "Unsaved Changes")
      } else {
        hideFeedback("edit_sample_dil_factor")
@@ -611,7 +611,7 @@ observe({
     enable("selected_plate_id")
     enable("selected_plateid_to_edit")
     enable("original_plate_to_edit")
-    enable("original_sample_dilution_factor")
+    enable("original_nominal_sample_dilution")
     enable("edit_sc_source")
 
     updateSelectInput(session, "selected_experiment_row",
@@ -629,7 +629,7 @@ observe({
                       choices = character(0),
                       selected = NULL)
 
-    updateSelectInput(session, "original_sample_dilution_factor",
+    updateSelectInput(session, "original_nominal_sample_dilution",
                       choices = character(0),
                       selected = NULL)
 
@@ -648,7 +648,7 @@ observe({
     disable("selected_plate_id")
     disable("selected_plateid_to_edit")
     disable("original_plate_to_edit")
-    disable("original_sample_dilution_factor")
+    disable("original_nominal_sample_dilution")
     disable("edit_sc_source")
 
 
@@ -667,10 +667,10 @@ observe({
 observeEvent(input$reset_plate_edits, {
   # req(input$selected_plateid_to_edit)
   # req(input$original_plate_to_edit)
-  # req(input$original_sample_dilution_factor)
+  # req(input$original_nominal_sample_dilution)
   updateTextInput(session, "edit_plateid", value = input$selected_plateid_to_edit)
   updateTextInput(session, "edit_plate", value = input$original_plate_to_edit)
-  updateNumericInput(session,"edit_sample_dil_factor", value = input$original_sample_dilution_factor)
+  updateNumericInput(session,"edit_sample_dil_factor", value = input$original_nominal_sample_dilution)
   updateTextInput(session, "edit_sc_source", value = input$original_sc_source)
 
 })
@@ -768,12 +768,12 @@ observeEvent(input$confirm_plate_edit, {
 })
 
 ## Modal for updating the sample dilution factor
-observeEvent(input$update_sample_dilution_factor, {
+observeEvent(input$update_nominal_sample_dilution, {
   showModal(
     modalDialog(
       title = paste0("Confirm Sample Dilution Factor Update: ", input$readxMap_study_accession, " - " ,input$selected_experiment_row),
       paste("Are you sure you want to update the sample serum dilution factor from ",
-            input$original_sample_dilution_factor, "to", input$edit_sample_dil_factor, "?"),
+            input$original_nominal_sample_dilution, "to", input$edit_sample_dil_factor, "?"),
       footer = tagList(
         actionButton("confirm_sample_dil_edit", "Confirm"),
         modalButton("Cancel")
@@ -787,10 +787,10 @@ observeEvent(input$update_sample_dilution_factor, {
 observeEvent(input$confirm_sample_dil_edit, {
   cat("Pressed confirm sample dilution factor edit")
   # do update
-  update_sample_dilution_factor(selected_study = input$readxMap_study_accession,
+  update_nominal_sample_dilution(selected_study = input$readxMap_study_accession,
                                 selected_experiment = input$selected_experiment_row,
                                 selected_plate_id = input$selected_plate_id,
-                                edited_sample_dilution_factor = input$edit_sample_dil_factor)
+                                edited_nominal_sample_dilution = input$edit_sample_dil_factor)
   removeModal() # remove once click confirm
   showNotification("Sample Dilution Factor Updated")
 
@@ -798,8 +798,8 @@ observeEvent(input$confirm_sample_dil_edit, {
   updated_plate_df <- fetch_study_header(selected_study = input$readxMap_study_accession)
 
   # Reset UI based on the updated data
-  updateSelectInput(session, "original_sample_dilution_factor",
-                    choices = updated_plate_df$sample_dilution_factor,
+  updateSelectInput(session, "original_nominal_sample_dilution",
+                    choices = updated_plate_df$nominal_sample_dilution,
                     selected = input$edit_sample_dil_factor)
 
   updateTextInput(session, "edit_sample_dil_factor", value = NULL)
@@ -861,7 +861,7 @@ observeEvent(input$confirm_standard_curve_source_edit, {
 # Delete Plate
 observeEvent(input$delete_plate, {
 
-  selected_analyte <- paste(input$selected_experiment_row, input$original_sample_dilution_factor, sep = "_")
+  selected_analyte <- paste(input$selected_experiment_row, input$original_nominal_sample_dilution, sep = "_")
   # showNotification(paste("Delete clicked for analyte", analyte_list[row_idx], "plate", plate_list[col_idx]))
   showModal(
     modalDialog(
@@ -899,8 +899,8 @@ observeEvent(input$confirm_plate_delete, {
   updated_plate_df <- fetch_study_header(selected_study = input$readxMap_study_accession)
 
   # # Reset UI based on the updated data
-  # updateSelectInput(session, "original_sample_dilution_factor",
-  #                   choices = updated_plate_df$sample_dilution_factor,
+  # updateSelectInput(session, "original_nominal_sample_dilution",
+  #                   choices = updated_plate_df$nominal_sample_dilution,
   #                   selected = input$edit_sample_dil_factor)
   #
   # updateTextInput(session, "edit_sample_dil_factor", value = NULL)

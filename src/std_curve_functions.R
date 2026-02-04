@@ -245,7 +245,6 @@ include_blanks_conc <- function(blank_data, data, response_variable, independent
     plateid = unique(data$plateid),
     plate  =  unique(data$plate),
     stype = "B", # blanks are B and recognized in standard curve plot as such
-    sample_dilution_factor = unique(data$sample_dilution_factor),
     nominal_sample_dilution = unique(data$nominal_sample_dilution),
     sampleid = "blank_mean",
     well = "geometric_mean_blank",
@@ -943,7 +942,7 @@ fit_qc_glance <- function(best_fit,
     experiment_accession = unique(best_fit$best_data$experiment_accession),
     plateid = unique(best_fit$best_data$plateid),
     plate = unique(best_fit$best_data$plate),
-    sample_dilution_factor = unique(best_fit$best_data$sample_dilution_factor),
+    nominal_sample_dilution = unique(best_fit$best_data$nominal_sample_dilution),
     antigen = unique(best_fit$best_data$antigen),
     iter = iter,
     status = converged,
@@ -963,8 +962,8 @@ fit_qc_glance <- function(best_fit,
     is_log_response = antigen_fit_options$is_log_response,
     is_log_x = antigen_fit_options$is_log_concentration,
     apply_prozone  = antigen_fit_options$apply_prozone,
-    formula = model_formula,
-    nominal_sample_dilution = unique(best_fit$best_data$nominal_sample_dilution))
+    formula = model_formula
+    )
 
   best_fit$best_glance <- glance_df
   return(best_fit)
@@ -1202,7 +1201,6 @@ tidy.nlsLM <- function(best_fit, fixed_a_result, model_constraints, antigen_sett
 
   tidy_df$study_accession <- unique(best_fit$best_data$study_accession)
   tidy_df$experiment_accession <- unique(best_fit$best_data$experiment_accession)
-  tidy_df$sample_dilution_factor <- unique(best_fit$best_data$sample_dilution_factor)
   tidy_df$nominal_sample_dilution <- unique(best_fit$best_data$nominal_sample_dilution)
   tidy_df$antigen <- unique(best_fit$best_data$antigen)
   tidy_df$plateid <- unique(best_fit$best_data$plateid)
@@ -1218,7 +1216,6 @@ tidy.nlsLM <- function(best_fit, fixed_a_result, model_constraints, antigen_sett
       p.value = NA_real_,
       study_accession = unique(best_fit$best_data$study_accession),
       experiment_accession = unique(best_fit$best_data$experiment_accession),
-      sample_dilution_factor = unique(best_fit$best_data$sample_dilution_factor),
       nominal_sample_dilution = unique(best_fit$best_data$nominal_sample_dilution),
       antigen = unique(best_fit$best_data$antigen),
       plateid = unique(best_fit$best_data$plateid),
@@ -2271,7 +2268,6 @@ predict_and_propagate_error <- function(best_fit,
   pred_se <- merge(pred_se, pcov_data, by = "x", all.x = TRUE)
   pred_se$study_accession <- unique(best_fit$best_data$study_accession)
   pred_se$experiment_accession <- unique(best_fit$best_data$experiment_accession)
-  pred_se$sample_dilution_factor <- unique(best_fit$best_data$sample_dilution_factor)
   pred_se$nominal_sample_dilution <- unique(best_fit$best_data$nominal_sample_dilution)
   pred_se$plateid <- unique(best_fit$best_data$plateid)
   pred_se$plate <- unique(best_fit$best_data$plate)

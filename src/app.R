@@ -966,7 +966,7 @@ server <- function(input, output, session) {
       source("antigen_family_ui.R", local = TRUE)
       source("load_previous_stored_data.R", local=TRUE)
       source("plate_validator_functions.R", local = TRUE)
-      source("generate_layout_template.R", local = TRUE)
+      source("generate_layout_template_ref.R", local = TRUE)
       source("batch_layout_functions.R", local = TRUE)
       source("import_lumifile.R", local = TRUE)
       source("xPonentReader.R", local = TRUE)

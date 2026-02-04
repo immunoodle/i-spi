@@ -1,13 +1,3 @@
-fetch_db_header_experiments <- function(study_accession, conn, verbose = TRUE) {
-  query <- glue("SELECT study_accession, experiment_accession, plateid, plate, sample_dilution_factor, plate_id,
-  assay_response_variable, assay_independent_variable
-  FROM madi_results.xmap_header
-WHERE study_accession = '{study_accession}'
-")
-  header_data <- dbGetQuery(conn, query)
-  header_data <- distinct(header_data)
-  return(header_data)
-}
 
 build_antigen_list <- function(exp_list, loaded_data_list, study_accession, verbose = TRUE) {
   antigen_list <- list()
@@ -25,7 +15,7 @@ build_antigen_list <- function(exp_list, loaded_data_list, study_accession, verb
                                   # standards$plate == current_combo$plate &
                                    standards$source == current_combo$source &
                                    standards$plate_nom == current_combo$plate_nom, ]
-                                   #standards$sample_dilution_factor == current_combo$sample_dilution_factor, ]
+                                   #standards$nominal_sample_dilution == current_combo$nominal_sample_dilution, ]
 
       antigens <- unique(exp_standards$antigen)
       antigens <- antigens[!is.na(antigens) & antigens != ""]
@@ -34,14 +24,14 @@ build_antigen_list <- function(exp_list, loaded_data_list, study_accession, verb
         id <- paste0(experiment_accession, "_",
                      current_combo$plate_nom, "_",
                      # current_combo$plate, "_",
-                     # current_combo$sample_dilution_factor, "_",
+                     # current_combo$nominal_sample_dilution, "_",
                      current_combo$source)
         antigen_list[[id]] <- list(
           antigens = unique(exp_standards$antigen),
           study_accession = study_accession,
           experiment_accession = experiment_accession,
           plate = current_combo$plate,
-         # sample_dilution_factor = current_combo$sample_dilution_factor,
+         # nominal_sample_dilution = current_combo$nominal_sample_dilution,
           plate_nom = current_combo$plate_nom,
           source = current_combo$source
         )
@@ -77,7 +67,7 @@ build_antigen_plate_list <- function(antigen_list_result, loaded_data_list, verb
         info$experiment_accession, "|",
         info$plate_nom, "|",
         info$source, "|",
-       #info$sample_dilution_factor, "|",
+       #info$nominal_sample_dilution, "|",
         antigen
       )
 
@@ -88,7 +78,7 @@ build_antigen_plate_list <- function(antigen_list_result, loaded_data_list, verb
         source = info$source,
         antigen = antigen,
         plate = info$plate_nom,
-       # sample_dilution_factor = info$sample_dilution_factor,
+       # nominal_sample_dilution = info$nominal_sample_dilution,
         antigen_constraints = antigen_constraints
       )
 
@@ -287,8 +277,6 @@ fit_experiment_plate_batch <- function(prepped_data_list_res,
 
 }
 
-
-
 create_batch_fit_outputs <- function(batch_fit_res, antigen_plate_list_res) {
 
   best_tidy_all <- do.call(
@@ -326,8 +314,8 @@ create_batch_fit_outputs <- function(batch_fit_res, antigen_plate_list_res) {
     })
   )
 
-  best_plate_all <- dplyr::distinct(best_standard_all[ , c("study_accession","experiment_accession","feature","source","plateid","plate","sample_dilution_factor","assay_response_variable",
-                                                           "assay_independent_variable", "nominal_sample_dilution")])
+  best_plate_all <- dplyr::distinct(best_standard_all[ , c("study_accession","experiment_accession","feature","source","plateid","plate","nominal_sample_dilution","assay_response_variable",
+                                                           "assay_independent_variable")])
 
   return(list(
     best_tidy_all     = best_tidy_all,
@@ -340,7 +328,6 @@ create_batch_fit_outputs <- function(batch_fit_res, antigen_plate_list_res) {
     )
     )
 }
-
 
 # add unique identifiers and rename the response variable to be generic for saving
 # as well as project_id
@@ -356,22 +343,13 @@ process_batch_outputs <- function(batch_outputs, response_var, project_id) {
                      predicted_concentration,
                      NA_real_))
 
-#  response_var <<- response_var
-  # batch_outputs$best_pred_all <- batch_outputs$best_pred_all %>%
-  #   dplyr::group_by(study_accession,
-  #                   experiment_accession,
-  #                   plateid,
-  #                   antigen,
-  #                   source) %>%
-  #   dplyr::mutate(id_match = dplyr::row_number()) %>%
-  #   dplyr::ungroup()
   batch_outputs$best_pred_all <- batch_outputs$best_pred_all %>%
     dplyr::group_by(
       study_accession,
       experiment_accession,
       plateid,
       plate,
-      sample_dilution_factor,
+      nominal_sample_dilution,
       source,
       antigen
     ) %>%
@@ -383,7 +361,7 @@ process_batch_outputs <- function(batch_outputs, response_var, project_id) {
     dplyr::rename(assay_response = all_of(response_var)) %>%
     dplyr::group_by(
       study_accession, experiment_accession,
-      plateid, plate, sample_dilution_factor, source, antigen,
+      plateid, plate, nominal_sample_dilution, source, antigen,
       patientid, timeperiod, sampleid, dilution
     ) %>%
     dplyr::mutate(uid = dplyr::row_number()) %>%

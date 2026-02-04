@@ -109,10 +109,9 @@ generate_layout_template <- function(all_plates,
   plate_id$study_name <- study_accession
   plate_id$experiment_name <- experiment_accession
   plate_id$number_of_wells <- n_wells
+  plate_id$project_id <- project_id
 
   # plate_id_v <<- plate_id
-
-
   if ("source_file" %in% names(plate_id) && !all(is.na(plate_id$source_file))) {
     plate_id$plateid <- clean_plate_id(plate_id$source_file)
   }
@@ -129,55 +128,6 @@ generate_layout_template <- function(all_plates,
     plate_id$plate_filename <- names(header_list)
     cat("  ✓ Created plate_filename from header_list names\n")
   }
-
-  # # HELPER FUNCTION: Extract plate number from text (filename, plateid, etc.)
-  # # Looks for patterns like "plate_3", "plate 3", "plate.3", "plate3"
-  # # This function is also defined in batch_layout_functions.R but is duplicated
-  # # here to ensure availability in the upload_experiment_files observer.
-  # extract_plate_number <- function(text) {
-  #   if (is.na(text) || text == "") return(NA_character_)
-  #
-  #   # Try multiple patterns to extract plate number
-  #   # Pattern 1: "plate" followed by separator and number (plate_3, plate 3, plate.3, plate-3)
-  #   match1 <- regmatches(text, regexpr("[Pp]late[_\\s\\.-]+(\\d+)", text, perl = TRUE))
-  #   if (length(match1) > 0 && nchar(match1) > 0) {
-  #     num <- gsub("[^0-9]", "", match1)
-  #     if (nchar(num) > 0) return(paste0("plate_", num))
-  #   }
-  #
-  #   # Pattern 2: Just "plate" followed immediately by number (plate3, plate1IgGtot...)
-  #   match2 <- regmatches(text, regexpr("[Pp]late(\\d+)", text, perl = TRUE))
-  #   if (length(match2) > 0 && nchar(match2) > 0) {
-  #     num <- gsub("[^0-9]", "", match2)
-  #     if (nchar(num) > 0) return(paste0("plate_", num))
-  #   }
-  #
-  #   return(NA_character_)
-  # }
-
-  # # Extract plate_number from filename or plateid
-  # # Looks for patterns like "plate_3", "plate 3", "plate.3", "plate3"
-  #
-  # extract_plate_number <- function(text) {
-  #   if (is.na(text) || text == "") return(NA_character_)
-  #
-  #   # Try multiple patterns to extract plate number
-  #   # Pattern 1: "plate" followed by separator and number (plate_3, plate 3, plate.3, plate-3)
-  #   match1 <- regmatches(text, regexpr("[Pp]late[_\\s\\.-]+(\\d+)", text, perl = TRUE))
-  #   if (length(match1) > 0 && nchar(match1) > 0) {
-  #     num <- gsub("[^0-9]", "", match1)
-  #     if (nchar(num) > 0) return(paste0("plate_", num))
-  #   }
-  #
-  #   # Pattern 2: Just "plate" followed immediately by number (plate3, plate1IgGtot...)
-  #   match2 <- regmatches(text, regexpr("[Pp]late(\\d+)", text, perl = TRUE))
-  #   if (length(match2) > 0 && nchar(match2) > 0) {
-  #     num <- gsub("[^0-9]", "", match2)
-  #     if (nchar(num) > 0) return(paste0("plate_", num))
-  #   }
-  #
-  #   return(NA_character_)
-  # }
 
   # Try to extract plate_number - prioritize plateid and source_file over existing 'plate' column
   # because 'plate' column may have been assigned consecutive numbers incorrectly
@@ -269,22 +219,6 @@ generate_layout_template <- function(all_plates,
     cat("      ", source_name, " → ", plate_id$plate_number[i], "\n")
   }
 
-  # # Handle plateid
-  # if (!"plateid" %in% names(plate_id)) {
-  #   # Try to extract from plate_id column if it exists
-  #   if ("plate_id" %in% names(plate_id)) {
-  #     plate_id$plateid <- plate_id$plate_id
-  #     cat("  ✓ Created plateid from plate_id column\n")
-  #   } else {
-  #     # Create from plate_number
-  #     plate_id$plateid <- plate_id$plate_number
-  #     cat("  ✓ Created plateid from plate_number\n")
-  #   }
-  # }
-
-  # Handle plateid and plate_id columns
-  # NOTE: plate_id = full cleaned path, plateid = short identifier
-
   # First, create plate_id from the full file path using clean_plate_id
   if ("plate_filename" %in% names(plate_id)) {
     plate_id$plate_id <- clean_plate_id(plate_id$plate_filename)
@@ -300,6 +234,9 @@ generate_layout_template <- function(all_plates,
     cat("  ✓ Created plateid from plate_number\n")
   }
 
+
+
+
   # # Apply clean_plate_id to plateid using the full file path
   # if ("plate_filename" %in% names(plate_id)) {
   #   plate_id$plateid <- clean_plate_id(plate_id$plate_filename)
@@ -308,8 +245,8 @@ generate_layout_template <- function(all_plates,
   cat("Columns after processing:", paste(names(plate_id), collapse=", "), "\n")
 
   # Now safely subset
-  required_cols <- c("study_name", "experiment_name", "number_of_wells",
-                     "plate_number", "plateid", "plate_id", "plate_filename")
+  required_cols <- c("project_id", "study_name", "experiment_name", "number_of_wells",
+                     "plate_number", "plateid", "plate_id", "plate_filename", "acquisition_date", "reader_serial_number", "rp1_pmt_volts", "rp1_target")
 
   # Verify all required columns exist
   missing <- setdiff(required_cols, names(plate_id))
@@ -364,7 +301,7 @@ generate_layout_template <- function(all_plates,
   cat("  Available columns:", paste(names(header_df_raw), collapse=", "), "\n")
 
   # Build header_df with available columns
-  header_df_cols <- c("source_file")
+  header_df_cols <- c("source_file","plate_id")
 
   if ("plateid" %in% names(header_df_raw)) {
     header_df_cols <- c(header_df_cols, "plateid")
@@ -641,9 +578,11 @@ generate_layout_template <- function(all_plates,
 
   plate_well_map$feature <- input_feature_value
 
-  plate_well_map <- plate_well_map[ , c("study_name",	"plate_number",	"well",	"specimen_type",	"specimen_source",
-                                        "specimen_dilution_factor",	"experiment_name",	"feature",	"subject_id",	"biosample_id_barcode",	"timepoint_tissue_abbreviation")]
+  # add project_id
+  plate_well_map$project_id <- project_id
 
+  plate_well_map <- plate_well_map[ , c("study_name",	"plate_number",	"well",	"specimen_type",	"specimen_source",
+                                        "specimen_dilution_factor",	"experiment_name",	"feature",	"subject_id",	"biosample_id_barcode",	"timepoint_tissue_abbreviation","plate_id", "project_id")]
 
   # NEW: Apply default values to plates_map if Description was insufficient
 
@@ -720,21 +659,43 @@ generate_layout_template <- function(all_plates,
   )
 
 
-  # plate_id_before_wb <<- plate_id
-  # plate_well_map_before_wb <<- plate_well_map
+  plate_id_before_wb <<- plate_id
+  plate_well_map_before_wb <<- plate_well_map
 
  # string with all unique sample dilutions separated by a pipe
-  plate_id$nominal_sample_dilution <-paste(
-    sort(unique(
-      plate_well_map[
-        plate_well_map$specimen_type == "X",
-      ]$specimen_dilution_factor
-    )),
-    collapse = "|"
+# Define the natural key
+natural_key <- c("project_id", "study_name", "experiment_name", "plate_id")
+
+# Group, filter, and concatenate
+nsd_result <- plate_well_map %>%
+  dplyr::filter(specimen_type == "X") %>%
+  dplyr::group_by(across(all_of(natural_key))) %>%
+  dplyr::summarise(
+    nominal_sample_dilution = paste(
+      unique(specimen_dilution_factor),
+      collapse = "|"
+    ),
+    .groups = "drop"
+  ) %>%
+  dplyr::mutate(
+    # Ensure it's character type (varchar equivalent in R)
+    nominal_sample_dilution = as.character(nominal_sample_dilution)
   )
 
- # add project_id
- plate_id$project_id <- project_id
+plate_id <- plate_id %>%
+  left_join(nsd_result, by = c("project_id", "study_name", "experiment_name", "plateid"))
+
+plate_well_map <- plate_well_map %>%
+  left_join(nsd_result, by = c("project_id", "study_name", "experiment_name", "plateid"))
+
+ leadernames <- c("project_id","study_name","experiment_name","plate_number","nominal_sample_dilution")
+ other_names <- names(plate_id)[!(names(plate_id) %in% leadernames)]
+
+ plate_id <- plate_id[ , c(leadernames, other_names)]
+
+
+ plate_well_map <- plate_well_map[ , c("project_id", "study_name", "plate_number" ,"nominal_sample_dilution" ,	"well",	"specimen_type",	"specimen_source",
+                                       "specimen_dilution_factor",	"experiment_name",	"feature",	"subject_id",	"biosample_id_barcode",	"timepoint_tissue_abbreviation","plateid")]
 
   workbook <- list(
     plate_id = plate_id,
@@ -851,7 +812,6 @@ generate_layout_template <- function(all_plates,
       addStyle(wb, nm, style = bold_style, rows = 1, cols = 1:ncol(workbook[[nm]]), gridExpand = TRUE)
     }
   }
-
 
   # VALIDATION: Collect all issues for README_IMPORTANT
 

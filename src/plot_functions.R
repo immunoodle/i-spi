@@ -624,20 +624,20 @@ glance_plot_data <- function(best_glance_all,
                              best_plate_all,
                              verbose = TRUE) {
   datf <- dplyr::inner_join(best_glance_all[ , c("study_accession", "experiment_accession","antigen","plateid","source","is_log_x","status","crit","lloq","uloq","inflect_x","dydx_inflect")],
-                            best_plate_all[, c("feature","plateid","plate","sample_dilution_factor","assay_response_variable","assay_independent_variable")], by = "plateid"
+                            best_plate_all[, c("feature","plateid","plate","nominal_sample_dilution","assay_response_variable","assay_independent_variable")], by = "plateid"
   )
   datf$lloq <- ifelse(datf$is_log_x, 10^datf$lloq, datf$lloq)
   datf$uloq <- ifelse(datf$is_log_x, 10^datf$uloq, datf$uloq)
   datf$inflect_x <- ifelse(datf$is_log_x, 10^datf$inflect_x, datf$inflect_x)
   datf$lloq <- ifelse(is.na(datf$lloq), 0, datf$lloq)
   datf$uloq <- ifelse(is.na(datf$uloq), 2* datf$inflect_x, datf$uloq)
-  datf$feature <- ifelse(datf$experiment_accession == "ADCD", paste0(datf$experiment_accession, "_", datf$sample_dilution_factor, "x"), datf$feature)
+  datf$feature <- ifelse(datf$experiment_accession == "ADCD", paste0(datf$experiment_accession, "_", datf$nominal_sample_dilution, "x"), datf$feature)
   datf$feature <- factor(datf$feature)
   datf$plate <- factor(datf$plate)
   datf$experiment_accession <- factor(datf$experiment_accession)
 
   datf$source <- factor(datf$source)
-  datf$sample_dilution_factor <- factor(datf$sample_dilution_factor)
+  datf$nominal_sample_dilution <- factor(datf$nominal_sample_dilution)
   datf$antigen <- factor(datf$antigen)
   datf$status <- factor(datf$status)
   datf$crit <- factor(datf$crit)
@@ -657,7 +657,7 @@ make_feature_plot <- function(datf, feature_name) {
     "antigen: ", df$antigen, "<br>",
     "plate: ", df$plate, "<br>",
     "source: ", df$source, "<br>",
-    "sample_dilution_factor: ", df$sample_dilution_factor, "<br>",
+    "nominal_sample_dilution: ", df$nominal_sample_dilution, "<br>",
     "best_fit_model: ", df$crit, "<br>",
     "range of quantification: ", round(df$lloq,2), "-", round(df$uloq,2),  "<br>",
     "sensitivity (slope @inflection): ", round(df$dydx_inflect,2)

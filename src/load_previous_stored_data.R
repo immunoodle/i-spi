@@ -418,19 +418,9 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
                                                                       "quality_score","predicted_concentration", "sample_dilution_factor"))]
     nrows_sample <- nrow(stored_sampley)
     if (nrows_sample > 0) {
-     # stored_sampley <- inner_join(stored_sampley, stored_header[ , c("plate_id","plateid","plate")], by = "plate_id")
-      # print(paste("loaded raw xmap_sample rows:",nrows_sample))
-      # stored_sampley$plateid <- gsub("[[:punct:][:blank:]]+", ".", basename(gsub("\\", "/", stored_sampley$plate_id, fixed=TRUE)))
       names(stored_sampley)[names(stored_sampley) == "antibody_n"] <- "n"
       names(stored_sampley)[names(stored_sampley) == "antibody_mfi"] <- "mfi"
-      #names(stored_sampley)[names(stored_sampley) == "gate_class"] <- "gate_class_detection"
-     # names(stored_sampley)[names(stored_sampley) == "gate_class_dil"] <- "dil_gc"
-      # names(stored_sampley)[names(stored_sampley) == "antibody_au"] <- "au"
-      # names(stored_sampley)[names(stored_sampley) == "antibody_au_se"] <- "au_se"
-     # names(stored_sampley)[names(stored_sampley) == "reference_dilution"] <- "ref_dil"
-      # stored_sampley <- stored_sampley[,!(names(stored_sampley) %in% c("xmap_sample_id", "antibody_name"))]
       stored_samplex <- distinct(stored_sampley, study_accession, experiment_accession, plate_id, antigen, well, .keep_all = TRUE)
-      # print(paste("loaded distinct xmap_sample rows:",nrow(stored_samplex)))
       begin_cols <-  c("experiment_accession", "plate", "nominal_sample_dilution")
       stored_samplex <- stored_samplex[, c(
         begin_cols,

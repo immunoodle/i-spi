@@ -432,7 +432,7 @@ summarize_sc_fits_plotly <- function(best_pred_all, cv_df, best_plate_all, exper
   # Create grouping variable
   antigen_source_exp_fits$group_id <- interaction(
     antigen_source_exp_fits$plateid,
-    antigen_source_exp_fits$sample_dilution_factor,
+    antigen_source_exp_fits$nominal_sample_dilution,
     antigen_source_exp_fits$model,
     drop = TRUE
   )
@@ -469,7 +469,7 @@ summarize_sc_fits_plotly <- function(best_pred_all, cv_df, best_plate_all, exper
       hoverinfo = "text",
       text = ~paste(
         "Plate:", plateid,
-        "<br>Sample Dilution Factor:", sample_dilution_factor,
+        "<br>Nominal Sample Dilution:", nominal_sample_dilution,
         "<br> Model Type:", model
       )
     )

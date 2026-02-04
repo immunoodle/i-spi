@@ -65,7 +65,6 @@ observeEvent(list(
 
               fluidRow(
                 column(3, uiOutput("sc_plate_selector")),
-                #column(3, uiOutput("sample_dilution_factor_selector")),
                 column(3, uiOutput("sc_antigen_selector")),
                 column(3, uiOutput("sc_source_selector"))
               ),
@@ -286,33 +285,10 @@ observeEvent(list(
       )
     })
 
-    # output$sample_dilution_factor_selector <- renderUI({
-    #   req(loaded_data$standards$study_accession, loaded_data$standards$experiment_accession)
-    #
-    #  # loaded_data_nominal <<- loaded_data
-    #
-    #   dat_filtered_sample_dil_factor <- loaded_data$standards[loaded_data$standards$study_accession %in% selected_study &
-    #                                          loaded_data$standards$experiment_accession %in% selected_experiment &
-    #                                          loaded_data$standards$plate_nom %in% input$sc_plate_select, ]
-    #   dat_filtered_sample_dil_factor <- dat_filtered_sample_dil_factor[!is.na(dat_filtered_sample_dil_factor$mfi),]
-    #
-    #   req(nrow(dat_filtered_sample_dil_factor) > 0)
-    #
-    #   # sample_dilution_factor_choices <- sort(unique(dat_filtered_sample_dil_factor$sample_dilution_factor))
-    #   #
-    #   sample_dilution_factor_choices <- sort(unique(dat_filtered_sample_dil_factor$nominal_sample_dilution))
-    #
-    #   selectInput("sc_sample_dilution_factor_select",
-    #               label = "Sample Dilution Factor",
-    #               choices = sample_dilution_factor_choices)
-    #
-    # })
-
     antigen_plate <- reactive({
       req(input$sc_source_select,
           input$sc_antigen_select,
           input$sc_plate_select,
-          #input$sc_sample_dilution_factor_select,
           loaded_data)
 
       result <- select_antigen_plate(
@@ -697,7 +673,7 @@ observeEvent(input$run_batch_fit, ignoreInit = TRUE, {
   # First check: Is processing already running?
   if (is_batch_processing()) {
     showNotification("Batch processing is already running. Please wait for it to complete.",
-                    type = "warning", duration = 3)
+                    type = "warning", duration = 10, closeButton = TRUE)
     return()
   }
 
@@ -711,7 +687,7 @@ observeEvent(input$run_batch_fit, ignoreInit = TRUE, {
   # Third check: Validate that study accession is available
   if (is.null(input$readxMap_study_accession) || input$readxMap_study_accession == "") {
     showNotification("Please select a study before running batch processing.",
-                    type = "error", duration = 5)
+                    type = "error", duration = 10, closeButton = TRUE)
     return()
   }
 
@@ -723,7 +699,7 @@ observeEvent(input$run_batch_fit, ignoreInit = TRUE, {
 
     showNotification(id = "batch_sc_fit_notify",
                     div(class = "big-notification", "Fitting standard curves for all experiments."),
-                    duration = NULL)
+                    duration = NULL, closeButton = TRUE)
 
     # Pull fresh data for the batch processing
     headers <- fetch_db_header_experiments(study_accession = input$readxMap_study_accession, conn = conn)
@@ -805,7 +781,7 @@ observeEvent(input$run_batch_fit, ignoreInit = TRUE, {
     )
     showNotification(id = "batch_sc_fit_notify",
                     div(class = "big-notification", "Best Fit Statistics saved"),
-                    duration = NULL)
+                    duration = NULL, closeButton = TRUE)
 
     # Retrieve lookup of IDs using NK
     study_to_save <- unique(batch_outputs_processed$best_glance_all$study_accession)
@@ -868,11 +844,11 @@ observeEvent(input$run_batch_fit, ignoreInit = TRUE, {
 
     showNotification(id = "batch_sc_fit_notify",
                     div(class = "big-notification", "Best Plates saved"),
-                    duration = NULL)
+                    duration = NULL, closeButton = TRUE)
 
     showNotification(id = "batch_sc_fit_notify",
                     div(class = "big-notification", "Saving parameter estimates..."),
-                    duration = NULL)
+                    duration = NULL, closeButton = TRUE)
 
     upsert_best_curve(
       conn   = conn,
@@ -883,12 +859,12 @@ observeEvent(input$run_batch_fit, ignoreInit = TRUE, {
     )
     showNotification(id = "batch_sc_fit_notify",
                     div(class = "big-notification", "Best parameter estimates saved"),
-                    duration = NULL)
+                    duration = NULL, closeButton = TRUE)
 
 
     showNotification(id = "batch_sc_fit_notify",
                     div(class = "big-notification", "Saving predicted standards..."),
-                    duration = NULL)
+                    duration = NULL, closeButton = TRUE)
 
     upsert_best_curve(
       conn   = conn,
@@ -901,12 +877,12 @@ observeEvent(input$run_batch_fit, ignoreInit = TRUE, {
 
     showNotification(id = "batch_sc_fit_notify",
                     div(class = "big-notification", "Best Predicted standards saved"),
-                    duration = NULL)
+                    duration = NULL, closeButton = TRUE)
 
 
     showNotification(id = "batch_sc_fit_notify",
                     div(class = "big-notification", "Saving Predicted samples..."),
-                    duration = NULL)
+                    duration = NULL, closeButton = TRUE)
 
     upsert_best_curve(
       conn   = conn,
@@ -918,11 +894,11 @@ observeEvent(input$run_batch_fit, ignoreInit = TRUE, {
 
     showNotification(id = "batch_sc_fit_notify",
                     div(class = "big-notification", "Best Predicted Samples saved"),
-                    duration = NULL)
+                    duration = NULL, closeButton = TRUE)
 
     showNotification(id = "batch_sc_fit_notify",
                     div(class = "big-notification", "Saving Best Standards..."),
-                    duration = NULL)
+                    duration = NULL, closeButton = TRUE)
 
     upsert_best_curve(
       conn   = conn,
@@ -934,13 +910,13 @@ observeEvent(input$run_batch_fit, ignoreInit = TRUE, {
 
     showNotification(id = "batch_sc_fit_notify",
                     div(class = "big-notification", "Best Standards saved"),
-                    duration = NULL)
+                    duration = NULL, closeButton = TRUE)
 
 
 
     showNotification(id = "batch_sc_fit_notify",
                     div(class = "big-notification", "Standard Curves Calculated for all Experiments"),
-                    duration = NULL)
+                    duration = NULL, closeButton = TRUE)
     removeNotification("batch_sc_fit_notify")
 
   }, error = function(e) {
@@ -948,9 +924,10 @@ observeEvent(input$run_batch_fit, ignoreInit = TRUE, {
     showNotification(
       paste("Error during batch processing:", e$message),
       type = "error",
-      duration = 10
+      duration = null,
+      closeButton = TRUE
     )
-    removeNotification("batch_sc_fit_notify")
+    # removeNotification("batch_sc_fit_notify")
   }, finally = {
     # Always reset the processing flag, even if there was an error
     is_batch_processing(FALSE)
