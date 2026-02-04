@@ -924,7 +924,7 @@ observeEvent(input$run_batch_fit, ignoreInit = TRUE, {
     showNotification(
       paste("Error during batch processing:", e$message),
       type = "error",
-      duration = null,
+      duration = NULL,
       closeButton = TRUE
     )
     # removeNotification("batch_sc_fit_notify")
