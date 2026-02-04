@@ -145,16 +145,13 @@ pull_data <- function(study_accession, experiment_accession, project_id, conn = 
                                             conn = conn)
   standard_curve_data$plate_id <- trimws(standard_curve_data$plate_id)
 
-  # joined <<- inner_join(
-  #   standard_curve_data,
-  #   plates,
-  #   by = c("study_accession", "experiment_accession", "plate_id")
-  # )
-  #
-  # print(str(joined))
+  # cat("plates\n")
+  # print(names(plates))
+  # cat("standard_curve data\n")
+  # print(names(standard_curve_data))
 
-  standards <- inner_join(standard_curve_data, plates, by = c("study_accession", "experiment_accession","plate_id", "nominal_sample_dilution"))[ ,
-                                                                                                                      c("study_accession","experiment_accession","feature","source","plateid",
+  standards <- inner_join(standard_curve_data, plates[, c("study_accession", "experiment_accession" ,"plateid", "plate", "plate_id" , "assay_response_variable" ,"assay_independent_variable"
+   ,"project_id")], by = c("study_accession", "experiment_accession","plate_id"))[ ,c("study_accession","experiment_accession","feature","source","plateid",
                                                                                                                         "plate", "stype", "nominal_sample_dilution",
                                                                                                                         "sampleid","well","dilution","antigen","mfi",
                                                                                                                         "assay_response_variable", "assay_independent_variable")]
@@ -165,7 +162,8 @@ pull_data <- function(study_accession, experiment_accession, project_id, conn = 
                                        experiment_accession = experiment_accession,
                                        project_id = project_id,
                                        conn = conn) %>% dplyr::mutate(plate_id = trimws(as.character(plate_id))),
-                       plates, by = c("study_accession", "experiment_accession","plate_id", "nominal_sample_dilution"))
+                       plates[, c("study_accession", "experiment_accession" ,"plateid", "plate", "plate_id" , "assay_response_variable" ,"assay_independent_variable"
+                                  ,"project_id")], by = c("study_accession", "experiment_accession","plate_id"))
 
   blanks$plate_nom <- paste(blanks$plate, blanks$nominal_sample_dilution, sep = "-")
 
@@ -173,7 +171,8 @@ pull_data <- function(study_accession, experiment_accession, project_id, conn = 
                                          experiment_accession = experiment_accession,
                                          project_id = project_id,
                                          conn = conn) %>% dplyr::mutate(plate_id = trimws(as.character(plate_id))),
-                        plates, by = c("study_accession", "experiment_accession","plate_id", "nominal_sample_dilution"))
+                        plates[, c("study_accession", "experiment_accession" ,"plateid", "plate", "plate_id" , "assay_response_variable" ,"assay_independent_variable"
+                                   ,"project_id")], by = c("study_accession", "experiment_accession","plate_id"))
 
   samples$plate_nom <- paste(samples$plate, samples$nominal_sample_dilution, sep = "-")
 
@@ -436,7 +435,7 @@ upsert_batch <- function(conn, df, sql_parts, use_copy, notify) {
     })
     TRUE
   }, error = function(e) {
-    notify(paste0("Batch failed: ", conditionMessage(e)))
+    showNotification(id = "error_batch" ,paste0("Batch failed: ", conditionMessage(e)), duration = NULL, closeButton = T, type = "error")
     FALSE
   })
 }

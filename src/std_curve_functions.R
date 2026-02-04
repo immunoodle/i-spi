@@ -2279,9 +2279,11 @@ predict_and_propagate_error <- function(best_fit,
     print(head(antigen_plate$plate_samples))
   }
 
+
   sample_se <- data.frame(y_new = log_plate_samples,
                           dilution = antigen_plate$plate_samples$dilution,
-                          well = antigen_plate$plate_samples$well)
+                          well = antigen_plate$plate_samples$well
+                          )
   if (verbose) {
     if (nrow(sample_se) == 0) {
       message("sample_se has 0 rows")
