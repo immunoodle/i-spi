@@ -393,7 +393,8 @@ generate_layout_template <- function(all_plates,
   antigen_df <- build_antigen_df(
     all_plates = all_plates,
     study_accession = study_accession,
-    experiment_accession = experiment_accession
+    experiment_accession = experiment_accession,
+    project_id = project_id # add project id
   )
 
   # ==========================================================================
@@ -659,13 +660,14 @@ build_plate_id_df <- function(header_list, study_accession, experiment_accession
 
 
 #' Build antigen data frame
-build_antigen_df <- function(all_plates, study_accession, experiment_accession) {
+build_antigen_df <- function(all_plates, study_accession, experiment_accession, project_id) {
 
   metadata_cols <- c("source_file", "Well", "Type", "Description",
                      "% Agg Beads", "Sampling Errors", "Acquisition Time", "plateid")
   antigen_names <- setdiff(names(all_plates), metadata_cols)
 
   tibble(
+    project_id = rep(project_id, length(antigen_names)),
     study_name = rep(study_accession, length(antigen_names)),
     experiment_name = rep(experiment_accession, length(antigen_names)),
     antigen_label_on_plate = antigen_names,
