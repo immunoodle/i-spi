@@ -270,16 +270,39 @@ subject_feature_clustering <- function(input_data, time1, time2,
 
 }
 
+to_log2_vec <- function(x, is_log) {
+  ## sanity checks ------------------------------------------------------------
+  if (!is.numeric(x)) stop("`x` must be numeric")
+  if (!is.logical(is_log)) stop("`is_log` must be logical")
+  if (length(x) != length(is_log))
+    stop("`x` and `is_log` must have the same length")
+
+  ## element‑wise conversion --------------------------------------------------
+  ifelse(is_log,
+         # x is already log10 → convert to log2
+         x / log10(2),
+         # x is raw counts → log2(x+1)
+         log2(x + 1))
+}
+
+to_log2_plus1 <- function(x, is_log10) {
+  if (!is.numeric(x)) stop("`x` must be numeric")
+  if (!is.logical(is_log10)) stop("`is_log10` must be logical")
+  if (length(x) != length(is_log10))
+    stop("length mismatch")
+
+  ifelse(
+    is_log10,
+    log2(10^x + 1),
+    log2(x + 1)
+  )
+}
 
 
 ## Create data form
 # Pass in sample data, t0 and t1, and desired outcome (norm mfi, mfi, au)
 create_data_form_df <- function(data, t0, t1, log_assay_outcome) {
 
-  data_v <<- data
-  t0_v <<- t0
-  t1_v <<- t1
-  log_assay_outcome_v <<- log_assay_outcome
 
   # Features within the study
   data$antigen_feature <- paste(data$antigen, data$feature, sep = "_")
@@ -318,11 +341,14 @@ create_data_form_df <- function(data, t0, t1, log_assay_outcome) {
   # update and filter combined data with log assay value  based on the outcome of interest
   combined_data <- combined_data[combined_data$agroup %in% arm_list, ]
   if (log_assay_outcome == "MFI") {
-    combined_data$log_assay_value <- log10(combined_data$assay_response + 1)
+   # combined_data$log_assay_value <- log10(combined_data$assay_response + 1)
+  combined_data$log_assay_value <- to_log2_plus1(combined_data$assay_response, combined_data$is_log_response)
   } else if (log_assay_outcome == "Normalized MFI") {
-    combined_data$log_assay_value <- log10(combined_data$norm_assay_response + 1)
+    #combined_data$log_assay_value <- log10(combined_data$norm_assay_response + 1)
+    combined_data$log_assay_value <- to_log2_plus1(combined_data$norm_assay_response, combined_data$is_log_response)
   } else {
-    combined_data$log_assay_value <- log10(combined_data$au + 1)
+    #combined_data$log_assay_value <- log10(combined_data$au + 1)
+    combined_data$log_assay_value <- to_log2_plus1(combined_data$au, combined_data$is_log_response)
   }
 
   # #### connection.R generates unstandardized, not scaled connection_data
@@ -454,9 +480,6 @@ compute_finite_mixture_model <- function(data_form_reference, t0, t1) {
 
 # Create density histogram of the finite mixture model data_form_reference, t0, t1
 density_histogram <- function(day0set, n_clusters) {
-
-  day0set_view <<- day0set
-  n_clusters <<- n_clusters
 
   cluster_levels <-  unique(as.character(day0set$clusters))
 

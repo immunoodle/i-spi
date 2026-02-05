@@ -852,7 +852,7 @@ fetch_best_sample_se_all_summary <- function(study_accession, experiment_accessi
       ss.assay_response_variable, ss.assay_independent_variable,
       ss.dilution, ss.overall_se, ss.assay_response, ss.se_concentration,
       ss.au, ss.pcov, ss.source, ss.gate_class_loq, ss.gate_class_lod,
-      ss.gate_class_pcov, ss.uid, ss.best_glance_all_id,
+      ss.gate_class_pcov, ss.uid, ss.best_glance_all_id, ss.feature, ss.norm_assay_response,
       g.is_log_response, g.is_log_x, g.bkg_method, g.apply_prozone
     FROM madi_results.best_sample_se_all ss
     LEFT JOIN madi_results.best_glance_all g

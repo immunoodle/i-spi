@@ -93,11 +93,18 @@ observeEvent(list(
 
     selected_study <- selected_studyexpplate$study_accession
     selected_experiment <- selected_studyexpplate$experiment_accession
-
+    param_group = "standard_curve_options"
     # Load sample data
     #sample_data <- stored_plates_data$stored_sample
-    sample_data <- fetch_best_sample_se_all(study_accession = selected_study, experiment_accession = selected_experiment,
-                     project_id = userWorkSpaceID(), conn = conn)
+    sample_data <- fetch_best_sample_se_all_summary(study_accession = selected_study, experiment_accession = selected_experiment,
+                                                    param_user = currentuser(), project_id = userWorkSpaceID(), conn = conn)
+
+    # study_params_is_log_response <<- fetch_study_parameters(study_accession = selected_study,
+    #                                        param_user = currentuser(),
+    #                                        param_group =param_group,
+    #                                        project_id = userWorkSpaceID(),
+    #                                        conn = conn)$is_log_response
+
     # Check if selected study, experiment, and sample data are available
     # if (!is.null(selected_study) && length(selected_study) > 0 &&
     #     !is.null(selected_experiment) && length(selected_experiment) > 0 &&
@@ -308,6 +315,7 @@ observeEvent(list(
     output$response_class <- renderUI({
       req(sample_data)
       req(input$antigenSampleSelection)
+
 
       dat <- sample_data[sample_data$antigen == input$antigenSampleSelection,]
 

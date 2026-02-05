@@ -20,8 +20,11 @@ observeEvent(list(
 
     # Load sample data
     #sample_data <- stored_plates_data$stored_sample
-    sample_data <- fetch_best_sample_se_all(study_accession = selected_study, experiment_accession = selected_experiment,
-                                            project_id = userWorkSpaceID(), conn = conn)
+    # sample_data <- fetch_best_sample_se_all(study_accession = selected_study, experiment_accession = selected_experiment,
+    #                                         project_id = userWorkSpaceID(), conn = conn)
+    sample_data <- fetch_best_sample_se_all_summary(study_accession = selected_study, experiment_accession = selected_experiment,
+                                                    param_user = currentuser(), project_id = userWorkSpaceID(), conn = conn)
+
     # # Check if selected study, experiment, and sample data are available
     # if (!is.null(selected_study) && length(selected_study) > 0 &&
     #     !is.null(selected_experiment) && length(selected_experiment) > 0 &&
@@ -183,7 +186,8 @@ observeEvent(list(
       #   bsCollapsePanel(
       #     title = "Parameter Dependencies",
           HTML(
-            "The subgroup summary depends on the  first (baseline) and second (followup) timepoints are set in the subgroup detection section within the study paramaters."
+            "The subgroup summary depends on the first (baseline) and second (followup) timepoints are set in the subgroup detection section within the study paramaters.
+             Normalized MFI is only available when normalized values have been computed for all antigens for the selected feature."
            )
       #     style = "info"
       #   )
@@ -215,12 +219,18 @@ observeEvent(list(
 
     output$response_class_selection <- renderUI({
       req(sample_data)
+
+      #sample_data_v_class <<- sample_data
+
+      choices <- c("MFI", "Arbitrary Units")
+
+      if (any(!is.na(sample_data$norm_assay_response))) {
+        choices <- c("MFI", "Normalized MFI", "Arbitrary Units")
+      }
       selectInput(
         inputId = "responseClassSelection",
         label = "Response type:",
-        choices = c("MFI",
-                    "Normalized MFI",
-                    "Arbitrary Units")
+        choices = choices
       )
     })
 
@@ -528,7 +538,7 @@ observeEvent(list(
           label = "Number of Subgroups",
           value = 1,
           min = 1,
-          max = ifelse(length(unique(sample_data$subject_accession)) < 6, length(unique(sample_data$subject_accession)), 6),
+          max = ifelse(length(unique(sample_data$patientid)) < 6, length(unique(sample_data$patientid)), 6),
           step = 1
         )
       })
