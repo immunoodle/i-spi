@@ -49,7 +49,9 @@ observeEvent(list(
 
       study_params <- fetch_study_parameters(study_accession = selected_study,
                                              param_user = currentuser(),
-                                             param_group =param_group, conn = conn)
+                                             param_group =param_group,
+                                             project_id = userWorkSpaceID(),
+                                             conn = conn)
 
 
       output$std_curver_ui <- renderUI({
@@ -737,6 +739,7 @@ observeEvent(input$run_batch_fit, ignoreInit = TRUE, {
     study_params <- fetch_study_parameters(study_accession = input$readxMap_study_accession,
                                            param_user = currentuser(),
                                            param_group = param_group,
+                                           project_id = userWorkSpaceID(),
                                            conn = conn)
 
     antigen_list_res <- build_antigen_list(exp_list = exp_list,

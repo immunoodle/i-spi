@@ -10,11 +10,12 @@ get_db_connection <- function() {
   )
 }
 
-fetch_study_parameters <- function(study_accession, param_user, param_group = "standard_curve_options", conn) {
+fetch_study_parameters <- function(study_accession, param_user, param_group = "standard_curve_options", project_id = userWorkSpaceID(), conn) {
   query <- glue("
   SELECT study_accession, param_name, param_boolean_value, param_character_value
 	FROM madi_results.xmap_study_config
-  WHERE study_accession = '{study_accession}'
+  WHERE project_id = {project_id}
+  AND study_accession = '{study_accession}'
   AND param_user = '{param_user}'
   AND param_group = '{param_group}';
 ")
@@ -117,7 +118,7 @@ fetch_db_samples <- function(study_accession, experiment_accession, project_id, 
   query <- glue("SELECT study_accession,
 experiment_accession, plate_id, timeperiod, patientid,
 well, stype, sampleid,  agroup, dilution, pctaggbeads, samplingerrors, antigen, antibody_mfi AS mfi,
-antibody_n, nominal_sample_dilution FROM madi_results.xmap_sample
+antibody_n, nominal_sample_dilution, feature FROM madi_results.xmap_sample
 WHERE project_id = {project_id}
 AND study_accession = '{study_accession}'
 AND experiment_accession = '{experiment_accession}'
@@ -742,7 +743,7 @@ SELECT best_sample_se_all_id, predicted_concentration, study_accession, experime
 agroup, pctaggbeads, samplingerrors, antigen,
 antibody_n, plateid, plate, nominal_sample_dilution, assay_response_variable, assay_independent_variable, dilution, overall_se, assay_response,
 se_concentration, au, pcov, source, gate_class_loq, gate_class_lod,
-gate_class_pcov, uid, best_glance_all_id
+gate_class_pcov, uid, best_glance_all_id, feature, norm_assay_response
 	FROM madi_results.best_sample_se_all
 	WHERE project_id = {project_id}
 	AND study_accession = '{study_accession}'

@@ -19,38 +19,40 @@ observeEvent(list(
     selected_experiment <- selected_studyexpplate$experiment_accession
 
     # Load sample data
-    sample_data <- stored_plates_data$stored_sample
-    # Check if selected study, experiment, and sample data are available
-    if (!is.null(selected_study) && length(selected_study) > 0 &&
-        !is.null(selected_experiment) && length(selected_experiment) > 0 &&
-        !is.null(sample_data) && length(sample_data) > 0){
-
-      # Filter sample data
-      sample_data$selected_str <- paste0(sample_data$study_accession, sample_data$experiment_accession)
-      sample_data <- sample_data[sample_data$selected_str == paste0(selected_study, selected_experiment), ]
-
-      # Summarize sample data
-      cat("Viewing sample dat in subgroup summary tab ")
-      print(names(sample_data))
-      print(table(sample_data$plateid))
-      print(table(sample_data$antigen))
-      cat("After summarizing sample data in subgroup summary tab")
-
-
-      # Rename columns
-
-      sample_data <- dplyr::rename(sample_data, arm_name = agroup)
-      sample_data <- dplyr::rename(sample_data, visit_name = timeperiod)
-
-
-      sample_data$subject_accession <- sample_data$patientid
-
-      sample_data <- dplyr::rename(sample_data, value_reported = mfi)
-
-      arm_choices <- unique(sample_data$arm_name)
-      visits <- unique(sample_data$visit_name)
-
-    }
+    #sample_data <- stored_plates_data$stored_sample
+    sample_data <- fetch_best_sample_se_all(study_accession = selected_study, experiment_accession = selected_experiment,
+                                            project_id = userWorkSpaceID(), conn = conn)
+    # # Check if selected study, experiment, and sample data are available
+    # if (!is.null(selected_study) && length(selected_study) > 0 &&
+    #     !is.null(selected_experiment) && length(selected_experiment) > 0 &&
+    #     !is.null(sample_data) && length(sample_data) > 0){
+    #
+    #   # Filter sample data
+    #   sample_data$selected_str <- paste0(sample_data$study_accession, sample_data$experiment_accession)
+    #   sample_data <- sample_data[sample_data$selected_str == paste0(selected_study, selected_experiment), ]
+    #
+    #   # Summarize sample data
+    #   cat("Viewing sample dat in subgroup summary tab ")
+    #   print(names(sample_data))
+    #   print(table(sample_data$plateid))
+    #   print(table(sample_data$antigen))
+    #   cat("After summarizing sample data in subgroup summary tab")
+    #
+    #
+    #   # Rename columns
+    #
+    #   sample_data <- dplyr::rename(sample_data, arm_name = agroup)
+    #   sample_data <- dplyr::rename(sample_data, visit_name = timeperiod)
+    #
+    #
+    #   sample_data$subject_accession <- sample_data$patientid
+    #
+    #   sample_data <- dplyr::rename(sample_data, value_reported = mfi)
+    #
+    #   arm_choices <- unique(sample_data$arm_name)
+    #   visits <- unique(sample_data$visit_name)
+    #
+    # }
 
     # Load Header Data
     header_data <- stored_plates_data$stored_header
@@ -94,12 +96,18 @@ observeEvent(list(
                    ) # end bsCollapsePanel
                  ),
                  mainPanel(
-                   uiOutput("parameter_subgroup_summary_dependencies_UI"),
+                   div(
+                     style = "background-color: #f0f8ff; border: 1px solid #4a90e2;
+                              padding: 10px; margin-bottom: 15px; border-radius: 5px;",
+                     tags$h4("Current Subgroup Detection Summary Context", style = "margin-top: 0; color: #2c5aa0;"),
+                     uiOutput("parameter_subgroup_summary_dependencies_UI"),
+                   ),
+                   # fluidRow(
+                   #   column(3, uiOutput("feature_selectionUI")),
+                   #   column(3, textOutput("study_antigens"))
+                   # ),
                    fluidRow(
                      column(3, uiOutput("feature_selectionUI")),
-                     column(3, textOutput("study_antigens"))
-                   ),
-                   fluidRow(
                      column(3,uiOutput("response_class_selection")),
                      column(3, uiOutput("transformation_type_selection")),
                      # column(3, uiOutput("baseline_visit")),
@@ -170,18 +178,18 @@ observeEvent(list(
 
     ## Box noting parameter dependencies
     output$parameter_subgroup_summary_dependencies_UI <- renderUI({
-      tagList(bsCollapse(
-        id = "param_subgroup_summary_dependencies",
-        bsCollapsePanel(
-          title = "Parameter Dependencies",
+      # tagList(bsCollapse(
+      #   id = "param_subgroup_summary_dependencies",
+      #   bsCollapsePanel(
+      #     title = "Parameter Dependencies",
           HTML(
             "The subgroup summary depends on the  first (baseline) and second (followup) timepoints are set in the subgroup detection section within the study paramaters."
-          ),
-          style = "info"
-        )
-      ),
-      actionButton("to_study_parameters_from_subgroup_summary", label = "Return to Study Parameters")
-      )
+           )
+      #     style = "info"
+      #   )
+      # ),
+      # actionButton("to_study_parameters_from_subgroup_summary", label = "Return to Study Parameters")
+
     })
 
     # Switch tabs when click button

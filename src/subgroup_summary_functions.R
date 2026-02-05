@@ -9,7 +9,7 @@ prepare_classify_set <- function(classify_set, baseline_visit, followup_visit) {
   classify_set$feature <- paste(classify_set$antigen, classify_set$feature, sep = "_")
   classify_set <- classify_set[, !(colnames(classify_set) %in% c("dist.eu", "kmeans_cluster", "covar", "clusters", "response"))]
 
-  classify_set$timeperiod <- ifelse(classify_set$visit_name == baseline_visit, "t0", ifelse(classify_set$visit_name == followup_visit, "t1", NA))
+  classify_set$timeperiod <- ifelse(classify_set$timeperiod == baseline_visit, "t0", ifelse(classify_set$timeperiod == followup_visit, "t1", NA))
 
   return(classify_set)
 }

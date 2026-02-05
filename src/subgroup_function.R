@@ -91,23 +91,23 @@ subject_feature_clustering <- function(input_data, time1, time2,
   allres <- list()
   # input_data_view <<- input_data
   ## filter datasets to antigen and making it wider (change to input data not form1t2)
-  sub1 <- input_data[input_data$visit_name == time1, c("xmap_sample_id", "subject_accession", "antigen", "arm_name",
+  sub1 <- input_data[input_data$timeperiod == time1, c("best_sample_se_all_id", "subject_accession", "antigen", "agroup",
                                                        "feature","log_assay_value")]
-  sub2 <- input_data[input_data$visit_name == time2, c("xmap_sample_id", "subject_accession", "antigen","arm_name",
+  sub2 <- input_data[input_data$timeperiod == time2, c("best_sample_se_all_id", "subject_accession", "antigen","agroup",
                                                        "feature","log_assay_value")]
   # ensure there are no duplicates
-  sub1 <- sub1 %>% distinct(subject_accession, arm_name, feature, .keep_all = TRUE)
-  sub2 <- sub2 %>% distinct(subject_accession, arm_name, feature, .keep_all = TRUE)
+  sub1 <- sub1 %>% distinct(subject_accession, agroup, feature, .keep_all = TRUE)
+  sub2 <- sub2 %>% distinct(subject_accession, agroup, feature, .keep_all = TRUE)
 
   cat("before sub1")
   cat("names_sub1\n")
   print(names(sub1)) #c("subject_accession", "arm_name") # need subject accession and arm name
-  sub1 <- pivot_wider(sub1, id_cols = c("xmap_sample_id", "subject_accession", "arm_name") ,names_from = "feature"
+  sub1 <- pivot_wider(sub1, id_cols = c("best_sample_se_all_id", "subject_accession", "agroup") ,names_from = "feature"
                       , values_from = "log_assay_value")
 
   cat("before sub2")
   sub2_view <- sub2
-  sub2 <- pivot_wider(sub2,id_cols = c("xmap_sample_id", "subject_accession", "arm_name"), names_from = "feature"
+  sub2 <- pivot_wider(sub2,id_cols = c("best_sample_se_all_id", "subject_accession", "agroup"), names_from = "feature"
                       , values_from = "log_assay_value")
 
   cat("after sub2")
@@ -115,8 +115,8 @@ subject_feature_clustering <- function(input_data, time1, time2,
   sub2 <- na.omit(sub2)
 
 
-  x <- sub1[,c('subject_accession','arm_name',feature)]
-  y <- sub2[,c('subject_accession','arm_name',feature)]
+  x <- sub1[,c('subject_accession','agroup',feature)]
+  y <- sub2[,c('subject_accession','agroup',feature)]
   #  cat("x:")
   # # x_view <<- x
   #  print(names(x))
@@ -180,7 +180,7 @@ subject_feature_clustering <- function(input_data, time1, time2,
     # print(str(x.y))
 
     samp <- data.frame(subject_accession = subject,
-                       arm_name = x$arm_name[x$subject_accession==subject],
+                       agroup = x$agroup[x$subject_accession==subject],
                        feature = feature,
                        time1 = x.1,
                        time2 = y.1,
@@ -257,11 +257,11 @@ subject_feature_clustering <- function(input_data, time1, time2,
   res2 <- res2 %>% mutate(diffdir_kmeans = factor(diffdir_kmeans, levels = names(sort(tapply(diffratio,diffdir_kmeans,mean)))))
 
 
-  res2 <- res2 %>% dplyr::select(subject_accession,arm_name,feature,kmeans_cluster,time1,time2,dist.eu,diffdir_kmeans)
+  res2 <- res2 %>% dplyr::select(subject_accession,agroup,feature,kmeans_cluster,time1,time2,dist.eu,diffdir_kmeans)
 
   # reshape data to longer for later merging
-  res_long <- res2 %>% pivot_longer(cols = c(time1,time2),names_to = "visit_name",values_to = "log_assay_value")
-  res_long$visit_name <- ifelse(res_long$visit_name=="time1",time1,time2)
+  res_long <- res2 %>% pivot_longer(cols = c(time1,time2),names_to = "timeperiod",values_to = "log_assay_value")
+  res_long$timeperiod <- ifelse(res_long$timeperiod=="time1",time1,time2)
   allres[['res_wide']] <- res2
   allres[['res_long']] <- res_long
   # plot(dif)
@@ -275,13 +275,19 @@ subject_feature_clustering <- function(input_data, time1, time2,
 ## Create data form
 # Pass in sample data, t0 and t1, and desired outcome (norm mfi, mfi, au)
 create_data_form_df <- function(data, t0, t1, log_assay_outcome) {
+
+  data_v <<- data
+  t0_v <<- t0
+  t1_v <<- t1
+  log_assay_outcome_v <<- log_assay_outcome
+
   # Features within the study
   data$antigen_feature <- paste(data$antigen, data$feature, sep = "_")
   include_feature <- unique(data$antigen_feature)
   #print(include_feature)
-  arm_list <- unique(data$arm_name)
+  arm_list <- unique(data$agroup) # arm_list
   # print(arm_list)
-  timepoints <- unique(data$visit_name) # Visits are time points
+  timepoints <- unique(data$timeperiod) # Visits are time points (visit_name)
 
   #### specify time points
   ## needs to come from the UI select from the list of all time points
@@ -290,29 +296,31 @@ create_data_form_df <- function(data, t0, t1, log_assay_outcome) {
 
   tdiff<-paste0(t1,"/",t0)
 
-  names_plotset <- c("xmap_sample_id","subject_accession", "visit_name", "arm_name", "antigen", "feature", "log_assay_value")
+  names_plotset <- c("best_sample_se_all_id","subject_accession", "timeperiod", "agroup", "antigen", "feature", "log_assay_value")
   # print(names_plotset)
-  combined_data <- data[data$visit_name %in% timepoints & data$antigen_feature %in% include_feature, ]
+  combined_data <- data[data$timeperiod %in% timepoints & data$antigen_feature %in% include_feature, ]
   #print(head(combined_data))
   #pcdata <- predata[predata$visit_name %in% timepoints & predata$feature %in% include_feature, ]
   #combined_data <- rbind(cdata, pcdata)
   #combined_data$visit_name <- droplevels(combined_data$visit_name)
   #print(combined_data$visit_name)
 
-  levels(combined_data$visit_name) <- unique(combined_data$visit_name)
+  levels(combined_data$timeperiod) <- unique(combined_data$timeperiod)
   #print(levels(combined_data$visit_name))
-  combined_data$visit_name <- factor(combined_data$visit_name, ordered = FALSE)
-  combined_data$visit_name <- relevel(combined_data$visit_name, ref = t0) #time 0
+  combined_data$timeperiod <- factor(combined_data$timeperiod, ordered = FALSE)
+  cat("Visit Name\n")
+  print(unique(combined_data$timeperiod))
+  combined_data$timeperiod <- relevel(combined_data$timeperiod, ref = t0) #time 0
   #print(levels(combined_data$visit_name))
 
   #combined_data$visit_name <- relevel(combined_data$visit_name, ref=t0) # time 0
 
   # update and filter combined data with log assay value  based on the outcome of interest
-  combined_data <- combined_data[combined_data$arm_name %in% arm_list, ]
+  combined_data <- combined_data[combined_data$agroup %in% arm_list, ]
   if (log_assay_outcome == "MFI") {
-    combined_data$log_assay_value <- log10(combined_data$value_reported + 1)
+    combined_data$log_assay_value <- log10(combined_data$assay_response + 1)
   } else if (log_assay_outcome == "Normalized MFI") {
-    combined_data$log_assay_value <- log10(combined_data$norm_mfi + 1)
+    combined_data$log_assay_value <- log10(combined_data$norm_assay_response + 1)
   } else {
     combined_data$log_assay_value <- log10(combined_data$au + 1)
   }
@@ -320,13 +328,14 @@ create_data_form_df <- function(data, t0, t1, log_assay_outcome) {
   # #### connection.R generates unstandardized, not scaled connection_data
   combined_data$study_accession <- factor(combined_data$study_accession)
   combined_data$experiment_accession <- factor(combined_data$experiment_accession)
+  combined_data$subject_accession <- combined_data$patientid
   combined_data$subject_accession <- factor(combined_data$subject_accession)
   combined_data$feature <- factor(combined_data$feature)
 
   # antigen_family , , "value_imputed
-  combined_data <- combined_data[,c("xmap_sample_id", "study_accession", "experiment_accession",
-                                    "subject_accession", "arm_name", "antigen",
-                                    "feature", "antigen_feature", "visit_name", "value_reported", "log_assay_value")]
+  combined_data <- combined_data[,c("best_sample_se_all_id", "study_accession", "experiment_accession",
+                                    "subject_accession", "agroup", "antigen",
+                                    "feature", "antigen_feature", "timeperiod", "assay_response", "log_assay_value")]
 
   # print(head(combined_data))
   #### Unstandardized
@@ -337,24 +346,24 @@ create_data_form_df <- function(data, t0, t1, log_assay_outcome) {
 
   data_unstand <- combined_data[ , names_plotset]
   data_unstand$transformtype <- 'Unstandardized, not scaled'
-  table(data_unstand$arm_name)
-  table(data_unstand$visit_name)
+  table(data_unstand$agroup)
+  table(data_unstand$timeperiod)
   # print(data_unstand)
   # #### Unstandardized, scaled
   # #### calculate scaled log assay values, grouped by feature and visit
-  data_unstandc <- group_by(data_unstand, feature, visit_name) %>%
+  data_unstandc <- group_by(data_unstand, feature, timeperiod) %>%
     mutate(log_assay_valuec = as.numeric(scale(log_assay_value)))
   data_unstandc$log_assay_value <- data_unstandc$log_assay_valuec
   data_unstandc$transformtype <- 'Unstandardized, scaled'
   data_unstandc <- subset(data_unstandc, select=-c(log_assay_valuec))
-  table(data_unstandc$arm_name)
-  table(data_unstandc$visit_name)
+  table(data_unstandc$agroup)
+  table(data_unstandc$timeperiod)
   #
   # print(data_unstandc)
 
   data_form <- rbind(data_unstand,data_unstandc)
   data_form$antigen_feature <- paste(data$antigen, data$feature, sep = "_")
-  data_form <- data_form[data_form$visit_name %in% c(timepoints, tdiff) & data_form$antigen_feature %in% include_feature, ]
+  data_form <- data_form[data_form$timeperiod %in% c(timepoints, tdiff) & data_form$antigen_feature %in% include_feature, ]
   # table(data_form$visit_name,data_form$transformtype)
   #
   data_form <- data_form[with(data_form, order(antigen, feature, transformtype)), ]
@@ -367,10 +376,10 @@ create_data_form_df <- function(data, t0, t1, log_assay_outcome) {
 # Set reference arm and transformation type. Read in the data form df as a result of create_data_form_df
 set_reference_arm_transform_type <- function(data_form, arm_ref_group, selected_transformation, selected_antigen, selected_feature) {
   ## categorical variables
-  data_form$arm_name <- factor(data_form$arm_name, ordered = FALSE)
-  data_form$arm_name <- relevel(data_form$arm_name, ref=arm_ref_group)
-  table(data_form$arm_name)
-  var_label(data_form$arm_name)<-"study arm"
+  data_form$agroup <- factor(data_form$agroup, ordered = FALSE)
+  data_form$agroup <- relevel(data_form$agroup, ref=arm_ref_group)
+  table(data_form$agroup)
+  var_label(data_form$agroup)<-"study arm"
 
   data_form <- data_form[data_form$transformtype == selected_transformation & data_form$antigen == selected_antigen & data_form$feature == selected_feature, ]
   return(data_form)
@@ -386,11 +395,11 @@ compute_finite_mixture_model <- function(data_form_reference, t0, t1) {
   # print(head(data_form_reference))
   # print(str(data_form_reference))
 
-  formt1t2 <- data_form_reference[data_form_reference$visit_name %in% c(t0, t1), c("subject_accession","arm_name","visit_name","antigen","feature", "antigen_feature","log_assay_value")]
+  formt1t2 <- data_form_reference[data_form_reference$timeperiod %in% c(t0, t1), c("subject_accession","agroup","timeperiod","antigen","feature", "antigen_feature","log_assay_value")]
   # head(formt1t2)
   # data subsets for visits
-  t0set <- formt1t2[formt1t2$visit_name==t0,]
-  t1set <- formt1t2[formt1t2$visit_name==t1,]
+  t0set <- formt1t2[formt1t2$timeperiod==t0,]
+  t1set <- formt1t2[formt1t2$timeperiod==t1,]
 
 
   #titletxt <- paste(selected_feature, "not transformed", sep = "-") t0set$feature==selected_feature
@@ -420,7 +429,7 @@ compute_finite_mixture_model <- function(data_form_reference, t0, t1) {
 
   # The nth day after day 0.
   day_n_set <- merge(t1set[!is.na(t1set$log_assay_value), ],
-                     day0set[ , c("subject_accession","arm_name","antigen","feature","clusters")])
+                     day0set[ , c("subject_accession","agroup","antigen","feature","clusters")])
   # combine all days
   daysset <- rbind(day0set, day_n_set)
 
@@ -446,7 +455,8 @@ compute_finite_mixture_model <- function(data_form_reference, t0, t1) {
 # Create density histogram of the finite mixture model data_form_reference, t0, t1
 density_histogram <- function(day0set, n_clusters) {
 
-  day0set_view <- day0set
+  day0set_view <<- day0set
+  n_clusters <<- n_clusters
 
   cluster_levels <-  unique(as.character(day0set$clusters))
 
@@ -494,7 +504,7 @@ density_histogram <- function(day0set, n_clusters) {
 
   histogram_cuta_plotly <- histogram_cuta_plotly %>%
     layout(
-      title = list(text = paste(unique(day0set$antigen_feature), "at Visit", unique(day0set$visit_name)), x = 0.5),
+      title = list(text = paste(unique(day0set$antigen_feature), "at Visit", unique(day0set$timeperiod)), x = 0.5),
       xaxis = list(title = "log<sub>2</sub> Assay Value"),
       yaxis = list(title = "Density"),
       barmode = 'overlay',
@@ -512,8 +522,8 @@ obtain_difres_clustering <- function(data_form_reference_in, t0, t1, selected_fe
 
   #print(names(data_form_reference_in))
   #function outputs a list with two dataframes of the results - one in a wide and another in a long format. Wide format is used for scatter plot
-  formt1t2 <- data_form_reference_in[data_form_reference_in$visit_name %in% c(t0, t1), c("xmap_sample_id", "subject_accession","arm_name",
-                                                                                         "visit_name","antigen","feature", "antigen_feature",
+  formt1t2 <- data_form_reference_in[data_form_reference_in$timeperiod %in% c(t0, t1), c("best_sample_se_all_id", "subject_accession","agroup",
+                                                                                         "timeperiod","antigen","feature", "antigen_feature",
                                                                                          "log_assay_value"),]
   # print(head(formt1t2))
   # print(sum(is.na(formt1t2$log_assay_value)))
@@ -572,24 +582,24 @@ visit_difference <- function(difres_input, t0, t1, selected_feature, selected_an
 
   # Nested loop, cluster, arm, plot points
   for (cluster in 1:ncluster) {
-    for (arm in unique(res$arm_name)) {
+    for (arm in unique(res$agroup)) {
       # get current cluster mean
       clus_mean_var <- paste0("clus_mean_", cluster)
       clus_mean <- get(clus_mean_var)
 
       dif_plotly <- dif_plotly %>%
-        add_trace(data = res[res$kmeans_cluster == cluster & res$arm_name== arm,],
+        add_trace(data = res[res$kmeans_cluster == cluster & res$agroup== arm,],
                   x = ~time1,
                   y = ~time2,
                   color = ~kmeans_cluster,
-                  symbol = ~arm_name,
+                  symbol = ~agroup,
                   name = paste("Cluster", cluster, ". Mean \u2248", clus_mean, "<br>Arm:", arm),
                   type = "scatter",
                   mode = "markers",
                   marker = list(color = clust.colors[cluster]),
                   text = ~paste0(
                     "Subject: ",subject_accession,
-                    "<br>Arm: ", arm_name, "<br>",
+                    "<br>Arm: ", agroup, "<br>",
                     t0, ": ",round(time1,2), "<br>",
                     t1,": ", round(time2,2)
                   ),
@@ -733,12 +743,12 @@ difference_histogram <- function(difres_input, selected_antigen, selected_featur
 ## Create datsub
 create_datsub <- function(difres_in, daysset_in, t0, t1) {
   res_long <- difres_in[[1]]$res_long
-  datsub <- merge(res_long,daysset_in[, c("subject_accession", "arm_name", "visit_name", "feature", "clusters")],
-                  by = c("subject_accession", "arm_name", "visit_name", "feature"), all.x = TRUE)
+  datsub <- merge(res_long,daysset_in[, c("subject_accession", "agroup", "timeperiod", "feature", "clusters")],
+                  by = c("subject_accession", "agroup", "timeperiod", "feature"), all.x = TRUE)
 
   ## adjust variable type
   datsub$subject_accession = factor(datsub$subject_accession)
-  datsub$arm_name = factor(datsub$arm_name)
+  datsub$agroup = factor(datsub$agroup)
   datsub$feature = factor(datsub$feature)
   # Create cluster factor with visit labels
   if (length(unique(datsub$clusters)) == 1) {
@@ -750,8 +760,8 @@ create_datsub <- function(difres_in, daysset_in, t0, t1) {
   # make  into new variables
   # datsub$diffdir = factor(datsub$diffdir)
   datsub$diffdir_kmeans = factor(datsub$diffdir_kmeans)
-  datsub$visit = factor(datsub$visit_name)
-  datsub$covar = datsub$arm_name
+  datsub$visit = factor(datsub$timeperiod)
+  datsub$covar = datsub$agroup
   datsub$response = datsub$log_assay_value
 
 
@@ -782,14 +792,14 @@ create_arm_subplot <- function(datsub_df_arm, dif_class_colors, t0_class_colors,
                          y = ~response,
                          color = ~fclusters,
                          colors = t0_class_colors,
-                         name = ~paste(fclusters, arm_name),
+                         name = ~paste(fclusters, agroup),
                          type = "scatter",
                          mode = "markers",
                          text = ~paste("Subject Accession: ", subject_accession,
                                        "<br>Status:", fclusters,
                                        "<br>log<sub>2</sub>(",log_assay_outcome,"+1):", round(response,2),
                                        "<br> K-Means direction:", diffdir_kmeans, # line color
-                                       "<br>Arm:", arm_name),
+                                       "<br>Arm:", agroup),
                          hoverinfo = "text")
 
   # Loop over directions and subjects to add lines for each subject
@@ -852,7 +862,7 @@ create_arm_subplot <- function(datsub_df_arm, dif_class_colors, t0_class_colors,
               mode = "markers",
               marker = list(color = "black", size = 10, symbol = "cross"),
               text = ~paste("Median at Visit",visit,"<br>log<sub>2</sub>(", log_assay_outcome,"+1):", round(median_response,2)),
-              name = ~paste("Median at Visit", visit, "Arm:", arm_name),
+              name = ~paste("Median at Visit", visit, "Arm:", agroup),
               hoverinfo = "text")
   # add median for visit 2
   arm_subplot <- arm_subplot %>%
@@ -863,7 +873,7 @@ create_arm_subplot <- function(datsub_df_arm, dif_class_colors, t0_class_colors,
               mode = "markers",
               marker = list(color = "black", size = 10, symbol = "cross"),
               text = ~paste("Median at Visit",visit,"<br>log<sub>2</sub>(", log_assay_outcome, "+1):", round(median_response,2)),
-              name = ~paste("Median at Visit", visit, "Arm:",arm_name),
+              name = ~paste("Median at Visit", visit, "Arm:",agroup),
               hoverinfo = "text")
 
 
@@ -876,7 +886,7 @@ create_arm_subplot <- function(datsub_df_arm, dif_class_colors, t0_class_colors,
       annotations = list(
         x = 0.5, # Center the annotation
         y = max_response_value,
-        text = unique(datsub_df_arm$arm_name),
+        text = unique(datsub_df_arm$agroup),
         showarrow = FALSE,
         xref = "x",
         yref = "y"
@@ -891,11 +901,11 @@ create_arm_subplot <- function(datsub_df_arm, dif_class_colors, t0_class_colors,
 plot_assay_classification <- function(datsub_df, selected_antigen, selected_feature, log_assay_outcome, visit1, visit2) {
   #dateub_assay <- datsub_df
   # Split the dataset into the two arms
-  datsub_df_arms <- levels(datsub_df$arm_name)
+  datsub_df_arms <- levels(datsub_df$agroup)
   n_arms <- length(datsub_df_arms)
   # plot both arms if available
   if (n_arms >= 2) {
-    datsub_df_reference_arm <- datsub_df[datsub_df$arm_name == datsub_df_arms[1],]
+    datsub_df_reference_arm <- datsub_df[datsub_df$agroup == datsub_df_arms[1],]
     # datsub_df_arm2 <- datsub_df[datsub_df$arm_name == datsub_df_arms[2],]
     #
     # # for plotting arm label later on add buffer space above the max_response
@@ -913,7 +923,7 @@ plot_assay_classification <- function(datsub_df, selected_antigen, selected_feat
 
     subplot_list <- list(reference_subplot)
     for (i in 2:n_arms) {
-      datsub_df_arm_i <- datsub_df[datsub_df$arm_name == datsub_df_arms[i],]
+      datsub_df_arm_i <- datsub_df[datsub_df$agroup == datsub_df_arms[i],]
       arm_i_subplot <- create_arm_subplot(datsub_df_arm = datsub_df_arm_i, dif_class_colors = dif_class_colors, t0_class_colors = t0_class_colors,
                                           max_response_value = max_response, log_assay_outcome = log_assay_outcome, t0 = visit1, t1 = visit2)
       subplot_list <- append(subplot_list, list(arm_i_subplot))
@@ -962,7 +972,7 @@ plot_assay_classification <- function(datsub_df, selected_antigen, selected_feat
 
     return(fig)
   } else {
-    datsub_df_reference_arm <- datsub_df[datsub_df$arm_name == datsub_df_arms[1],]
+    datsub_df_reference_arm <- datsub_df[datsub_df$agroup == datsub_df_arms[1],]
 
     # for plotting arm label later on add buffer space above the max_response
     max_response <- max(datsub_df_reference_arm$response) + 0.5

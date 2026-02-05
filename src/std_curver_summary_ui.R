@@ -20,7 +20,9 @@ observeEvent(list(
 
       study_params <- fetch_study_parameters(study_accession = selected_study,
                                              param_user = currentuser(),
-                                             param_group =param_group, conn = conn)
+                                             param_group =param_group,
+                                             project_id = userWorkSpaceID(),
+                                             conn = conn)
 
       best_plate_all <- fetch_best_plate_all(study_accession = selected_study,
                                              experiment_accession = selected_experiment,
