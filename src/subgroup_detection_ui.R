@@ -90,7 +90,6 @@ observeEvent(list(
   # req(input$inLoadedData, input$readxMap_experiment_accession)
 
   if (input$advanced_qc_component == "Subgroup Detection") {
-
     selected_study <- selected_studyexpplate$study_accession
     selected_experiment <- selected_studyexpplate$experiment_accession
     param_group = "standard_curve_options"
@@ -261,7 +260,9 @@ observeEvent(list(
         #   HTML(paste("<span style='font-size:20px;'> There are no rows for the combination of visit",
         #                            input$input$visit1SelectionSelection, "and visit", input$visit2Selection, "for clustering"))
         #
+
         if (is.null(difres_reactive())) {
+
           HTML(paste("<span style='font-size:20px;'> The number of clusters for visit",input$visit1Selection,
                      "and visit", visit2,
                      "must be between 1 and 3 exclusive, which is set in the algorithm.<br></span>"))
@@ -494,13 +495,67 @@ observeEvent(list(
     })
 
     ## Reactive data form
+    # data_form_reactive <- reactive({
+    #   req(sample_data)
+    #   req(visit1, visit2, input$responseSelection)
+    #   data_form_df <- create_data_form_df(data = sample_data, t0 = visit1, t1 = visit2, log_assay_outcome = input$responseSelection)
+    #   cat("after data form is created")
+    #   return(data_form_df)
+    # })
+
     data_form_reactive <- reactive({
       req(sample_data)
       req(visit1, visit2, input$responseSelection)
-      data_form_df <- create_data_form_df(data = sample_data, t0 = visit1, t1 = visit2, log_assay_outcome = input$responseSelection)
-      cat("after data form is created")
+
+      data_form_df <- create_data_form_df(
+        data = sample_data,
+        t0 = visit1,
+        t1 = visit2,
+        log_assay_outcome = input$responseSelection
+      )
+
+      n_before <- nrow(data_form_df)
+      cat("data form_df names")
+      print(names(data_form_df))
+      data_form_df <- data_form_df %>%
+        dplyr::filter(is.finite(log_assay_value))
+
+      n_after <- nrow(data_form_df)
+
+
+
+      if (n_after == 0) {
+        showNotification(
+          paste0(
+            "No finite response values are available for the selected visit combination (",
+            visit1, "  ", visit2,
+            ") using ", input$responseSelection, ". ",
+            "Please choose a different response type or visit combination."
+          ),
+          type = "error",
+          duration = NULL
+        )
+        return(NULL)
+      }
+
+      if (n_after < n_before) {
+        showNotification(
+          paste0(
+            n_before - n_after,
+            " samples with non-finite response values were removed."
+          ),
+          type = "warning",
+          duration = 6
+        )
+      }
+
+      print("Data FORM Reactive\n")
+      print(str(data_form_df))
       return(data_form_df)
     })
+
+
+
 
     # set reference group and filter by selected transformation
     data_form_reference <- reactive({
@@ -521,7 +576,10 @@ observeEvent(list(
     ## Compute the finite mixture model
     finite_mixture_model <- reactive({
       req(data_form_reference())
+      req(nrow(data_form_reference()) >0)
       req(visit1,visit2)
+
+
       mixture_model <- compute_finite_mixture_model(data_form_reference = data_form_reference(),
                                                     t0 = visit1,
                                                     t1 = visit2)
@@ -555,6 +613,14 @@ observeEvent(list(
       req(visit1, visit2)
       #input$readxMap_experiment_accession
       req(input$featureSelection, input$antigenSampleSelection)
+
+      id <- showNotification(
+        HTML("Loading Subgroup Detection<span class = 'dots'>"),
+        type = "message",
+        duration = NULL
+      )
+
+      on.exit(removeNotification(id), add = TRUE)
       difres <- obtain_difres_clustering(data_form_reference_in = data_form_reference(), t0 = visit1, t1 = visit2,
                                          selected_feature = input$featureSelection,
                                          selected_antigen = input$antigenSampleSelection)

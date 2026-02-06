@@ -115,6 +115,12 @@ subject_feature_clustering <- function(input_data, time1, time2,
   sub2 <- na.omit(sub2)
 
 
+  # check that feature exist in df before subsetting
+  needed_cols <- c("subject_accession", "agroup", feature)
+  if (!all(needed_cols %in% names(sub1)) || !all(needed_cols %in% names(sub2))) {
+     return(NULL)
+  }
+
   x <- sub1[,c('subject_accession','agroup',feature)]
   y <- sub2[,c('subject_accession','agroup',feature)]
   #  cat("x:")
@@ -220,16 +226,24 @@ subject_feature_clustering <- function(input_data, time1, time2,
   if (nrow(res2) == 0) {
     cat("There are no rows for clustering")
     # res2row(nrow(res2))
+
     #return(NULL)
   }
   #  res2_view <<- res2
   # determine the optimal number of clusters via GAP statistic or silhouette_method
   ncluster <- find_k_cluster(res2 = res2)
-  clusters <- kmeans(res2$dist.eu, centers = as.numeric(ncluster))
-  cat("after kmeans function")
-  cluster_order <- order(clusters$centers)
-  res2$kmeans_cluster <- factor(clusters$cluster,
-                                labels = c(1:ncluster),levels = cluster_order)
+  cat("ncluster\n")
+  print(ncluster)
+  if (as.numeric(ncluster) == 1) {
+    message("assigning all observations to single cluster")
+    res2$kmeans_cluster <- factor(1)
+  } else {
+    clusters <- kmeans(res2$dist.eu, centers = as.numeric(ncluster))
+    cat("after kmeans function")
+    cluster_order <- order(clusters$centers)
+    res2$kmeans_cluster <- factor(clusters$cluster,
+                                  labels = c(1:ncluster),levels = cluster_order)
+  }
 
   epsilon <- 1e-10  # Small value to prevent division by zero or log(0)
 
@@ -340,6 +354,7 @@ create_data_form_df <- function(data, t0, t1, log_assay_outcome) {
 
   # update and filter combined data with log assay value  based on the outcome of interest
   combined_data <- combined_data[combined_data$agroup %in% arm_list, ]
+  combined_data_before_trans <<- combined_data
   if (log_assay_outcome == "MFI") {
    # combined_data$log_assay_value <- log10(combined_data$assay_response + 1)
   combined_data$log_assay_value <- to_log2_plus1(combined_data$assay_response, combined_data$is_log_response)
@@ -347,6 +362,8 @@ create_data_form_df <- function(data, t0, t1, log_assay_outcome) {
     #combined_data$log_assay_value <- log10(combined_data$norm_assay_response + 1)
     combined_data$log_assay_value <- to_log2_plus1(combined_data$norm_assay_response, combined_data$is_log_response)
   } else {
+    # samples out of predicted concentration range with infinite AUs are removed
+    # combined_data <- combined_data[is.finite(combined_data$au),]
     #combined_data$log_assay_value <- log10(combined_data$au + 1)
     combined_data$log_assay_value <- to_log2_plus1(combined_data$au, combined_data$is_log_response)
   }
@@ -410,6 +427,15 @@ set_reference_arm_transform_type <- function(data_form, arm_ref_group, selected_
   data_form <- data_form[data_form$transformtype == selected_transformation & data_form$antigen == selected_antigen & data_form$feature == selected_feature, ]
   return(data_form)
 }
+
+# can_fit_mixture <- function(df, y) {
+#   if (is.null(df)) return(FALSE)
+#   if (nrow(df) < 3) return(FALSE)
+#   yv <- df[[y]]
+#   if (!any(is.finite(yv))) return(FALSE)
+#   if (sd(yv, na.rm = TRUE) == 0) return(FALSE)
+#   TRUE
+# }
 
 # Fit the finite mixture model and return it with the day0 set
 compute_finite_mixture_model <- function(data_form_reference, t0, t1) {
@@ -545,7 +571,7 @@ obtain_difres_clustering <- function(data_form_reference_in, t0, t1, selected_fe
 
   #print(names(data_form_reference_in))
   #function outputs a list with two dataframes of the results - one in a wide and another in a long format. Wide format is used for scatter plot
-  formt1t2 <- data_form_reference_in[data_form_reference_in$timeperiod %in% c(t0, t1), c("best_sample_se_all_id", "subject_accession","agroup",
+  formt1t2 <<- data_form_reference_in[data_form_reference_in$timeperiod %in% c(t0, t1), c("best_sample_se_all_id", "subject_accession","agroup",
                                                                                          "timeperiod","antigen","feature", "antigen_feature",
                                                                                          "log_assay_value"),]
   # print(head(formt1t2))
@@ -560,11 +586,16 @@ obtain_difres_clustering <- function(data_form_reference_in, t0, t1, selected_fe
                                        antigen = selected_antigen
                                        #ncluster = ncluster
   )
+  # if (is.null(difres)) {
+  #   return(NULL)
+  # }else {
+    return(difres)
+
   # if (length(difres) == 2) {
   #   return(difres)
   # } else {
   # either a list or a df.
-  return(difres)
+  #return(difres)
 
   # }, error = function(e) {
   #    if (grepl("number of cluster centeres", e$message)){
