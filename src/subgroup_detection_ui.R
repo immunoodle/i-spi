@@ -90,43 +90,51 @@ observeEvent(list(
   # req(input$inLoadedData, input$readxMap_experiment_accession)
 
   if (input$advanced_qc_component == "Subgroup Detection") {
-
     selected_study <- selected_studyexpplate$study_accession
     selected_experiment <- selected_studyexpplate$experiment_accession
-
+    param_group = "standard_curve_options"
     # Load sample data
-    sample_data <- stored_plates_data$stored_sample
+    #sample_data <- stored_plates_data$stored_sample
+    sample_data <- fetch_best_sample_se_all_summary(study_accession = selected_study, experiment_accession = selected_experiment,
+                                                    param_user = currentuser(), project_id = userWorkSpaceID(), conn = conn)
+
+    # study_params_is_log_response <<- fetch_study_parameters(study_accession = selected_study,
+    #                                        param_user = currentuser(),
+    #                                        param_group =param_group,
+    #                                        project_id = userWorkSpaceID(),
+    #                                        conn = conn)$is_log_response
+
     # Check if selected study, experiment, and sample data are available
-    if (!is.null(selected_study) && length(selected_study) > 0 &&
-        !is.null(selected_experiment) && length(selected_experiment) > 0 &&
-        !is.null(sample_data) && length(sample_data) > 0){
-
-      # Filter sample data
-      sample_data$selected_str <- paste0(sample_data$study_accession, sample_data$experiment_accession)
-      sample_data <- sample_data[sample_data$selected_str == paste0(selected_study, selected_experiment), ]
-
-      # Summarize sample data
-      cat("Viewing sample dat in subgroup tab ")
-      print(names(sample_data))
-      print(table(sample_data$plateid))
-      print(table(sample_data$antigen))
-      cat("After summarizing sample data in subgroup tab")
-
-
-      # Rename columns
-
-      sample_data <- dplyr::rename(sample_data, arm_name = agroup)
-      sample_data <- dplyr::rename(sample_data, visit_name = timeperiod)
-
-
-      sample_data$subject_accession <- sample_data$patientid
-
-      sample_data <- dplyr::rename(sample_data, value_reported = mfi)
-
-      arm_choices <- unique(sample_data$arm_name)
-      visits <- unique(sample_data$visit_name)
-
-    }
+    # if (!is.null(selected_study) && length(selected_study) > 0 &&
+    #     !is.null(selected_experiment) && length(selected_experiment) > 0 &&
+    #     !is.null(sample_data) && length(sample_data) > 0){
+    #
+    #   # Filter sample data
+    #   sample_data$selected_str <- paste0(sample_data$study_accession, sample_data$experiment_accession)
+    #   sample_data <- sample_data[sample_data$selected_str == paste0(selected_study, selected_experiment), ]
+    #
+    #   # Summarize sample data
+    #   cat("Viewing sample dat in subgroup tab ")
+    #   print(names(sample_data))
+    #   print(table(sample_data$plateid))
+    #   print(table(sample_data$antigen))
+    #   cat("After summarizing sample data in subgroup tab")
+    #
+    #
+    #   # Rename columns
+    #
+    #   sample_data <- dplyr::rename(sample_data, arm_name = agroup)
+    #   sample_data <- dplyr::rename(sample_data, visit_name = timeperiod)
+    #
+    #
+    #   sample_data$subject_accession <- sample_data$patientid
+    #
+    #   sample_data <- dplyr::rename(sample_data, value_reported = mfi)
+    #
+    #   arm_choices <- unique(sample_data$arm_name)
+    #   visits <- unique(sample_data$visit_name)
+    #
+    # }
 
     # Load Header Data
     header_data <- stored_plates_data$stored_header
@@ -174,7 +182,13 @@ observeEvent(list(
                    ) # end bsCollapsePanel
                  ),
                  mainPanel(
-                   uiOutput("parameter_subgroup_dependencies_UI"),
+                   div(
+                     style = "background-color: #f0f8ff; border: 1px solid #4a90e2;
+                              padding: 10px; margin-bottom: 15px; border-radius: 5px;",
+                     tags$h4("Current Subgroup Detection Context", style = "margin-top: 0; color: #2c5aa0;"),
+                      uiOutput("parameter_subgroup_dependencies_UI")
+                     ),
+
                    fluidRow(
                      column(3, uiOutput("selectedFeatureUI")),
                      #column(3, uiOutput("reference_arm_from_table_UI"))
@@ -246,7 +260,9 @@ observeEvent(list(
         #   HTML(paste("<span style='font-size:20px;'> There are no rows for the combination of visit",
         #                            input$input$visit1SelectionSelection, "and visit", input$visit2Selection, "for clustering"))
         #
+
         if (is.null(difres_reactive())) {
+
           HTML(paste("<span style='font-size:20px;'> The number of clusters for visit",input$visit1Selection,
                      "and visit", visit2,
                      "must be between 1 and 3 exclusive, which is set in the algorithm.<br></span>"))
@@ -285,34 +301,132 @@ observeEvent(list(
       )
     })
 
+    # output$response_class <- renderUI({
+    #   req(sample_data)
+    #   sample_data_response <<- sample_data
+    #   selectInput(
+    #     inputId = "responseSelection",
+    #     label = "Response type:",
+    #     choices = c("MFI",
+    #                 "Normalized MFI",
+    #                 "Arbitrary Units")
+    #   )
+    # })
+
     output$response_class <- renderUI({
       req(sample_data)
+      req(input$antigenSampleSelection)
+
+
+      dat <- sample_data[sample_data$antigen == input$antigenSampleSelection,]
+
+      choices <- c("MFI", "Arbitrary Units")
+
+      if (any(!is.na(dat$norm_assay_response))) {
+        choices <- c("MFI", "Normalized MFI", "Arbitrary Units")
+      }
+
       selectInput(
         inputId = "responseSelection",
         label = "Response type:",
-        choices = c("MFI",
-                    "Normalized MFI",
-                    "Arbitrary Units")
+        choices = choices
       )
     })
 
+    observeEvent({
+        req(sample_data)
+        req(input$antigenSampleSelection)
+        dat <- sample_data[sample_data$antigen == input$antigenSampleSelection,]
+        any(!is.na(dat$norm_assay_response))
+      },
+      {
+        dat <- sample_data[sample_data$antigen == input$antigenSampleSelection,]
+
+        if (!any(!is.na(dat$norm_assay_response)) &&
+            identical(input$responseSelection, "Normalized MFI")) {
+
+          updateSelectInput(
+            session,
+            "responseSelection",
+            selected = "MFI"
+          )
+        }
+      },
+      ignoreInit = TRUE
+    )
+
+
+    # output$response_class <- renderUI({
+    #   req(sample_data)
+    #   sample_data_res <- sample_data[sample_data$feature == input$featureSelection,]
+    #   selectInput(
+    #     inputId = "responseSelection",
+    #     label = "Response type:",
+    #     choices = setNames(
+    #       c(
+    #         assay_response_variable,
+    #         "Normalized MFI",
+    #         "Arbitrary Units"
+    #       ),
+    #       c(
+    #         "Raw Assay Response",
+    #         paste0("Normalized ", format_assay_terms(assay_response_variable)),
+    #         "Arbitrary Units"
+    #       )
+    #     )
+    #   )
+        # choices = c("Raw Assay Response" = assay_response_variable,
+        #             norm_choice_label = "Normalized MFI",
+        #             "Arbitrary Units" = "Arbitrary Units")
+
+
     ## Box noting parameter dependencies
     output$parameter_subgroup_dependencies_UI <- renderUI({
-      tagList(bsCollapse(
-        id = "param_subgroup_dependencies",
-        bsCollapsePanel(
-          title = "Parameter Dependencies",
-          HTML(
-            "The first and second timepoints are set in the subgroup detection section within the study paramaters.
-            The order of the timepoints matters and the first timepoint is used for the finite mixture model. <br>
-            The arm that is considereed the referent arm in the  assay classification depends on what is set in the study paramaters. "
-          ),
-          style = "info"
+      #req(reference_arm, visit1, visit2, timeperiod_order)
+      req(study_configuration)
+
+      HTML(
+        paste0(
+          "<b>Parameter Dependencies</b><br><br>",
+
+          "<b>Timepoint selection:</b><br>",
+          "The first and second timepoints are defined in the study configuration and are currently set to ",
+          "<b>", visit1, "</b> (first visit) and <b>", visit2, "</b> (second visit). ",
+          "The order of the timepoints matters, and the first visit is used for the finite mixture model.<br><br>",
+
+          "<b>Reference arm:</b><br>",
+          "The assay classification uses <b>", reference_arm,
+          "</b> as the referent arm, as specified in the study parameters.<br><br>",
+
+          "<b>Timepoint ordering:</b><br>",
+          "The timepoints are evaluated according to the configured order: <b>",
+          timeperiod_order, "</b>.<br><br>",
+
+          "<b>Response availability:</b><br>",
+          "Available response types are determined dynamically based on the selected antigen. ",
+          "Normalized MFI is only available when normalized values have been computed for that antigen in the currrent experiment and study."
         )
-      ),
-      actionButton("to_study_parameters_from_subgroup", label = "Return to Study Parameters")
       )
     })
+
+    # output$parameter_subgroup_dependencies_UI <- renderUI({
+    #   # tagList(bsCollapse(
+    #   #   id = "param_subgroup_dependencies",
+    #   #   bsCollapsePanel(
+    #   #     title = "Parameter Dependencies",
+    #       HTML(
+    #         "The first and second timepoints are set in the subgroup detection section within the study paramaters.
+    #         The order of the timepoints matters and the first timepoint is used for the finite mixture model. <br>
+    #         The arm that is considered the referent arm in the  assay classification depends on what is set in the study paramaters.
+    #         The available response types are determined dynamically based on the data associated with the selected antigen.
+    #         The option for normalized MFI is only shown when normalized values have been computed")
+    #   #     ),
+    #   #     style = "info"
+    #   #   )
+    #   # ),
+    #  # actionButton("to_study_parameters_from_subgroup", label = "Return to Study Parameters")
+    #
+    # })
 
     # Switch tabs when click button
     observeEvent(input$to_study_parameters_from_subgroup, {
@@ -389,6 +503,60 @@ observeEvent(list(
       return(data_form_df)
     })
 
+    # data_form_reactive <- reactive({
+    #   req(sample_data)
+    #   req(visit1, visit2, input$responseSelection)
+    #
+    #   data_form_df <- create_data_form_df(
+    #     data = sample_data,
+    #     t0 = visit1,
+    #     t1 = visit2,
+    #     log_assay_outcome = input$responseSelection
+    #   )
+    #
+    #   n_before <- nrow(data_form_df)
+    #   cat("data form_df names")
+    #   print(names(data_form_df))
+    #   data_form_df <- data_form_df %>%
+    #     dplyr::filter(is.finite(log_assay_value))
+    #
+    #   n_after <- nrow(data_form_df)
+    #
+    #
+    #
+    #   if (n_after == 0) {
+    #     showNotification(
+    #       paste0(
+    #         "No finite response values are available for the selected visit combination (",
+    #         visit1, "  ", visit2,
+    #         ") using ", input$responseSelection, ". ",
+    #         "Please choose a different response type or visit combination."
+    #       ),
+    #       type = "error",
+    #       duration = NULL
+    #     )
+    #     return(NULL)
+    #   }
+    #
+    #   if (n_after < n_before) {
+    #     showNotification(
+    #       paste0(
+    #         n_before - n_after,
+    #         " samples with non-finite response values were removed."
+    #       ),
+    #       type = "warning",
+    #       duration = 6
+    #     )
+    #   }
+    #
+    #   print("Data FORM Reactive\n")
+    #   print(str(data_form_df))
+    #   return(data_form_df)
+    # })
+
+
+
+
     # set reference group and filter by selected transformation
     data_form_reference <- reactive({
       req(data_form_reactive())
@@ -408,7 +576,10 @@ observeEvent(list(
     ## Compute the finite mixture model
     finite_mixture_model <- reactive({
       req(data_form_reference())
+      req(nrow(data_form_reference()) >0)
       req(visit1,visit2)
+
+
       mixture_model <- compute_finite_mixture_model(data_form_reference = data_form_reference(),
                                                     t0 = visit1,
                                                     t1 = visit2)
@@ -418,7 +589,7 @@ observeEvent(list(
     output$data_form_table <- renderTable({
       req(finite_mixture_model())
       req(visit1)
-      filtered_data <- finite_mixture_model()[finite_mixture_model()$visit_name == visit1,]
+      filtered_data <- finite_mixture_model()[finite_mixture_model()$timeperiod == visit1,]
       return(filtered_data)
     })
 
@@ -427,7 +598,7 @@ observeEvent(list(
       req(finite_mixture_model())
       req(visit1)
       # filter the data by visit and obtain the unique clusters
-      filtered_data <- finite_mixture_model()[finite_mixture_model()$visit_name == visit1,]
+      filtered_data <- finite_mixture_model()[finite_mixture_model()$timeperiod == visit1,]
       unique_clusters <- max(unique(filtered_data$clusters))
       return(unique_clusters)
     })
@@ -442,6 +613,14 @@ observeEvent(list(
       req(visit1, visit2)
       #input$readxMap_experiment_accession
       req(input$featureSelection, input$antigenSampleSelection)
+
+      id <- showNotification(
+        HTML("Loading Subgroup Detection<span class = 'dots'>"),
+        type = "message",
+        duration = NULL
+      )
+
+      on.exit(removeNotification(id), add = TRUE)
       difres <- obtain_difres_clustering(data_form_reference_in = data_form_reference(), t0 = visit1, t1 = visit2,
                                          selected_feature = input$featureSelection,
                                          selected_antigen = input$antigenSampleSelection)
@@ -480,6 +659,7 @@ observeEvent(list(
     })
 
 
+
     # datsub reactive
     datsub_reactive <- reactive({
       req(difres_reactive())
@@ -500,7 +680,8 @@ observeEvent(list(
       req(visit1)
       req(n_unique_clusters_reactive())
       cat("before filtering data in histgoram")
-      filtered_data <- finite_mixture_model()[finite_mixture_model()$visit_name == visit1,]
+      finite_mixture_model_df_v <- finite_mixture_model()
+      filtered_data <- finite_mixture_model()[finite_mixture_model()$timeperiod == visit1,]
       cat("before plotting histogram")
       density_histogram(day0set = filtered_data, n_clusters = n_unique_clusters_reactive())
 
@@ -533,7 +714,7 @@ observeEvent(list(
         req(n_unique_clusters_reactive())
         req(input$antigenSampleSelection)
         req(input$transformationTypeSelection)
-        first_visit_data <- finite_mixture_model()[finite_mixture_model()$visit_name == visit1,]
+        first_visit_data <- finite_mixture_model()[finite_mixture_model()$timeperiod == visit1,]
 
 
         # download data component (data frame)
@@ -714,3 +895,6 @@ observeEvent(list(
   }
 
 })
+
+
+
