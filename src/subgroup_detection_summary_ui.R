@@ -187,7 +187,8 @@ observeEvent(list(
       #     title = "Parameter Dependencies",
           HTML(
             "The subgroup summary depends on the first (baseline) and second (followup) timepoints are set in the subgroup detection section within the study paramaters.
-             Normalized MFI is only available when normalized values have been computed for all antigens for the selected feature."
+             Normalized MFI is only available when normalized values have been computed for all antigens for the selected feature.
+             For subject–antigen pairs, arbitrary unit values falling outside the standard curve prediction range were rendered in white."
            )
       #     style = "info"
       #   )
@@ -572,6 +573,7 @@ observeEvent(list(
 
         row_clust <- hierarchical_clustering()[[1]]
         col_clust <- hierarchical_clustering()[[2]]
+        keep_rows <- hierarchical_clustering()[[3]]
 
         row_annotation <- data.frame(Subgroup = factor(cutree(row_clust, input$num_subgroups)))
 
@@ -580,7 +582,8 @@ observeEvent(list(
                                      symbols_in = baseline_symbols(),
                                      row_annotation_in = row_annotation,
                                      row_clust_in = row_clust,
-                                     col_clust_in = col_clust)
+                                     col_clust_in = col_clust,
+                                     keep = keep_rows)
 
         return(subject_antigen_heatmap)
       })

@@ -298,6 +298,19 @@ to_log2_vec <- function(x, is_log) {
          # x is raw counts → log2(x+1)
          log2(x + 1))
 }
+#
+# to_log2_plus1 <- function(x, is_log10) {
+#   if (!is.numeric(x)) stop("`x` must be numeric")
+#   if (!is.logical(is_log10)) stop("`is_log10` must be logical")
+#   if (length(x) != length(is_log10))
+#     stop("length mismatch")
+#
+#   ifelse(
+#     is_log10,
+#     log2(10^x + 1),
+#     log2(x + 1)
+#   )
+# }
 
 to_log2_plus1 <- function(x, is_log10) {
   if (!is.numeric(x)) stop("`x` must be numeric")
@@ -305,11 +318,14 @@ to_log2_plus1 <- function(x, is_log10) {
   if (length(x) != length(is_log10))
     stop("length mismatch")
 
-  ifelse(
-    is_log10,
-    log2(10^x + 1),
-    log2(x + 1)
-  )
+  out <- numeric(length(x))
+
+  idx <- is_log10 %in% TRUE
+
+  out[idx]  <- log2(10^x[idx] + 1)
+  out[!idx] <- log2(x[!idx] + 1)
+
+  out
 }
 
 
@@ -354,7 +370,6 @@ create_data_form_df <- function(data, t0, t1, log_assay_outcome) {
 
   # update and filter combined data with log assay value  based on the outcome of interest
   combined_data <- combined_data[combined_data$agroup %in% arm_list, ]
-  combined_data_before_trans <<- combined_data
   if (log_assay_outcome == "MFI") {
    # combined_data$log_assay_value <- log10(combined_data$assay_response + 1)
   combined_data$log_assay_value <- to_log2_plus1(combined_data$assay_response, combined_data$is_log_response)
@@ -362,10 +377,18 @@ create_data_form_df <- function(data, t0, t1, log_assay_outcome) {
     #combined_data$log_assay_value <- log10(combined_data$norm_assay_response + 1)
     combined_data$log_assay_value <- to_log2_plus1(combined_data$norm_assay_response, combined_data$is_log_response)
   } else {
+    keep <- is.finite(combined_data$au)
+    combined_data <- combined_data[keep, ]
+
     # samples out of predicted concentration range with infinite AUs are removed
-    # combined_data <- combined_data[is.finite(combined_data$au),]
+     #combined_data <- combined_data[is.finite(combined_data$au),]
     #combined_data$log_assay_value <- log10(combined_data$au + 1)
-    combined_data$log_assay_value <- to_log2_plus1(combined_data$au, combined_data$is_log_response)
+   # combined_data$log_assay_value <- to_log2_plus1(combined_data$au, combined_data$is_log_response)
+    combined_data$log_assay_value <-
+      to_log2_plus1(
+        combined_data$au,
+        is_log10 = rep(FALSE, nrow(combined_data))
+      )
   }
 
   # #### connection.R generates unstandardized, not scaled connection_data
@@ -405,7 +428,7 @@ create_data_form_df <- function(data, t0, t1, log_assay_outcome) {
   # print(data_unstandc)
 
   data_form <- rbind(data_unstand,data_unstandc)
-  data_form$antigen_feature <- paste(data$antigen, data$feature, sep = "_")
+  data_form$antigen_feature <- paste(data_form$antigen, data_form$feature, sep = "_")
   data_form <- data_form[data_form$timeperiod %in% c(timepoints, tdiff) & data_form$antigen_feature %in% include_feature, ]
   # table(data_form$visit_name,data_form$transformtype)
   #

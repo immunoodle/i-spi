@@ -115,9 +115,23 @@ create_baseline_symbols <- function(classify_set, baseline_visit, continuous_hea
 
 # conduct heirachial clustering taking in both the continuous and categorical heat map matrices
 preform_heirachial_clustering <- function(continuous_heatmap_matrix, categorical_heatmap_matrix) {
-  missing_data_subjects <- rowSums(is.na(continuous_heatmap_matrix)) != 0
-  categorical_heatmap_matrix <- categorical_heatmap_matrix[!missing_data_subjects,]
-  continuous_heatmap_matrix <-  continuous_heatmap_matrix[!missing_data_subjects,]
+  # continuous_heatmap_matrix_1 <<- continuous_heatmap_matrix
+  # categorical_heatmap_matrix_1 <<- categorical_heatmap_matrix
+  continuous_heatmap_matrix <- as.matrix(continuous_heatmap_matrix)
+
+  valid_rows <- function(x) {
+    # x must be a numeric matrix
+    rowSums(!is.finite(x)) == 0
+  }
+
+  keep <- valid_rows(continuous_heatmap_matrix)
+
+  continuous_heatmap_matrix <- continuous_heatmap_matrix[keep, ,drop = FALSE]
+  categorical_heatmap_matrix <- categorical_heatmap_matrix[keep, ,drop = FALSE]
+  #missing_data_subjects <- rowSums(is.na(continuous_heatmap_matrix)) != 0
+ # missing_data_subjects <- rowSums(!is.finite(as.matrix(continuous_heatmap_matrix))) > 0
+  # categorical_heatmap_matrix <- categorical_heatmap_matrix[!missing_data_subjects,]
+  # continuous_heatmap_matrix <-  continuous_heatmap_matrix[!missing_data_subjects,]
   # baseline_symbols <- baseline_symbols[!missing_data_subjects,]
 
   row_clusters <- hclust(dist(continuous_heatmap_matrix))
@@ -125,7 +139,7 @@ preform_heirachial_clustering <- function(continuous_heatmap_matrix, categorical
   col_clusters <- hclust(dist(t(continuous_heatmap_matrix)))
 
 
-  return(list(row_clusters, col_clusters))
+  return(list(row_clusters, col_clusters, keep))
 }
 
 # Cluster by antigen for pheatmap
@@ -181,16 +195,29 @@ plot_heatmap_hclust <- function(heatmap_matrix_in, num_subgroups_option_selected
 }
 
 # Heatmaply version.
-plot_heatmap_hclust_heatmaply <- function(heatmap_matrix_in, num_subgroups_option_selected_in, symbols_in, row_annotation_in, row_clust_in, col_clust_in) {
+plot_heatmap_hclust_heatmaply <- function(heatmap_matrix_in, num_subgroups_option_selected_in, symbols_in, row_annotation_in, row_clust_in, col_clust_in, keep) {
 
+  heatmap_matrix_in <- heatmap_matrix_in[keep, , drop = FALSE]
+  symbols_in        <- symbols_in[keep, , drop = FALSE]
+  row_annotation_in <- row_annotation_in[keep, , drop = FALSE]
 
-  heatmap_matrix_numeric <- as.matrix(heatmap_matrix_in)
   # They are all the same values in each cell so extract one.
+  # get_max_value <- function(x) {
+  #   max(x[[1]])
+  # }
   get_max_value <- function(x) {
-    max(x[[1]])
+    v <- x[[1]]
+    v <- v[is.finite(v)]
+    if (length(v) == 0) return(NA_real_)
+    max(v)
   }
+
   # Apply the function to the entire matrix
-  heatmap_matrix_numeric <- apply(heatmap_matrix_numeric, c(1, 2), get_max_value)
+  heatmap_matrix_numeric <- apply(heatmap_matrix_in, c(1, 2), get_max_value)
+  # heatmap_matrix_numeric[!is.finite(heatmap_matrix_numeric)] <- NA
+
+  row_clust_in <- row_clust_in
+  col_clust_in <- col_clust_in
 
   # Perform hierarchical clustering for rows and columns
   row_dend <- as.dendrogram(row_clust_in)
@@ -218,6 +245,7 @@ plot_heatmap_hclust_heatmaply <- function(heatmap_matrix_in, num_subgroups_optio
 
   #heatmap_matrix_numeric <<- do.call(rbind, heatmap_matrix_numeric)
 
+
   breaks_full <- c(1, 2, 3)
   labels_full <- c("Low", "Moderate", "High")
   colors_full <- c("#4575B4", "#FEFEC0", "#D73027")
@@ -226,6 +254,14 @@ plot_heatmap_hclust_heatmaply <- function(heatmap_matrix_in, num_subgroups_optio
   legend_breaks <- breaks_full[breaks_full %in% unique_values]
   legend_labels <- labels_full[breaks_full %in% unique_values]
   color_palette <- colors_full[breaks_full %in% unique_values]
+
+ heatmap_matrix_numeric[] <- as.numeric(
+  factor(
+    heatmap_matrix_numeric,
+    levels = breaks_full
+  )
+)
+
   # Create the interactive heatmap with heatmaply
   heatmaply(
     heatmap_matrix_numeric,
@@ -247,9 +283,15 @@ plot_heatmap_hclust_heatmaply <- function(heatmap_matrix_in, num_subgroups_optio
 
     #custom_hovertext = heatmap_matrix_numeric,
 
+    # colorbar = list(
+    #   tickvals = legend_breaks,  # Define the ticks based on the categories
+    #   ticktext = legend_labels  # Labels for Low, Moderate, High
+    # ),
     colorbar = list(
-      tickvals = legend_breaks,  # Define the ticks based on the categories
-      ticktext = legend_labels  # Labels for Low, Moderate, High
+      tickmode = "array",
+      tickvals = seq_along(legend_breaks),
+      ticktext = legend_labels,
+      title = "Response"
     ),
     color = color_palette,
     xlab = "Antigen",
