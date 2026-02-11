@@ -522,7 +522,8 @@ output$dynamic_data_ui <- renderUI({
         title = "Plates",
         DT::dataTableOutput("stored_header"),
         downloadButton("download_stored_header"),
-        uiOutput("header_actions")
+        uiOutput("header_actions"),
+        uiOutput("split_plate_nominal_UI")
        # uiOutput("split_button_ui")
       ),
       tabPanel(
@@ -570,6 +571,30 @@ output$split_button_ui <- renderUI({
     NULL
   }
 })
+
+# In Plates tab
+output$split_plate_nominal_UI <- renderUI({
+  req(input$stored_header_rows_selected)
+  if ((split_by_nominal_dilution())) {
+    actionButton("split_plates_nominal", "Split Plate by Nominal Sample Dilution")
+  } else {
+    NULL
+  }
+})
+
+observeEvent(input$split_plates_nominal,{
+  cat("split plates by nominal_sample dilution")
+  header_row_selected <- stored_plates_data$stored_header[input$stored_header_rows_selected,]
+
+  print(header_row_selected)
+  split_plate_nominal_sample_dilution(
+    study_accession = header_row_selected$study_accession,
+    experiment_accession = header_row_selected$experiment_accession,
+    plateid = header_row_selected$plateid,
+    conn = conn
+  )
+})
+
 
 observeEvent(input$optimize_plates, {
   split_optimization_plates(study_accession = input$readxMap_study_accession, experiment_accession = input$readxMap_experiment_accession )

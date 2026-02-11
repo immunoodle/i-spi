@@ -15,6 +15,7 @@ AND experiment_accession = '", experiment_accession,"'
   sample_df  <- dbGetQuery(conn, query)
   names(sample_df)[names(sample_df) == "antibody_n"] <- "n"
   sample_df$plateid <- gsub("[[:punct:][:blank:]]+", ".", basename(gsub("\\", "/", sample_df$plate_id, fixed=TRUE)))
+  sample_df$plate_nom <- paste(sample_df$plate, sample_df$nominal_sample_dilution, sep = "-")
   return(sample_df)
 }
 
@@ -143,7 +144,7 @@ beadCountServer <- function(id, selected_study, selected_experiment,currentuser)
     cat("Bead Count: Sample Data\n")
     print(names(sample_data_bc))
 
-    standard_data_curve <- fetch_db_standards_bc(study_accession = selected_study(), experiment_accession = selected_experiment())
+    #standard_data_curve <- fetch_db_standards_bc(study_accession = selected_study(), experiment_accession = selected_experiment())
 
     if (!is.null(selected_study()) && length(selected_study()) > 0 &&
         !is.null(selected_experiment()) && length(selected_experiment()) > 0 &&
@@ -179,36 +180,36 @@ beadCountServer <- function(id, selected_study, selected_experiment,currentuser)
 
     }
 
-    if (!is.null(selected_study()) && length(selected_study()) > 0 &&
-        !is.null(selected_experiment()) && length(selected_experiment()) > 0 &&
-        !is.null(standard_data_curve) && length(standard_data_curve) > 0){
-
-      # Filter sample data
-      standard_data_curve$selected_str <- paste0(standard_data_curve$study_accession, standard_data_curve$experiment_accession)
-      standard_data_curve <- standard_data_curve[standard_data_curve$selected_str == paste0(selected_study(), selected_experiment()), ]
-
-      # Summarize std curve data data
-      cat("View Standard Curve data plateid")
-      print(table(standard_data_curve$plateid))
-      cat("View Standard Curve data antigen")
-      print(table(standard_data_curve$antigen))
-
-      std_curve_data <- standard_data_curve
-
-
-      # Rename columns
-
-      # data <- dplyr::rename(data, arm_name = agroup)
-      #data <- dplyr::rename(data, visit_name = timeperiod)
-
-
-      std_curve_data$subject_accession <- std_curve_data$patientid
-
-      std_curve_data <- calculate_log_dilution(std_curve_data)
-      cat("Standard Curve data after calculating log dilutions")
-      print(names(std_curve_data))
-
-    }
+    # if (!is.null(selected_study()) && length(selected_study()) > 0 &&
+    #     !is.null(selected_experiment()) && length(selected_experiment()) > 0 &&
+    #     !is.null(standard_data_curve) && length(standard_data_curve) > 0){
+    #
+    #   # Filter sample data
+    #   standard_data_curve$selected_str <- paste0(standard_data_curve$study_accession, standard_data_curve$experiment_accession)
+    #   standard_data_curve <- standard_data_curve[standard_data_curve$selected_str == paste0(selected_study(), selected_experiment()), ]
+    #
+    #   # Summarize std curve data data
+    #   cat("View Standard Curve data plateid")
+    #   print(table(standard_data_curve$plateid))
+    #   cat("View Standard Curve data antigen")
+    #   print(table(standard_data_curve$antigen))
+    #
+    #   std_curve_data <- standard_data_curve
+    #
+    #
+    #   # Rename columns
+    #
+    #   # data <- dplyr::rename(data, arm_name = agroup)
+    #   #data <- dplyr::rename(data, visit_name = timeperiod)
+    #
+    #
+    #   std_curve_data$subject_accession <- std_curve_data$patientid
+    #
+    #   std_curve_data <- calculate_log_dilution(std_curve_data)
+    #   cat("Standard Curve data after calculating log dilutions")
+    #   print(names(std_curve_data))
+    #
+    # }
 
     ## Load study configuration
     study_configuration <- fetch_study_configuration(study_accession = selected_study() , user = currentuser())
@@ -233,7 +234,7 @@ beadCountServer <- function(id, selected_study, selected_experiment,currentuser)
 
       selectInput(ns("plateSelection_bead"),
                   label = "Plate in Sample data",
-                  choices = unique(bead_plate_data$plateid))
+                  choices = unique(bead_plate_data$plate_nom))
     })
 
     # sample data antigens
@@ -248,7 +249,7 @@ beadCountServer <- function(id, selected_study, selected_experiment,currentuser)
       dat_antigen <- sample_data_bc[
         sample_data_bc$study_accession %in% selected_study() &
           sample_data_bc$experiment_accession %in% selected_experiment() &
-          sample_data_bc$plateid %in% input$plateSelection_bead,
+          sample_data_bc$plate_nom %in% input$plateSelection_bead,
       ]
 
       # Ensure there are valid antigen values
@@ -268,7 +269,7 @@ beadCountServer <- function(id, selected_study, selected_experiment,currentuser)
       # req(failed_well_criteria)
       # req(upper_bc_threshold)
       # req(lower_bc_threshold)
-      sub_sample_data_bc <- sample_data_bc[sample_data_bc$plateid == input$plateSelection_bead & sample_data_bc$antigen == input$antigenSelectionBead,]
+      sub_sample_data_bc <- sample_data_bc[sample_data_bc$plate_nom == input$plateSelection_bead & sample_data_bc$antigen == input$antigenSelectionBead,]
       plot_bead_count(df_well = sub_sample_data_bc, lower_threshold = lower_bc_threshold,
                       upper_threshold = upper_bc_threshold , failed_well_criteria =  failed_well_criteria)
       # plot_bead_count(df_well = sample_data_well(), lower_threshold = lower_threshold_rv(),
@@ -284,7 +285,7 @@ beadCountServer <- function(id, selected_study, selected_experiment,currentuser)
       req(sample_data_bc)
      # req(input$plateSelection_bead, input$antigenSelectionBead)
       req(study_configuration)
-      sub_sample_data_bc <- sample_data_bc[sample_data_bc$plateid == input$plateSelection_bead & sample_data_bc$antigen == input$antigenSelectionBead,]
+      sub_sample_data_bc <- sample_data_bc[sample_data_bc$plate_nom == input$plateSelection_bead & sample_data_bc$antigen == input$antigenSelectionBead,]
       bead_count_gc_table <- bead_count_gc(df_well = sub_sample_data_bc, lower_threshold = lower_bc_threshold,
                                            upper_threshold = upper_bc_threshold , failed_well_criteria =  failed_well_criteria)
 
