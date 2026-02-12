@@ -235,7 +235,7 @@ beadCountServer <- function(id, selected_study, selected_experiment,currentuser)
       req(nrow(bead_plate_data) > 0)
 
       selectInput(ns("plateSelection_bead"),
-                  label = "Plate in Sample data",
+                  label = "Plate - Sample Dilution(s) in Sample Data",
                   choices = unique(bead_plate_data$plate_nom))
     })
 
@@ -258,7 +258,7 @@ beadCountServer <- function(id, selected_study, selected_experiment,currentuser)
       req(nrow(dat_antigen) > 0)
 
       selectInput(ns("antigenSelectionBead"),
-                  label = "Select Antigen",
+                  label = "Antigen",
                   choices = unique(dat_antigen$antigen))
     })
     output$beadCountPlot <- renderPlotly({
