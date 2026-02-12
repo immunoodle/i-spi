@@ -214,6 +214,10 @@ plot_model_comparisons <- function(plot_data,
     facet_wrap(~ parameter, scale = 'free_x', ncol = 6) +
     geom_linerange(aes(as.factor(model), ymin = conf.low, ymax = conf.high)) +
     coord_flip() +
+    scale_y_continuous(
+      breaks = function(x) pretty(x, n = 3),
+      expand = expansion(mult = c(0.1, 0.2))
+    ) +
     # scale_color_manual(values = c('green4', 'black')) +
     theme_bw(base_size = 12) +
     theme(legend.position = 'top') +

@@ -6,15 +6,16 @@
 #      input$study_level_tabs,
 #      input$main_tabs), {
 
-fetch_db_samples_bc <- function(study_accession, experiment_accession) {
+fetch_db_samples_bc <- function(study_accession, experiment_accession, project_id) {
   query <- paste0("SELECT * FROM madi_results.xmap_sample
-WHERE study_accession = '", study_accession,"'
+WHERE project_id = ",project_id, "
+AND study_accession = '", study_accession,"'
 AND experiment_accession = '", experiment_accession,"'
 ")
 
   sample_df  <- dbGetQuery(conn, query)
   names(sample_df)[names(sample_df) == "antibody_n"] <- "n"
-  sample_df$plateid <- gsub("[[:punct:][:blank:]]+", ".", basename(gsub("\\", "/", sample_df$plate_id, fixed=TRUE)))
+  # sample_df$plateid <- gsub("[[:punct:][:blank:]]+", ".", basename(gsub("\\", "/", sample_df$plate_id, fixed=TRUE)))
   sample_df$plate_nom <- paste(sample_df$plate, sample_df$nominal_sample_dilution, sep = "-")
   return(sample_df)
 }
@@ -139,7 +140,8 @@ beadCountServer <- function(id, selected_study, selected_experiment,currentuser)
    #observeEvent(reload_flag, {
 
 
-    sample_data_bc <- fetch_db_samples_bc(study_accession = selected_study(), experiment_accession = selected_experiment())
+    sample_data_bc <- fetch_db_samples_bc(study_accession = selected_study(), experiment_accession = selected_experiment(),
+                                          project_id = userWorkSpaceID())
     sample_data_bc <- obtain_well_number(sample_data_bc, "well")
     cat("Bead Count: Sample Data\n")
     print(names(sample_data_bc))
