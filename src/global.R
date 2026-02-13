@@ -82,6 +82,7 @@ library(data.tree)
 library(DiagrammeR)
 library(tidyr)
 library(datamods)
+library(digest)
 
 ## Dilution Linearity
 library(strex)

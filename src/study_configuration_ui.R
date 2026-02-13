@@ -572,7 +572,7 @@ render_study_parameters <- reactive({
 
     study_config <- study_config[study_config$param_group == "dilution_analysis",]
     node_order_params <-  study_config[study_config$param_name == "node_order",]
-    node_order_params_choices <<- strsplit(node_order_params$param_choices_list, ",")[[1]]
+    node_order_params_choices <- strsplit(node_order_params$param_choices_list, ",")[[1]]
     # -- remove linear region from the choices available to set (new algorithm as of 1/16/2026)
     node_order_params_choices <- node_order_params_choices[node_order_params_choices != "linear_region"]
 
