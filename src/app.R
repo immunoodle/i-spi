@@ -863,8 +863,12 @@ server <- function(input, output, session) {
       list_of_dataframes <- reactiveVal(NULL)
       original_df_combined <- reactiveVal(NULL)
 
+     ## Optimization
       optimization_refresh <- reactiveVal(0)
       optimization_ready <- reactiveVal(FALSE)
+      # in plates tab split by nominal sample dilution
+      split_by_nominal_dilution <- reactiveVal(FALSE)
+
       plate_data <- reactiveVal()
       header_info <- reactiveVal()
       current_type_p_tab <- reactiveVal()
@@ -964,6 +968,7 @@ server <- function(input, output, session) {
       source("study_overview_functions.R", local = TRUE)
       source("study_overview_ui.R", local = TRUE)
       source("antigen_family_ui.R", local = TRUE)
+      source("split_plates_nominal_sample_dilution.R", local = TRUE)
       source("load_previous_stored_data.R", local=TRUE)
       source("plate_validator_functions.R", local = TRUE)
       source("generate_layout_template_ref.R", local = TRUE)

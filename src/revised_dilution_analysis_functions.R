@@ -79,7 +79,6 @@ compute_classified_merged_update <- function(classified_sample, selectedDilution
 
 
 
-  #study_configuration_v <<- study_configuration
   desired_params <- c("zero_pass_diluted_Tx", "zero_pass_concentrated_Tx", "zero_pass_concentrated_diluted_Tx", "one_pass_acceptable_Tx", "two_plus_pass_acceptable_Tx")
   au_treats <- study_configuration[study_configuration$param_name %in% desired_params, c("param_name", "param_character_value")]
    au_treats$n_pass_d <- ifelse(grepl("^zero", au_treats$param_name), 0,
@@ -122,11 +121,6 @@ compute_classified_merged_update <- function(classified_sample, selectedDilution
 }
 
 produce_margin_table <- function(classified_merged, selectedAntigen, selectedDilutions, time_order) {
-
-  # classified_merged <<- classified_merged
-  # selectedAntigen <<- selectedAntigen
-  # selectedDilutions <<- selectedDilutions
-  # time_order <<- time_order
 
   margin_merged <- classified_merged[classified_merged$param_name != "None",]
   margin_merged <- margin_merged[margin_merged$dilution %in% selectedDilutions,]

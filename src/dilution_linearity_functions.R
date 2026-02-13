@@ -38,6 +38,7 @@
 #
 # }
 
+
 # Helper: map a node name → the column that stores its
 node_to_col <- function(node) {
   if (node == "limits_of_detection") {
@@ -47,6 +48,7 @@ node_to_col <- function(node) {
   }
   #stop(glue("Unsupported node: {node}"))
 }
+
 
 
 # -------------------------------------------------
@@ -1284,6 +1286,13 @@ get_leaf_nodes <- function(node) {
 }
 
 ## Produce the Decision Tree based on truth table
+node_to_tree_col <- function(node) {
+  if (node == "limits_of_quantification") {
+    return("quantifiable")
+  } else if (node == "limits_of_detection")
+    return("gate")
+}
+
 create_decision_tree_tt <- function(truth_table, binary_gate, sufficient_gc_vector, node_order = c("gate", "linear", "quantifiable")) {
 
   if (length(node_order) == 0) {

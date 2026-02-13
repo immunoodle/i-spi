@@ -21,6 +21,39 @@ observeEvent(input$stored_header_rows_selected, {
   print(paste("selected experiment:", selected_studyexpplate$experiment_accession))
   selected_studyexpplate$plateid <- stored_plates_data$stored_header[input$stored_header_rows_selected, c("plateid")]
   print(paste("selected plateid:", selected_studyexpplate$plateid))
+  selected_studyexpplate$plate <- stored_plates_data$stored_header[input$stored_header_rows_selected, c("plate")]
+  print(paste("selected plate:", selected_studyexpplate$plate))
+  selected_studyexpplate$nominal_sample_dilution <- stored_plates_data$stored_header[input$stored_header_rows_selected, c("nominal_sample_dilution")]
+  print(paste("selected nominal sample dilution", selected_studyexpplate$nominal_sample_dilution))
+  # header_row_selected <- stored_plates_data$stored_header[input$stored_header_rows_selected,]
+  # print(header_row_selected)
+
+  plateid <- stored_plates_data$stored_header[
+    input$stored_header_rows_selected, "plateid"
+  ]
+
+  # --- Check if already split ---
+  already_split_sql <- glue::glue("
+    SELECT EXISTS (
+      SELECT 1
+      FROM madi_results.xmap_sample
+      WHERE study_accession = '{input$readxMap_study_accession}'
+        AND experiment_accession = '{input$readxMap_experiment_accession}'
+        AND plateid = '{plateid}'
+        AND nominal_sample_dilution IS NOT NULL
+        AND nominal_sample_dilution NOT LIKE '%|%'
+    ) AS already_split;
+  ")
+  already_split <- DBI::dbGetQuery(conn, already_split_sql)$already_split
+
+
+  selected_nominal_dilutions <- strsplit(selected_studyexpplate$nominal_sample_dilution, "\\|")[[1]]
+  if (!already_split && length(selected_nominal_dilutions) > 1) {
+       split_by_nominal_dilution(TRUE)
+  } else {
+    split_by_nominal_dilution(FALSE)
+  }
+
 
   # output$selected_plate_text = renderText({
   #   paste0("Selected Plate: ", selected_studyexpplate$plateid)
@@ -479,69 +512,12 @@ observe({
     selected_plate_logic
   })
 
-  if(plate_selected && selected_studyexpplate$nrows_standard > 3 && selected_studyexpplate$nrows_fits < 1) {
-    output$header_actions <- renderUI({
-      fluidRow(tags$head(tags$script(src = "message-handler.js")),
-               #  actionButton("btn_calc_select_standard_curves", label=paste("Calculate standard curves for", selected_studyexpplate$plateid)),
-               #  br(),
-               # # actionButton("normalBatch", label=paste("Normalize batch effects for", selected_studyexpplate$experiment_accession)),
-               #  br(),
-               #  actionButton("curveCombined", label=paste("Calculate combined standard curve for ", selected_studyexpplate$experiment_accession)),
-               #  br(),
-               #  actionButton("gateSample", label=paste("Classify samples by limits of detection for", selected_studyexpplate$experiment_accession)),
-               #  br(),
-               #  actionButton("outlierReview", label=paste("Review outliers for ", selected_studyexpplate$study_accession)),
-               #  br(),
-               #  actionButton("btn_delete_select_plateid", label=paste("Delete data for", selected_studyexpplate$plateid))
-      )
-    })
-  } else if (plate_selected && selected_studyexpplate$nrows_standard > 3 && selected_studyexpplate$nrows_fits > 0) {
-    output$header_actions <- renderUI({
-      fluidRow(tags$head(tags$script(src = "message-handler.js")),
-               # actionButton("normalBatch", label=paste("Normalize batch effects for", selected_studyexpplate$experiment_accession)),
-               # br(),
-               # actionButton("curveCombined", label=paste("Calculate combined standard curve for ", selected_studyexpplate$experiment_accession)),
-               # br(),
-               # actionButton("gateSample", label=paste("Classify samples by limits of detection for", selected_studyexpplate$experiment_accession)),
-               # br(),
-               # actionButton("outlierReview", label=paste("Review outliers for ", selected_studyexpplate$study_accession)),
-               # br(),
-               # actionButton("btn_delete_select_plateid", label=paste("Delete data for", selected_studyexpplate$plateid))
-      )
-    })
-  } else {
-    output$header_actions <- renderUI({
-      fluidRow(tags$head(tags$script(src = "message-handler.js")),
-               # actionButton("normalBatch", label=paste("Normalize batch effects for", selected_studyexpplate$experiment_accession)),
-               # br(),
-               # actionButton("gateSample", label=paste("Classify samples by limits of detection for", selected_studyexpplate$experiment_accession)),
-               # br(),
-               # actionButton("outlierReview", label=paste("Review outliers for ", selected_studyexpplate$study_accession)),
-               # br(),
-               # actionButton("btn_delete_select_plateid", label=paste("Delete data for", selected_studyexpplate$plateid))
-      )
-    })
-  }
-
   output$download_stored_header <- createDownloadHandler("stored_header", "stored headers")
   output$download_stored_standard <- createDownloadHandler("stored_standard", "stored standards")
   output$download_stored_control <- createDownloadHandler("stored_control", "stored controls")
   output$download_stored_buffer <- createDownloadHandler("stored_buffer", "stored buffers")
   output$download_stored_sample <- createDownloadHandler("stored_sample", "stored samples")
   output$download_stored_best_sample_se <- createDownloadHandler("stored_best_sample_se","stored best samples")
-
-  # output$download_stored_best_sample_se <- downloadHandler(
-  #   filename = function() {
-  #       paste(input$readxMap_study_accession, input$readxMap_experiment_accession, "best_sample_se.csv", sep = "_")
-  #     },
-  #     content = function(file) {
-  #
-  #       req(qc_best_samples_se)
-  #       # download data component (data frame)
-  #       write.csv(qc_best_samples_se, file, row.names = FALSE)
-  #     }
-  #   )
-
 
 
   output$stored_plates_ui <- renderUI({

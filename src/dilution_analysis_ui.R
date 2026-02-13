@@ -1,87 +1,793 @@
-#observeEvent(list(input$inLoadedData, input$readxMap_experiment_accession), {
-observeEvent(list(
-  input$readxMap_experiment_accession,
-  input$readxMap_study_accession,
-  input$advanced_qc_component,
-  input$study_level_tabs,
-  input$main_tabs), {
+# ============================================================================
+# DILUTION ANALYSIS MODULE - COMPLETE IMPLEMENTATION
+# ============================================================================
+# Structure:
+# - PART 1: Configuration Layer (pure data + rules)
+# - PART 2: Business Logic Functions (stateless helpers)
+# - PART 3: Orchestration (reactive coordinator)
+# ============================================================================
 
-    req(input$advanced_qc_component == "Dilution Analysis",
-        input$readxMap_study_accession != "Click here",
-        input$readxMap_experiment_accession != "Click here",
-        input$study_level_tabs == "Experiments",
-        input$main_tabs == "view_files_tab")
+# ============================================================================
+# PART 1: CONFIGURATION LAYER
+# Defines WHAT to pay attention to - pure data + rules, no reactivity
+# ============================================================================
 
- # req(input$inLoadedData, input$readxMap_experiment_accession)
- # input$readxMap_experiment_accession
-  if (input$advanced_qc_component == "Dilution Analysis") {
-    showNotification(id = "load_dilution_analysis", HTML("Loading Dilution Analysis<span class = 'dots'>"), duration = NULL)
-    selected_study <- input$readxMap_study_accession # selected_studyexpplate$study_accession
-    selected_experiment <- input$readxMap_experiment_accession #selected_studyexpplate$experiment_accession
+# Configuration schema - defines which parameters matter for each analysis type
+DILUTION_ANALYSIS_CONFIG <- list(
+  required_params = c(
+    "blank_option",
+    "is_log_mfi_axis",
+    "node_order",
+    "valid_gate_class",
+    "is_binary_gc",
+    "antigen_family_order",
+    "antigen_order",
+    "timeperiod_order",
+    "zero_pass_diluted_Tx",
+    "zero_pass_concentrated_diluted_Tx",
+    "zero_pass_concentrated_Tx",
+    "two_plus_pass_acceptable_Tx",
+    "one_pass_acceptable_Tx"
+  ),
 
+  table_columns = c(
+    "study_accession", "experiment_accession", "plateid", "timeperiod",
+    "patientid", "agroup", "dilution", "antigen", "n_pass_dilutions",
+    "concentration_status", "au_treatment", "decision_nodes", "bkg_method",
+    "processed_au"
+  ),
 
-    standard_data_curve <- fetch_db_standards(study_accession = selected_study,
-                       experiment_accession = selected_experiment,
-                       project_id = userWorkSpaceID(),
-                       conn = conn)
+  au_treatment_types = c(
+    "all_au", "passing_au", "geom_all_au", "geom_passing_au",
+    "exclude_au", "replace_positive_control", "replace_blank"
+  ),
 
-    # standard_data_curve <- stored_plates_data$stored_standard
-    if (!is.null(selected_study) && length(selected_study) > 0 &&
-        !is.null(selected_experiment) && length(selected_experiment) > 0 &&
-        !is.null(standard_data_curve) && length(standard_data_curve) > 0){
+  color_mappings = list(
+    all_au = "#a1caf1",
+    passing_au = "lightgrey",
+    geom_all_au = "#c2b280",
+    geom_passing_au = "#875692",
+    replace_blank = "#008856",
+    replace_positive_control = "#dcd300",
+    exclude_au = "#b3446c",
+    Blank = "white"
+  ),
 
-      # Filter sample data
-      standard_data_curve$selected_str <- paste0(standard_data_curve$study_accession, standard_data_curve$experiment_accession)
-      standard_data_curve <- standard_data_curve[standard_data_curve$selected_str == paste0(selected_study, selected_experiment), ]
+  node_name_replacements = c(
+    limits_of_detection = "limits_of_detection",
+    linear_region = "linear",
+    limits_of_quantification = "limits_of_quantification"
+  )
+)
 
-      # Summarize std curve data data
-      cat("View Standard Curve data plateid")
-      print(table(standard_data_curve$plateid))
-      cat("View Standard Curve data antigen")
-      print(table(standard_data_curve$antigen))
+# Parse and validate study configuration
+parse_study_configuration <- function(study_config, config_schema = DILUTION_ANALYSIS_CONFIG) {
+  # Validate all required params are present
+  missing_params <- setdiff(
+    config_schema$required_params,
+    study_config$param_name
+  )
 
-      std_curve_data <- standard_data_curve
+  if (length(missing_params) > 0) {
+    stop(paste("Missing required configuration parameters:",
+               paste(missing_params, collapse = ", ")))
+  }
 
-      std_curve_data$subject_accession <- std_curve_data$patientid
+  # Extract parameters with type conversion
+  get_param <- function(name, type = "character") {
+    row <- study_config[study_config$param_name == name, ]
+    if (nrow(row) == 0) return(NULL)
 
-      std_curve_data <- calculate_log_dilution(std_curve_data)
+    value <- switch(type,
+                    "character" = row$param_character_value,
+                    "boolean" = as.logical(toupper(row$param_boolean_value)),
+                    "numeric" = as.numeric(row$param_numeric_value),
+                    row$param_character_value
+    )
+
+    # Split comma-separated values
+    if (type == "character" && grepl(",", value)) {
+      value <- strsplit(value, ",")[[1]]
     }
 
-    # load controls
-    controls <- fetch_db_controls(study_accession = selected_study, experiment_accession = selected_experiment,
-                                  project_id = userWorkSpaceID(), conn = conn)
-    # controls <- stored_plates_data$stored_control
+    return(value)
+  }
 
-    # load buffer data
-    buffer_data <- fetch_db_buffer(study_accession = selected_study, experiment_accession = selected_experiment,
-                    project_id = userWorkSpaceID(),
-                    conn = conn)
-    # buffer_data <- stored_plates_data$stored_buffer
-    if (!is.null(selected_study) && length(selected_study) >0 &&
-        !is.null(selected_experiment) && length(selected_experiment) > 0 &&
-        !is.null(buffer_data) && length(buffer_data) > 0) {
+  # Extract all parameters
+  node_order_raw <- get_param("node_order")
+  replacements <- config_schema$node_name_replacements
 
-      buffer_data$selected_str <- paste0(buffer_data$study_accession, buffer_data$experiment_accession)
-      buffer_data <- buffer_data[buffer_data$selected_str == paste0(selected_study, selected_experiment), ]
+  # Return structured configuration
+  list(
+    background_method = get_param("blank_option"),
+    is_log_mfi = get_param("is_log_mfi_axis", "boolean"),
+    node_order = node_order_raw,
+    sufficient_gc = get_param("valid_gate_class"),
+    is_binary_gc = get_param("is_binary_gc", "boolean"),
+    antigen_family_order = get_param("antigen_family_order"),
+    antigen_order = get_param("antigen_order"),
+    zero_pass_diluted_Tx               = get_param("zero_pass_diluted_Tx"),
+    zero_pass_concentrated_diluted_Tx  = get_param("zero_pass_concentrated_diluted_Tx"),
+    zero_pass_concentrated_Tx          = get_param("zero_pass_concentrated_Tx"),
+    one_pass_acceptable_Tx             = get_param("one_pass_acceptable_Tx"),
+    two_plus_pass_acceptable_Tx        = get_param("two_plus_pass_acceptable_Tx"),
+    timeperiod_order = get_param("timeperiod_order"),
+
+
+    # Normalize node names for internal use
+    normalized_node_order = ifelse(
+      node_order_raw %in% names(replacements),
+      replacements[node_order_raw],
+      node_order_raw
+    )
+
+  )
+}
+
+# Create a signature/hash of configuration for change detection
+create_config_signature <- function(parsed_config) {
+  # Create a stable string representation of all config values
+  config_string <- paste(
+    parsed_config$background_method,
+    parsed_config$is_log_mfi,
+    paste(parsed_config$node_order, collapse = ","),
+    paste(parsed_config$sufficient_gc, collapse = ","),
+    parsed_config$is_binary_gc,
+    paste(parsed_config$antigen_family_order, collapse = ","),
+    paste(parsed_config$antigen_order, collapse = ","),
+    paste(parsed_config$timeperiod_order, collapse = ","),
+    paste(parsed_config$zero_pass_diluted_Tx, collapse = ","),
+    paste(parsed_config$zero_pass_concentrated_diluted_Tx, collapse = ","),
+    paste(parsed_config$zero_pass_concentrated_Tx, collapse = ","),
+    paste(parsed_config$two_plus_pass_acceptable_Tx, collapse = ","),
+    paste(parsed_config$one_pass_acceptable_Tx, collapse = ","),
+    sep = "::"
+  )
+
+  # Return hash for efficient comparison
+  digest::digest(config_string, algo = "md5")
+}
+
+# ============================================================================
+# PART 2: BUSINESS LOGIC FUNCTIONS
+# HOW to behave - stateless helpers that respect configuration
+# ============================================================================
+
+# Load and prepare all required data for dilution analysis
+load_dilution_analysis_data <- function(study_accession,
+                                        experiment_accession,
+                                        project_id,
+                                        conn,
+                                        parsed_config) {
+
+  cat("\n=== LOADING DATA ===\n")
+  cat("Study:", study_accession, "\n")
+  cat("Experiment:", experiment_accession, "\n")
+
+  # Fetch raw data
+  standard_data <- fetch_db_standards(
+    study_accession = study_accession,
+    experiment_accession = experiment_accession,
+    project_id = project_id,
+    conn = conn
+  )
+
+  controls <- fetch_db_controls(
+    study_accession = study_accession,
+    experiment_accession = experiment_accession,
+    project_id = project_id,
+    conn = conn
+  )
+
+  buffer_data <- fetch_db_buffer(
+    study_accession = study_accession,
+    experiment_accession = experiment_accession,
+    project_id = project_id,
+    conn = conn
+  )
+
+  # Process standard curve
+  std_curve_data <- NULL
+  if (!is.null(standard_data) && nrow(standard_data) > 0) {
+    standard_data$selected_str <- paste0(
+      standard_data$study_accession,
+      standard_data$experiment_accession
+    )
+    standard_data <- standard_data[
+      standard_data$selected_str == paste0(study_accession, experiment_accession),
+    ]
+    std_curve_data <- calculate_log_dilution(standard_data)
+    std_curve_data$subject_accession <- std_curve_data$patientid
+  }
+
+  # Process buffer
+  if (!is.null(buffer_data) && nrow(buffer_data) > 0) {
+    buffer_data$selected_str <- paste0(
+      buffer_data$study_accession,
+      buffer_data$experiment_accession
+    )
+    buffer_data <- buffer_data[
+      buffer_data$selected_str == paste0(study_accession, experiment_accession),
+    ]
+  }
+
+  cat("Data loaded successfully\n")
+  cat("Standard curve rows:", if(!is.null(std_curve_data)) nrow(std_curve_data) else 0, "\n")
+  cat("Controls rows:", if(!is.null(controls)) nrow(controls) else 0, "\n\n")
+
+  return(list(
+    std_curve = std_curve_data,
+    controls = controls,
+    buffer = buffer_data
+  ))
+}
+
+# Compute gated/classified sample data with config-aware logic
+compute_gated_data <- function(study_accession,
+                               experiment_accession,
+                               project_id,
+                               conn,
+                               parsed_config) {
+
+  cat("\n=== COMPUTING GATED DATA ===\n")
+  print(parsed_config)
+
+  gated_data <- calculate_sample_concentration_status_new(
+    conn = conn,
+    study_accession = study_accession,
+    experiment_accession = experiment_accession,
+    project_id = project_id,
+    node_order = parsed_config$normalized_node_order
+  )
+
+  cat("Gated data rows:", nrow(gated_data), "\n")
+
+  # Validate data completeness based on node order
+  validation_results <- validate_gated_data_by_nodes(
+    gated_data,
+    parsed_config$normalized_node_order
+  )
+
+  cat("=== GATED DATA COMPLETE ===\n\n")
+
+  return(list(
+    data = gated_data,
+    validation = validation_results
+  ))
+}
+
+# Validate gated data has required columns for selected nodes
+validate_gated_data_by_nodes <- function(gated_data, node_order) {
+
+  results <- list()
+
+  if ("linear" %in% node_order) {
+    has_linear <- sum(!is.na(gated_data$in_linear_region)) > 0
+    results$linear <- list(
+      present = has_linear,
+      message = if (!has_linear) "No samples found in the linear region" else NULL
+    )
+  }
+
+  if ("quantifiable" %in% node_order) {
+    has_quant <- sum(!is.na(gated_data$in_quantifiable_range)) > 0
+    results$quantifiable <- list(
+      present = has_quant,
+      message = if (!has_quant) "No samples found in the quantifiable range" else NULL
+    )
+  }
+
+  if ("gate" %in% node_order) {
+    has_gate <- sum(!is.na(gated_data$llod) & !is.na(gated_data$ulod)) > 0
+    results$gate <- list(
+      present = has_gate,
+      message = if (!has_gate) "No samples found passing Limit of Detection" else NULL
+    )
+  }
+
+  return(results)
+}
+
+# Build decision tree based on configuration
+build_decision_tree <- function(parsed_config) {
+#parsed_config_in <<- parsed_config
+  truth_table <- create_truth_table(
+    binary_gate = parsed_config$is_binary_gc,
+    exclude_linear = FALSE,
+    exclude_quantifiable = FALSE,
+    exclude_gate = FALSE
+  )
+
+  create_decision_tree_tt(
+    truth_table = truth_table,
+    binary_gate = parsed_config$is_binary_gc,
+    sufficient_gc_vector = parsed_config$sufficient_gc,
+    node_order = node_to_tree_col(parsed_config$normalized_node_order)
+  )
+}
+
+# Compute classified merged data with configuration
+compute_classified_data <- function(gated_data,
+                                    selected_dilutions,
+                                    parsed_config) {
+
+  study_config_raw <- data.frame(
+    param_name = names(parsed_config),
+    param_character_value = sapply(parsed_config, function(x) {
+      if (is.vector(x)) paste(x, collapse = ",") else as.character(x)
+    }),
+    stringsAsFactors = FALSE
+  )
+
+  result_update <- compute_classified_merged_update(
+    classified_sample = gated_data,
+    selectedDilutions = selected_dilutions,
+    study_configuration = study_config_raw
+  )
+
+  # if ("n_pass_d" %in% names(result)) {
+  #   cat("Renaming 'n_pass_d' to 'n_pass_dilutions'\n")
+  #   names(result)[names(result) == "n_pass_d"] <- "n_pass_dilutions"
+  # }
+  if ("n_pass_d" %in% names(result_update) && "n_pass_dilutions" %in% names(result_update)) {
+    cat("Both n_pass_d and n_pass_dilutions exist. Removing n_pass_d.\n")
+    result_update$n_pass_d <- NULL
+  } else if ("n_pass_d" %in% names(result_update)) {
+    cat("Renaming 'n_pass_d' to 'n_pass_dilutions'\n")
+    names(result_update)[names(result_update) == "n_pass_d"] <- "n_pass_dilutions"
+  }
+
+  # resilt_update_2 <<- result_update
+
+  return(result_update)
+}
+
+# Process final AU table with all treatments
+process_final_au_table <- function(classified_data,
+                                   std_curve_filtered,
+                                   controls,
+                                   parsed_config,
+                                   selected_antigen,
+                                   table_columns) {
+
+  classified_data$decision_nodes <- paste(parsed_config$node_order, collapse = ",")
+  classified_data$bkg_method <- parsed_config$background_method
+
+  final_table <- data.frame()
+
+  for (treatment in unique(classified_data$au_treatment)) {
+    treatment_subset <- classified_data[classified_data$au_treatment == treatment, ]
+
+    average_au <- switch(
+      treatment,
+      "all_au" = preserve_all_au(treatment_subset),
+      "passing_au" = preserve_passing_au(treatment_subset),
+      "geom_all_au" = geometric_mean_all_au_2(treatment_subset),
+      "geom_passing_au" = geometric_mean_passing_au_2(treatment_subset),
+      "exclude_au" = preserve_all_au(treatment_subset),
+      "replace_positive_control" = {
+        if (is.null(controls)) {
+          stop("Controls data required for replace_positive_control treatment")
+        }
+        positive_controls <- controls[controls$antigen %in% selected_antigen, ]
+        geometric_mean_positive_controls(treatment_subset, positive_controls)
+      },
+      "replace_blank" = {
+        if (is.null(std_curve_filtered)) {
+          stop("Standard curve data required for replace_blank treatment")
+        }
+        geometric_mean_blanks(treatment_subset, std_curve_filtered)
+      }
+    )
+
+    final_table <- rbind(final_table, average_au[, table_columns])
+  }
+
+  # Post-processing based on config
+  final_table$dilution[!(final_table$au_treatment %in% c("all_au", "exclude_au"))] <- NA
+  final_table$processed_au[final_table$au_treatment == "exclude_au"] <- NA
+  final_table$plateid[final_table$au_treatment %in%
+                        c("geom_all_au", "geom_passing_au",
+                          "replace_positive_control", "replace_blank")] <- NA
+
+  return(final_table)
+}
+
+# ============================================================================
+# PART 3: ORCHESTRATION
+# WHEN to run - reactive coordinator that calls the functions
+# ============================================================================
+
+# Track state
+dilution_analysis_active <- reactiveVal(FALSE)
+current_context <- reactiveVal(NULL)
+current_config_signature <- reactiveVal(NULL)
+
+selected_study_dilution_analysis_rv <- reactiveVal(NULL)
+selected_experiment_dilution_analysis_rv <- reactiveVal(NULL)
+
+# Cached data stores
+parsed_config_cache <- reactiveVal(NULL)
+loaded_data_cache <- reactiveVal(NULL)
+gated_data_cache <- reactiveVal(NULL)
+
+# Helper to build context string
+analysis_context <- reactive({
+  if (
+    is.null(input$advanced_qc_component) ||
+    length(input$advanced_qc_component) == 0 ||
+    input$advanced_qc_component != "Dilution Analysis" ||
+    is.null(input$study_level_tabs) ||
+    input$study_level_tabs != "Experiments" ||
+    is.null(input$main_tabs) ||
+    input$main_tabs != "view_files_tab" ||
+    is.null(input$readxMap_study_accession) ||
+    input$readxMap_study_accession == "Click here" ||
+    is.null(input$readxMap_experiment_accession) ||
+    input$readxMap_experiment_accession == "Click here"
+  ) {
+    return(NULL)
+  }
+
+  paste(
+    input$readxMap_study_accession,
+    input$readxMap_experiment_accession,
+    sep = "::"
+  )
+})
+
+# Reactive that fetches and monitors configuration
+study_config_reactive <- reactive({
+  req(analysis_context())
+
+  context_parts <- strsplit(analysis_context(), "::")[[1]]
+  selected_study <- context_parts[1]
+
+  # Fetch configuration from database
+  fetch_study_configuration(
+    study_accession = selected_study,
+    user = currentuser()
+  )
+})
+
+# Parsed configuration with signature
+
+
+parsed_config_with_signature <- reactive({
+  # on_dilution_tab <- input$advanced_qc_component == "Dilution Analysis"
+  # on_advance_tab <- input$basic_advance_tabs == "advance_qc"
+  # cat("on dil tab")
+  # print(on_dilution_tab)
+  # cat("on advance tab")
+  # print(on_advance_tab)
+  # if (length(on_dilution_tab) == 0) {
+  #   return(NULL)
+  # }
+  #
+  # if (!isTRUE(on_advance_tab)) {
+  #   return(NULL)
+  # }
+#  req(input$advanced_qc_component == "Dilution Analysis")
+  req(analysis_context())
+  req(study_config_reactive())
+
+  parsed <- parse_study_configuration(
+    study_config_reactive(),
+    DILUTION_ANALYSIS_CONFIG
+  )
+
+  list(
+    config = parsed,
+    signature = create_config_signature(parsed)
+  )
+})
+
+# ============================================================================
+# MAIN OBSERVER - Reacts to BOTH context AND config changes
+# ============================================================================
+observeEvent(
+  list(
+    analysis_context(),
+    parsed_config_with_signature()$signature
+  ),
+  {
+
+    # if (is.null(analysis_context())) {
+    #   return()
+    # }
+    if (is.null(input$advanced_qc_component) ||
+        length(input$advanced_qc_component) == 0 ||
+        input$advanced_qc_component != "Dilution Analysis") {
+
+      # Clean up if we were previously active
+      if (isolate(dilution_analysis_active())) {
+        cat("\n=== CLEANING UP DILUTION ANALYSIS ===\n")
+        cat("Reason: Navigated away\n\n")
+
+        removeNotification(id = "load_dilution_analysis")
+
+        # Clear all outputs and caches
+        output$dilutionAnalysisUI <- NULL
+        output$dilutionAnalysisUI <- NULL
+        output$dilution_summary_barplot <- NULL
+        output$download_dilution_contingency_summary <- NULL
+        output$download_dilution_contingency_summary_handle <- NULL
+        output$dilution_selector_UI <- NULL
+        output$antigen_selector_UI <- NULL
+        output$margin_table_antigen <- NULL
+        output$color_legend <- NULL
+        output$download_classified_sample_UI <- NULL
+        output$download_classifed_sample_handle <- NULL
+        output$patient_dilution_series_plot <- NULL
+        output$passing_subject_selection <- NULL
+        output$final_average_au_table <- NULL
+        output$download_average_au_table_UI <- NULL
+        output$decision_tree <- NULL
+        output$parameter_dependencies <- NULL
+        output$linear_message <- NULL
+        output$quantifiable_message <- NULL
+        output$gate_message <- NULL
+
+
+        parsed_config_cache(NULL)
+        loaded_data_cache(NULL)
+        gated_data_cache(NULL)
+        current_config_signature(NULL)
+        dilution_analysis_active(FALSE)
+        current_context(NULL)
+      }
+      return()  # EXIT EARLY - don't process anything
     }
 
-    ## Load study configuration
-    study_configuration <- fetch_study_configuration(study_accession = selected_study , user = currentuser())
-    background_control_method <- study_configuration[study_configuration$param_name == "blank_option",]$param_character_value
-    is_log_mfi_axis <- as.logical(toupper(study_configuration[study_configuration$param_name == "is_log_mfi_axis",]$param_boolean_value))
+    new_context <- analysis_context()
+    old_context <- isolate(current_context())
 
-    # fitted_curve_parameters <- fetch_standard_curves_dilution(selected_study, selected_experiment, bkg_method = background_control_method,
-    #                                                           is_log_mfi = is_log_mfi_axis)
+    new_config_sig <- isolate(parsed_config_with_signature()$signature)
+    old_config_sig <- isolate(current_config_signature())
 
-    dilution_table_cols <- c("study_accession", "experiment_accession", "plateid", "timeperiod", "patientid", "agroup", "dilution",
-                             "antigen", "n_pass_dilutions", "concentration_status", "au_treatment", "decision_nodes", "bkg_method", "processed_au")
+    # ========================================================================
+    # 1. CLEANUP - Tab left or context is now NULL
+    # ========================================================================
+    if (is.null(new_context)) {
+      if (dilution_analysis_active()) {
+        cat("\n=== CLEANING UP DILUTION ANALYSIS ===\n")
+        cat("Reason: Left Dilution Analysis tab\n\n")
+
+        removeNotification(id = "load_dilution_analysis")
+
+        # Clear all outputs
+        output$dilutionAnalysisUI <- NULL
+        output$dilution_summary_barplot <- NULL
+        output$download_dilution_contingency_summary <- NULL
+        output$download_dilution_contingency_summary_handle <- NULL
+        output$dilution_selector_UI <- NULL
+        output$antigen_selector_UI <- NULL
+        output$margin_table_antigen <- NULL
+        output$color_legend <- NULL
+        output$download_classified_sample_UI <- NULL
+        output$download_classifed_sample_handle <- NULL
+        output$patient_dilution_series_plot <- NULL
+        output$passing_subject_selection <- NULL
+        output$final_average_au_table <- NULL
+        output$download_average_au_table_UI <- NULL
+        output$decision_tree <- NULL
+        output$parameter_dependencies <- NULL
+        output$linear_message <- NULL
+        output$quantifiable_message <- NULL
+        output$gate_message <- NULL
+
+        # Clear caches
+        parsed_config_cache(NULL)
+        loaded_data_cache(NULL)
+        gated_data_cache(NULL)
+        current_config_signature(NULL)
+
+        dilution_analysis_active(FALSE)
+        current_context(NULL)
+      }
+      return()
+    }
+
+    # ========================================================================
+    # 2. DETECT WHAT CHANGED
+    # ========================================================================
+    context_changed <- !identical(old_context, new_context)
+    config_changed <- !is.null(old_config_sig) &&
+      !identical(old_config_sig, new_config_sig)
+
+    # if (config_changed) {
+    #   updateRadioGroupButtons(
+    #     session = session,
+    #     inputId = "advanced_qc_component",
+    #     selected = character(0)
+    #   )
+    # }
+    #
+
+    # ========================================================================
+    # 3. SKIP if nothing changed
+    # ========================================================================
+    if (!is.null(old_context) && !context_changed && !config_changed) {
+      cat("\n=== NO CHANGES DETECTED — SKIP ===\n")
+      cat("Context:", new_context, "\n")
+      cat("Config signature:", new_config_sig, "\n\n")
+      return()
+    }
+
+    in_dilution_tab <- !is.null(new_context)
+    if (!in_dilution_tab) {
+      cat("\n=== SKIPPING SETUP: Not in Dilution Analysis tab ===\n")
+      return()
+    }
+
+    # ========================================================================
+    # 4. HANDLE CHANGES
+    # ========================================================================
+    if (context_changed) {
+      cat("\n=== CONTEXT CHANGED ===\n")
+      cat("Old context:", old_context, "\n")
+      cat("New context:", new_context, "\n\n")
+    }
+
+    # if (config_changed && input$advanced_qc_component == "Dilution Analysis") {
+    #   cat("\n=== CONFIGURATION CHANGED ===\n")
+    #   cat("Old signature:", old_config_sig, "\n")
+    #   cat("New signature:", new_config_sig, "\n")
+    #   cat("Reloading analysis with new configuration...\n\n")
+    #
+    #   # Show notification about config reload
+    #   showNotification(
+    #     "Study configuration changed.",
+    #     duration = 3,
+    #     type = "warning"
+    #   )
+    # }
+    if (config_changed) {
+      cat("\n=== CONFIGURATION CHANGED ===\n")
+      cat("Old signature:", old_config_sig, "\n")
+      cat("New signature:", new_config_sig, "\n")
 
 
+     # CRITICAL: Exit if not on Dilution Analysis tab
+      if (is.null(input$advanced_qc_component) ||
+          length(input$advanced_qc_component) == 0 ||
+          input$advanced_qc_component != "Dilution Analysis") {
+        cat("Configuration changed but not on Dilution Analysis tab - skipping reload\n\n")
+        return()  # EXIT BEFORE ANY CLEANUP OR SETUP
+      }
 
+      cat("Reloading analysis with new configuration...\n\n")
 
+      # Show notification about config reload
+      showNotification(
+        "Study configuration changed.",
+        duration = 3,
+        type = "warning"
+      )
+    }
+
+    # Clean up before reload
+    if (!is.null(old_context)) {
+      removeNotification(id = "load_dilution_analysis")
+      dilution_analysis_active(FALSE)
+    }
+    # if (is.null(input$advanced_qc_component)) {
+    #   removeNotification(id = "load_dilution_analysis")
+    #   dilution_analysis_active(FALSE)
+    # }
+
+    if (input$readxMap_experiment_accession == "Click here") {
+      removeNotification(id = "load_dilution_analysis")
+      return()
+    }
+    # ========================================================================
+    # 5. SETUP NEW CONTEXT
+    # ========================================================================
+    cat("\n=== SETTING UP DILUTION ANALYSIS ===\n")
+    print(dilution_analysis_active())
+    if (context_changed) cat("Reason: Context changed\n")
+    if (config_changed) cat("Reason: Configuration changed\n")
+
+    current_context(new_context)
+    current_config_signature(new_config_sig)
+    dilution_analysis_active(TRUE)
+
+    showNotification(
+      id = "load_dilution_analysis",
+      HTML("Loading Dilution Analysis<span class = 'dots'>"),
+      duration = NULL,
+      type = "message"
+    )
+
+    # Extract study/experiment from context
+    context_parts <- strsplit(new_context, "::")[[1]]
+    selected_study <- context_parts[1]
+    selected_experiment <- context_parts[2]
+    selected_study_dilution_analysis_rv(selected_study)
+    selected_experiment_dilution_analysis_rv(selected_experiment)
+
+    # ========================================================================
+    # STEP 1: Use the already-parsed configuration
+    # ========================================================================
+    parsed_config <- isolate(parsed_config_with_signature()$config)
+    parsed_config_cache(parsed_config)
+
+    # ========================================================================
+    # STEP 2: Load all required data
+    # ========================================================================
+    loaded_data <- load_dilution_analysis_data(
+      study_accession = selected_study,
+      experiment_accession = selected_experiment,
+      project_id = userWorkSpaceID(),
+      conn = conn,
+      parsed_config = parsed_config
+    )
+    loaded_data_cache(loaded_data)
+
+    # ========================================================================
+    # STEP 3: Compute gated data
+    # ========================================================================
+    gated_result <- compute_gated_data(
+      study_accession = selected_study,
+      experiment_accession = selected_experiment,
+      project_id = userWorkSpaceID(),
+      conn = conn,
+      parsed_config = parsed_config
+    )
+    gated_data_cache(gated_result$data)
+
+    # ========================================================================
+    # STEP 4: Render validation messages
+    # ========================================================================
+    output$linear_message <- renderUI({
+      if (!is.null(gated_result$validation$linear) &&
+          !gated_result$validation$linear$present) {
+        HTML(paste0(
+          "<span style='font-size: 1.5em;'>",
+          gated_result$validation$linear$message,
+          " for ", selected_experiment, " in ", selected_study,
+          " using the ", parsed_config$background_method, " method for the blanks.</span>"
+        ))
+      } else {
+        NULL
+      }
+    })
+
+    output$quantifiable_message <- renderUI({
+      if (!is.null(gated_result$validation$quantifiable) &&
+          !gated_result$validation$quantifiable$present) {
+        HTML(paste0(
+          "<span style='font-size: 1.5em;'>",
+          gated_result$validation$quantifiable$message,
+          " for ", selected_experiment, " in ", selected_study,
+          " using the ", parsed_config$background_method, " method for the blanks.</span>"
+        ))
+      } else {
+        NULL
+      }
+    })
+
+    output$gate_message <- renderUI({
+      if (!is.null(gated_result$validation$gate) &&
+          !gated_result$validation$gate$present) {
+        HTML(paste0(
+          "<span style='font-size: 1.5em;'>",
+          gated_result$validation$gate$message,
+          " for ", selected_experiment, " in ", selected_study,
+          " using the ", parsed_config$background_method, " method for the blanks.</span>"
+        ))
+      } else {
+        NULL
+      }
+    })
+
+    # ========================================================================
+    # STEP 5: Render main UI
+    # ========================================================================
     output$dilutionAnalysisUI <- renderUI({
-      req(study_configuration)
-      #study_configuration_v <- study_configuration
+      req(dilution_analysis_active())
+      req(parsed_config_cache())
+
       tagList(
         fluidRow(
           column(12,
@@ -91,53 +797,45 @@ observeEvent(list(
                      title = "Dilution Analysis Methods",
                      tagList(
                        tags$p("Use 'Select Antigen' dropdown menu to select one or more antigens of interest to conduct dilution analysis on in the sample data.
-                     When the Dilution Analysis tab is loaded, all of the available dilutions are initially selected and shown in the ‘Select Dilutions’ dropdown menu.
-                     Dilutions can be manually excluded or included before running the dilution analysis by changing this selection."),
+                       When the Dilution Analysis tab is loaded, all of the available dilutions are initially selected and shown in the 'Select Dilutions' dropdown menu.
+                       Dilutions can be manually excluded or included before running the dilution analysis by changing this selection."),
 
-                    tags$p("The dilution analysis for the selected antigens begins by following a decision tree structure.
-                            When a standard curve is saved, sample values are gated and have attributes of being in the linear range and in the quantifiable range of the standard curve or not.
-                            Using these characteristics, a decision tree can be made to classify the sample points as either passing classification or not passing classification. "),
+                       tags$p("The dilution analysis for the selected antigens begins by following a decision tree structure.
+                              When a standard curve is saved, sample values are gated and have attributes of being in the linear range and in the quantifiable range of the standard curve or not.
+                              Using these characteristics, a decision tree can be made to classify the sample points as either passing classification or not passing classification. "),
 
-                    tags$p("Figure 1 depicts the decision tree that is produced based on the decisions that are selected above.
-                     Since a decision tree structure is used, when there are multiple decision nodes selected samples will pass classification
-                     if they are in the path where all the nodes are true."),
+                       tags$p("Figure 1 depicts the decision tree that is produced based on the decisions that are selected above.
+                       Since a decision tree structure is used, when there are multiple decision nodes selected samples will pass classification
+                       if they are in the path where all the nodes are true."),
 
-                    tags$p("Figure 2 depicts a barplot entitled with the selected experiment's name followed by 'Proportion of Subjects by Antigen, Dilution Factor, and Concentration Status.
-                    The antigens are sorted by the antigen order as defined by the researcher in the study configuration options."),
+                       tags$p("Figure 2 depicts a barplot entitled with the selected experiment's name followed by 'Proportion of Subjects by Antigen, Dilution Factor, and Concentration Status.
+                      The antigens are sorted by the antigen order as defined by the researcher in the study configuration options."),
 
-                    tags$p("Table 1, titled 'Number of Subjects Passing Classification by Timepoint, Concentration Status, and Number of Passing Dilutions'.
-                      This contingency table lists the number of passing dilutions in the first column, with the number of subjects
-                             having that number of passing dilutions across the rows at each timepoint in the experiment for each concentration status.
-                             To view which subjects have a particular number of passing dilutions and concentration status at a particular time point,
-                             either double click a cell in the table or select a time point, concentration status, number of dilutions from the dropdown menus below the table titled ‘Number of Passing Dilutions’ ,
-                             'Select Concentration Status', and 'Select Timepoint' respectively. The color of each cell with patient counts represents how the arbitrary units are treated in the final calculation of the
-                             analysis and correspond to the options which are colored by the option selected in the study configuration tab. A legend is provided with this color mapping. "),
+                       tags$p("Table 1, titled 'Number of Subjects Passing Classification by Timepoint, Concentration Status, and Number of Passing Dilutions'.
+                        This contingency table lists the number of passing dilutions in the first column, with the number of subjects
+                               having that number of passing dilutions across the rows at each timepoint in the experiment for each concentration status.
+                               To view which subjects have a particular number of passing dilutions and concentration status at a particular time point,
+                               either double click a cell in the table or select a time point, concentration status, number of dilutions from the dropdown menus below the table titled 'Number of Passing Dilutions' ,
+                               'Select Concentration Status', and 'Select Timepoint' respectively. The color of each cell with patient counts represents how the arbitrary units are treated in the final calculation of the
+                               analysis and correspond to the options which are colored by the option selected in the study configuration tab. A legend is provided with this color mapping. "),
 
-                    tags$p("Figure 3 is displayed when the subjects who are passing are populated in the passing subjects selector.
-                     Figure 3 depicts the plate dilution series, with log10 plate dilution on the x-axis and arbitrary units on the y-axis.
-                     All of the subjects who are passing are selected by default and each subject's data is represented by its own line.
-                     The color of the points indicates whether the dilution passes classification: blue for passing and red for not passing. "),
+                       tags$p("Figure 3 is displayed when the subjects who are passing are populated in the passing subjects selector.
+                       Figure 3 depicts the plate dilution series, with log10 plate dilution on the x-axis and arbitrary units on the y-axis.
+                       All of the subjects who are passing are selected by default and each subject's data is represented by its own line.
+                       The color of the points indicates whether the dilution passes classification: blue for passing and red for not passing. "),
 
-                    tags$p("Table 2, entitled 'Dilution Analysis Sample Output' displays the sample data for all timepoints for the selected antigen and includes a row for how the
-                     processed AU is calculated (au_treatment) which corresponds to the color of the cell, the decision nodes used in the decision tree (decision_nodes),
-                     the background method which is selected from study overview in the standard curve options and the processed au (procesed_au).")
-
-
-
-
-
-                     ), # end tagList
+                       tags$p("Table 2, entitled 'Dilution Analysis Sample Output' displays the sample data for all timepoints for the selected antigen and includes a row for how the
+                       processed AU is calculated (au_treatment) which corresponds to the color of the cell, the decision nodes used in the decision tree (decision_nodes),
+                       the background method which is selected from study overview in the standard curve options and the processed au (procesed_au).")
+                     ),
                      style = "success"
-                   )# end bsCollapsePanel
-                 ), # end bsCollapse
+                   )
+                 ),
                  mainPanel(
                    uiOutput("parameter_dependencies"),
                    tabsetPanel(
-
-                     # ==== TAB 1: QUALITY CLASSIFICATION ====
                      tabPanel(
                        title = "Quality Classification",
-
                        br(),
                        grVizOutput("decision_tree", width = "75vw"),
                        br(),
@@ -149,25 +847,19 @@ observeEvent(list(
                        br(),
                        uiOutput("download_dilution_contingency_summary"),
                        br(),
-
                        fluidRow(
                          column(6, uiOutput("dilution_selector_UI")),
                          column(6, uiOutput("antigen_selector_UI"))
                        ),
-
                        div(style = "overflow-x: auto; width: 75vw;",
                            DT::dataTableOutput("margin_table_antigen")
                        ),
-
                        div(style = "width: 75vw;", uiOutput("color_legend")),
                        uiOutput("download_classified_sample_UI"),
                        br()
                      ),
-
-                     # ==== TAB 2: SUBJECT LEVEL INSPECTION ====
                      tabPanel(
                        title = "Subject Level Inspection",
-
                        select_group_ui(
                          id = "da_filters",
                          params = list(
@@ -176,165 +868,37 @@ observeEvent(list(
                            timeperiod = list(inputId = "timeperiod", label = "Select Timepoint", multiple = FALSE)
                          )
                        ),
-
                        uiOutput("passing_subject_selection"),
                        plotlyOutput("patient_dilution_series_plot", width = "75vw")
                      ),
-
-                     # ==== TAB 3: DILUTION OUTPUT DATA ====
                      tabPanel(
                        title = "Dilution Analysis Output Dataset",
-
                        DT::dataTableOutput("final_average_au_table"),
                        br(),
                        downloadButton("download_average_au_table_UI",
                                       label = "Download Processed Dilution Data")
                      )
                    )
-
-                #    br(),
-                #    grVizOutput("decision_tree", width = "75vw"),
-                #    br(),
-                #    uiOutput("linear_message"),
-                #    uiOutput("quantifiable_message"),
-                #    uiOutput("gate_message"),
-                #    br(),
-                #    plotlyOutput("dilution_summary_barplot", width = "75vw"),
-                #    br(),
-                #    uiOutput("download_dilution_contingency_summary"),
-                #    br(),
-                #   # tableOutput("view_classified_merged"),
-                #   # br(),
-                #    fluidRow(column(6, uiOutput("dilution_selector_UI")),
-                #             column(6, uiOutput("antigen_selector_UI"))),
-                #    div(style = "overflow-x: auto; width: 75vw;",
-                #    DT::dataTableOutput("margin_table_antigen")),
-                #    div(style = "width: 75vw;", uiOutput("color_legend")),
-                #    uiOutput("download_classified_sample_UI"),
-                #    br(),
-                # bsCollapse(
-                #   id = "da_subject_level_inspection",
-                #   bsCollapsePanel(
-                #     title = "Subject Level Inspection",
-                #     select_group_ui(
-                #       id = "da_filters",
-                #       params = list(list(inputId = "n_pass_dilutions", label = "Number of Passing Dilutions", multiple = F),
-                #                     list(inputId = "concentration_status", label = "Select Concentration Status", multiple = F),
-                #                     timeperiod = list(inputId = "timeperiod", label = "Select Timepoint", multiple = F))
-                #     ),
-                #     uiOutput("passing_subject_selection"),
-                #     plotlyOutput("patient_dilution_series_plot", width = "75vw"),
-                #     style = "primary"
-                #   )
-                # ),
-                #   bsCollapse(
-                #     id = "da_datasets",
-                #     bsCollapsePanel(
-                #       title = "Dilution Analysis Output Dataset",
-                #      DT::dataTableOutput("final_average_au_table"),
-                #       br(),
-                #       downloadButton("download_average_au_table_UI", label = "Download Processed Dilution Data"),
-                #       style = "primary"
-                #     )
-                #   )
-                #
-
-
-                # bsCollapse(
-                #   id = "da_linearity",
-                #   bsCollapsePanel(
-                #     title = "Dilution Linearity",
-                #     fluidRow(column(6,
-                #     uiOutput("response_selectionUI")),
-                #     column(6,uiOutput("plate_lm_selectionUI"))),
-                #     plotlyOutput("facet_lm_plot", width = "75vw"),
-                #     style = "primary"
-                #   )
-                # ),
-                # bsCollapse(
-                #   id = "linearity_stats",
-                #   bsCollapsePanel(
-                #     title = "Summary Statistics",
-                #     div(class = "table-container", tableOutput("facet_model_glance")),
-                #     style = "primary"
-                #   )
-                # )
-                 ) # end mainPanel
                  )
           )
         )
+      )
     })
 
-    ## Box noting parameter dependencies
-    output$parameter_dependencies <- renderUI({
-     tagList(bsCollapse(
-        id = "param_dependencies",
-        bsCollapsePanel(
-          title = "Parameter Dependencies",
-          HTML(
-            "The decision tree is dependent on the selection of the type of sample limit and the order in which they are chosen.<br>
-         In addition, the method selected for Blank Control influences the classification of the concentration status, as parameter estimates can vary depending on how the blanks
-         are treated when fitting standard curves.<br>
-         The final treatment of the arbitrary units is dependent on the selection chosen corresponding to the treatment for the combination of number of passing dilutions and concentration status.<br>
-         The order of the timeperiods in the table 'Number of Subjects Passing Classification by Timepoint, Concentration Status, and Number of Passing Dilutions' is ordered by the timeperiod order set in the study parameters. <br>
-         For dilutional linearity when the resposne is MFI the determination of if it is log10 of MFI or raw MFI is made in the study configuration for use log units for MFI control."
-          ),
-          style = "info"
-        )
-      ),
-      actionButton("to_study_parameters", label = "Return to Change Study Settings")
-     )
-    })
-
-    # Switch tabs when click button
-    observeEvent(input$to_study_parameters, {
-      updateTabItems(session, inputId = "study_tabs", selected = "study_settings")
-    })
-
-
-
-    ### Decision tree
+    # ========================================================================
+    # STEP 6: Build decision tree
+    # ========================================================================
     decision_tree_reactive <- reactive({
-      #req(input$inLoadedData == "Dilution Analysis")
-      req(input$advanced_qc_component == "Dilution Analysis")
-      req(study_configuration)
+      req(dilution_analysis_active())
+      req(parsed_config_cache())
 
-      is_binary <- study_configuration[study_configuration$param_name == "is_binary_gc",]$param_boolean_value
-      node_order <- strsplit(study_configuration[study_configuration$param_name == "node_order",]$param_character_value, ",")[[1]]
-      sufficient_gc <- strsplit(study_configuration[study_configuration$param_name == "valid_gate_class",]$param_character_value, ",")[[1]]
-
-      replacements <- c(limits_of_detection = "gate", linear_region = "linear", limits_of_quantification = "quantifiable")
-      node_order <- ifelse(node_order %in% names(replacements), replacements[node_order], node_order)
-
-      # replacements_gate <- c(Between_Limits_of_Detection = "Between_Limits", Above_Upper_Limit_of_Detection = "Above_Upper_Limit", Below_Lower_Limit_of_Detection = "Below_Lower_Limit")
-      # sufficient_gc <- ifelse(sufficient_gc %in% names(replacements_gate), replacements_gate[sufficient_gc], sufficient_gc)
-
-      # Create truth table inline
-      truth_table <- create_truth_table(
-        binary_gate = is_binary,
-        exclude_linear = FALSE,
-        exclude_quantifiable = FALSE,
-        exclude_gate = FALSE
-      )
-
-      # Create decision tree
-      decision_tree <- create_decision_tree_tt(
-        truth_table = truth_table,
-        binary_gate = is_binary,
-        sufficient_gc_vector = sufficient_gc,
-        node_order = node_order
-      )
-
-      decision_tree
+      build_decision_tree(parsed_config_cache())
     })
 
-
-    ## Decision Tree Plot
     output$decision_tree <- renderGrViz({
       req(decision_tree_reactive())
 
       decision_tree <- decision_tree_reactive()
-
       dot_string <- paste(
         "digraph tree {",
         paste(get_edges(decision_tree), collapse = "; "),
@@ -342,396 +906,201 @@ observeEvent(list(
         sep = "\n"
       )
       grViz(dot_string)
-      #decision_tree$ToDiagrammeRGraph()
     })
 
-
-
-    # Summary data for contingency table with dilutions
-      # summary_gated_data_rv <- reactive({
-      #    req(study_configuration)
-      #
-      #   cat("in reactive summary")
-      #     cat(selected_study)
-      #     cat(selected_experiment)
-      #
-      #     node_order_in <- strsplit(study_configuration[study_configuration$param_name == "node_order",]$param_character_value, ",")[[1]]
-      #
-      #     gated_data <- calculate_sample_concentration_status(study_accession = selected_study, experiment_accession = selected_experiment, node_order = node_order_in)
-      #     return(gated_data)
-      # })
-
-    # summary_gated_data_rv <- reactive({
-    #   req(input$main_tabs == "view_files_tab")
-    #   req(input$inLoadedData == "Dilution Analysis")
-    #   if (input$inLoadedData != "Dilution Analysis") {
-    #     return(NULL)
-    #   }
-    #  # selected_study
-    #   selected_experiment
-    #   req(study_configuration)
-    #   cat("in reactive summary")
-    #   cat(selected_study)
-    #   cat(selected_experiment)
-    #
-    #   node_order_in <- strsplit(study_configuration[study_configuration$param_name == "node_order",]$param_character_value, ",")[[1]]
-    #   valid_gc_in <- strsplit(study_configuration[study_configuration$param_name == "valid_gate_class",]$param_character_value, ",")[[1]]
-    #   background_control_method <- study_configuration[study_configuration$param_name == "blank_option",]$param_character_value
-    #   is_log_mfi_axis <- as.logical(toupper(study_configuration[study_configuration$param_name == "is_log_mfi_axis",]$param_boolean_value))
-    #
-    #   replacements <- c(limits_of_detection = "gate", linear_region = "linear", limits_of_quantification = "quantifiable")
-    #   node_order_in <- ifelse(node_order_in %in% names(replacements), replacements[node_order_in], node_order_in)
-    #
-    #   replacements_gate <- c(Between_Limits_of_Detection = "Between_Limits", Above_Upper_Limit_of_Detection = "Above_Upper_Limit", Below_Lower_Limit_of_Detection = "Below_Lower_Limit")
-    #   valid_gc_in <- ifelse(valid_gc_in %in% names(replacements_gate), replacements_gate[valid_gc_in], valid_gc_in)
-    #
-    #   cat("\nbefore joined data")
-    #   joined_data <- join_sample_standard_data(study_accession = selected_study,
-    #                                            experiment_accession = selected_experiment,
-    #                                            bkg_method = background_control_method,
-    #                                            node_order = node_order_in,
-    #                                            is_log_mfi_axis = is_log_mfi_axis,
-    #                                            valid_gate_class = valid_gc_in)
-    #   print(nrow(joined_data))
-    #   cat("\n after joined data")
-    #   if ("linear" %in% node_order_in) {
-    #     joined_data <- joined_data[!is.na(joined_data$in_linear_region), ]
-    #     if (nrow(joined_data) == 0) {
-    #       output$linear_message <- renderUI({
-    #         req(study_configuration)
-    #         node_order_in <- strsplit(study_configuration[study_configuration$param_name == "node_order",]$param_character_value, ",")[[1]]
-    #         background_control_method <- study_configuration[study_configuration$param_name == "blank_option",]$param_character_value
-    #         HTML(paste("<span style='font-size: 1.5em;'> No samples found in the in the linear region for ",selected_experiment, " in ",
-    #                    selected_study, " using the ", background_control_method, " method for the blanks."))
-    #       })
-    #     } else {
-    #       output$linear_message <- renderUI({
-    #         NULL
-    #       })
-    #     }
-    #   }
-    #   if ("quantifiable" %in% node_order_in) {
-    #     joined_data <- joined_data[!is.na(joined_data$in_quantifiable_range), ]
-    #     if (nrow(joined_data) == 0) {
-    #       output$quantifiable_message <- renderUI({
-    #         req(study_configuration)
-    #         node_order_in <- strsplit(study_configuration[study_configuration$param_name == "node_order",]$param_character_value, ",")[[1]]
-    #         background_control_method <- study_configuration[study_configuration$param_name == "blank_option",]$param_character_value
-    #         HTML(paste("<span style='font-size: 1.5em;'> No samples found in the in the quantifiable range for ",selected_experiment, " in ",
-    #                    selected_study, " using the ", background_control_method, " method for the blanks."))
-    #       })
-    #     } else {
-    #       output$quantifiable_message <- renderUI({
-    #         NULL
-    #       })
-    #     }
-    #   }
-    #   if ("gate" %in% node_order_in) {
-    #     joined_data <-  joined_data[!is.na(joined_data$llod) & !is.na(joined_data$ulod), ]
-    #
-    #     if (nrow(joined_data) == 0) {
-    #       output$gate_message <- renderUI({
-    #         req(study_configuration)
-    #         node_order_in <- strsplit(study_configuration[study_configuration$param_name == "node_order",]$param_character_value, ",")[[1]]
-    #         background_control_method <- study_configuration[study_configuration$param_name == "blank_option",]$param_character_value
-    #         HTML(paste("<span style='font-size: 1.5em;'> No samples found in the passing Limit of Detection ",selected_experiment, " in ",
-    #                    selected_study, " using the ", background_control_method, " method for the blanks."))
-    #       })
-    #     } else {
-    #       output$gate_message <- renderUI({
-    #         NULL
-    #       })
-    #     }
-    #   }
-    #
-    #
-    #   print(str(joined_data))
-    #  joined_data <<- joined_data
-    #   return(joined_data)
-    # })
-
-
+    # ========================================================================
+    # STEP 7: Summary plot
+    # ========================================================================
     output$dilution_summary_barplot <- renderPlotly({
-     # req(input$inLoadedData == "Dilution Analysis")
-      req(input$advanced_qc_component == "Dilution Analysis")
-      # if (input$inLoadedData != "Dilution Analysis") {
-      #   return(NULL)
-      # }
-      req(selected_study)
-      req(selected_experiment)
-    #  req(summary_gated_data_rv())
-      req(study_configuration)
+      req(dilution_analysis_active())
+      req(gated_data_cache())
+      req(parsed_config_cache())
 
-      node_order_in <- strsplit(study_configuration[study_configuration$param_name == "node_order",]$param_character_value, ",")[[1]]
+      isolate({
+        gated_data_n <- gated_data_cache()
 
-      gated_data_n <- calculate_sample_concentration_status_new(conn = conn,                # DBI connection object
-                                                                study_accession = selected_study,
-                                                                experiment_accession = selected_experiment,
-                                                                project_id = userWorkSpaceID(),
-                                                                node_order = node_order_in)
+        antigen_family_df <- fetch_antigen_family_df(
+          study_accession = selected_study,
+          project_id = userWorkSpaceID()
+        )
 
-      #gated_data <- calculate_sample_concentration_status(study_accession = selected_study, experiment_accession = selected_experiment, node_order = node_order_in)
+        contigency_summary_dilution <- produce_contigency_summary(gated_data_n)
 
-      antigen_family_df <- fetch_antigen_family_df(study_accession = selected_study, project_id = userWorkSpaceID())
-      antigen_family_order_in <- strsplit(study_configuration[study_configuration$param_name == "antigen_family_order",]$param_character_value, ",")[[1]]
-      contigency_summary_dilution <- produce_contigency_summary(gated_data_n)
-      summary_dilution_plot(dilution_summary_df = contigency_summary_dilution,
-                            antigen_families = antigen_family_df,
-                            antigen_family_order = antigen_family_order_in)
-
+        summary_dilution_plot(
+          dilution_summary_df = contigency_summary_dilution,
+          antigen_families = antigen_family_df,
+          antigen_family_order = parsed_config_cache()$antigen_family_order
+        )
+      })
     })
 
+    # ========================================================================
+    # STEP 8: Download handlers
+    # ========================================================================
     output$download_dilution_contingency_summary <- renderUI({
-      req(selected_study)
-      req(selected_experiment)
-
-      # node_order_in <- strsplit(study_configuration[study_configuration$param_name == "node_order",]$param_character_value, ",")[[1]]
-      #
-      # gated_data <- calculate_sample_concentration_status(study_accession = selected_study, experiment_accession = selected_experiment, node_order = node_order_in)
-      #
-      # contigency_summary_dilution <- produce_contigency_summary(gated_data)
-      # download_dilution_contigency_summary_fun(download_df = contigency_summary_dilution,
-      #                                          selected_study = selected_study,
-      #                                          selected_experiment = selected_experiment)
-      button_label <-  paste0("Download Dilution Summary ", selected_experiment, "-", selected_study)
-
+      req(selected_study, selected_experiment)
+      button_label <- paste0("Download Dilution Summary ", selected_experiment, "-", selected_study)
       downloadButton("download_dilution_contingency_summary_handle", button_label)
     })
 
-    output$download_dilution_contingency_summary_handle <-  downloadHandler(
+    output$download_dilution_contingency_summary_handle <- downloadHandler(
       filename = function() {
-        paste(input$readxMap_study_accession, input$readxMap_experiment_accession, "dilution_summary.csv", sep = "_")
+        paste(selected_study, selected_experiment, "dilution_summary.csv", sep = "_")
       },
       content = function(file) {
-        req(selected_study)
-        req(selected_experiment)
-        node_order_in <- strsplit(study_configuration[study_configuration$param_name == "node_order",]$param_character_value, ",")[[1]]
-
-        gated_data <- calculate_sample_concentration_status_new(conn = conn,
-                                                                study_accession = selected_study,
-                                                                experiment_accession = selected_experiment,
-                                                                project_id = userWorkSpaceID(),
-                                                                node_order = node_order_in)
-
-        contigency_summary_dilution <- produce_contigency_summary(gated_data)
-
-        # download data component (data frame)
+        req(dilution_analysis_active())
+        req(gated_data_cache())
+        contigency_summary_dilution <- produce_contigency_summary(gated_data_cache())
         write.csv(contigency_summary_dilution, file, row.names = FALSE)
       }
     )
 
-
-
-
-    ##### Narrow down on dilutions
-    # Dilution Selection
+    # ========================================================================
+    # STEP 9: Selectors
+    # ========================================================================
     output$dilution_selector_UI <- renderUI({
-     # req(input$inLoadedData == "Dilution Analysis")
-      req(study_configuration)
-      node_order_in <- strsplit(study_configuration[study_configuration$param_name == "node_order",]$param_character_value, ",")[[1]]
+      req(dilution_analysis_active())
+      req(gated_data_cache())
 
-      gated_data <- calculate_sample_concentration_status_new(conn = conn,
-                                                              study_accession = selected_study,
-                                                              experiment_accession = selected_experiment,
-                                                              project_id = userWorkSpaceID(),
-                                                              node_order = node_order_in)
+      gated_data <- gated_data_cache()
 
-      # req(summary_gated_data_rv())
-    #  req(nrow(summary_gated_data_rv()) > 0)
-    #  req(nrow(gated_data) > 0)
-      if (nrow(gated_data) == 0) {
-        return(NULL)
-      }
+      if (nrow(gated_data) == 0) return(NULL)
 
-      selectInput("dilution_da_selector",
-                  label = "Select Dilutions",
-                  choices = unique(na.omit(gated_data$dilution)),
-                  multiple = T,
-                  # include all dilutions initially
-                  selected = unique(na.omit(gated_data$dilution)))
-    })
-
-    # antigen selector
-    output$antigen_selector_UI <- renderUI({
-     # req(input$inLoadedData == "Dilution Analysis")
-      req(study_configuration)
-      req(input$dilution_da_selector)
-      req(nrow(study_configuration) > 0)
-      cat("in antigen selector")
-      antigen_choices <- strsplit(study_configuration[study_configuration$param_name == "antigen_order",]$param_character_value, ",")[[1]]
-      if (all(is.na(antigen_choices))) {
-        #req(summary_gated_data_rv())
-        node_order_in <- strsplit(study_configuration[study_configuration$param_name == "node_order",]$param_character_value, ",")[[1]]
-
-        gated_data <- calculate_sample_concentration_status_new(conn = conn,
-                                                                study_accession = selected_study,
-                                                                experiment_accession = selected_experiment,
-                                                                project_id = userWorkSpaceID(),
-                                                                node_order = node_order_in)
-
-        antigen_choices <-  unique(gated_data$antigen)
-      }
-
-      selectInput("antigen_da_selector",
-                  label = "Select Antigen",
-                  choices = antigen_choices,
-                  multiple = F)
-    })
-
-    ## Data
-    # positive_controls_rv <- reactive({
-    #   req(controls)
-    #   req(input$antigen_da_selector)
-    #   positive_controls <- controls[controls$antigen %in% input$antigen_da_selector,]
-    #   return(positive_controls)
-    #
-    # })
-
-    # buffer_data_filtered_rv <- reactive({
-    #   req(buffer_data)
-    #   req(input$antigen_da_selector)
-    #   buffer_data_filtered <- buffer_data[buffer_data$antigen %in% input$antigen_da_selector,]
-    #   return(buffer_data_filtered)
-    # })
-
-    std_curve_data_filtered_rv <- reactive({
-      req(std_curve_data)
-      req(input$antigen_da_selector)
-      std_curve_data_filtered <- std_curve_data[std_curve_data$antigen %in% input$antigen_da_selector,]
-      return(std_curve_data_filtered)
-    })
-
-
-    # Filter the classified  merged
-    classified_merged_rv <- reactive({
-
-      # id <- showNotification("Calculating Classified Merged ", duration = NULL, closeButton = F)
-      # on.exit(removeNotification(id), add = T)
-
-      if (is.null(input$advanced_qc_component) || input$advanced_qc_component != "Dilution Analysis") {
-        return(NULL)
-      }
-
-
-
-
-     # req(input$inLoadedData == "Dilution Analysis")
-      # req(input$inLoadedData)
-      # if (input$inLoadedData != "Dilution Analysis") {
-      #   if (nrow(summary_gated_data_rv()) == 0 || is.null(summary_gated_data_rv())) {
-      #     return(NULL)
-      #   }
-      #  # req(nrow(summary_gated_data_rv()) > 0)
-      # }
-
-      req(study_configuration)
-     # req(summary_gated_data_rv())
-     # req(nrow(summary_gated_data_rv()) > 0)
-      req(input$dilution_da_selector)
-
-      node_order_in <- strsplit(study_configuration[study_configuration$param_name == "node_order",]$param_character_value, ",")[[1]]
-
-      gated_data <- calculate_sample_concentration_status_new(conn = conn,
-                                                              study_accession = selected_study, experiment_accession = selected_experiment,
-                                                              project_id = userWorkSpaceID(),
-                                                              node_order = node_order_in)
-      if (nrow(gated_data) == 0) {
-        return(NULL)
-      }
-       da_subjtime <- compute_classified_merged_update(
-        classified_sample = gated_data,
-        selectedDilutions = input$dilution_da_selector,
-        study_configuration = study_configuration
+      selectInput(
+        "dilution_da_selector",
+        label = "Select Dilutions",
+        choices = unique(na.omit(gated_data$dilution)),
+        multiple = TRUE,
+        selected = unique(na.omit(gated_data$dilution))
       )
-      cat("Names of da_subjtime")
-      print(names(da_subjtime))
+    })
 
-     # print(table(da_subjtime$n_pass_d, da_subjtime$au_treatment))
-     # clm <<- da_subjtime # Download this
-      removeNotification(id = "load_dilution_analysis")
+    output$antigen_selector_UI <- renderUI({
+      req(dilution_analysis_active())
+      req(parsed_config_cache())
+      req(gated_data_cache())
 
-      return(da_subjtime)
+      antigen_choices <- parsed_config_cache()$antigen_order
+
+      if (all(is.na(antigen_choices))) {
+        antigen_choices <- unique(gated_data_cache()$antigen)
+      }
+
+      selectInput(
+        "antigen_da_selector",
+        label = "Select Antigen",
+        choices = antigen_choices,
+        multiple = FALSE
+      )
+    })
+
+    # ========================================================================
+    # STEP 10: Filtered standard curve data
+    # ========================================================================
+    std_curve_data_filtered_rv <- reactive({
+      req(loaded_data_cache()$std_curve)
+      req(input$antigen_da_selector)
+
+      std_curve <- loaded_data_cache()$std_curve
+      std_curve[std_curve$antigen %in% input$antigen_da_selector, ]
+    })
+
+    # ========================================================================
+    # STEP 11: Classified merged data
+    # ========================================================================
+    classified_merged_rv <- reactive({
+      req(input$advanced_qc_component == "Dilution Analysis")
+      req(gated_data_cache())
+      req(parsed_config_cache())
+      req(input$dilution_da_selector)
+
+      gated_data <- gated_data_cache()
+
+      if (nrow(gated_data) == 0) return(NULL)
+
+      clm <- compute_classified_data(
+        gated_data = gated_data,
+        selected_dilutions = input$dilution_da_selector,
+        parsed_config = parsed_config_cache()
+      )
+
+      # clm_v <<- clm
+
+      if ("n_pass_d" %in% names(clm)) {
+        cat("Renaming 'n_pass_d' to 'n_pass_dilutions'\n")
+        names(clm)[names(clm) == "n_pass_d"] <- "n_pass_dilutions"
+      }
+
+
+
+
+      return(clm)
+
 
     })
 
-
+    # ========================================================================
+    # STEP 12: Margin table
+    # ========================================================================
     antigen_margin_table <- reactive({
-      # id <- showNotification("Calculating Margin Table for Dilution Analysis", duration = NULL, closeButton = F)
-      # on.exit(removeNotification(id), add = T)
-      # if (is.null(input$inLoadedData) || input$inLoadedData != "Dilution Analysis") {
-      #   return(NULL)
-      # }
-    #   req(input$inLoadedData)
-    # #  req(input$inLoadedData == "Dilution Analysis") # Only reload when on dilution analysis tab
-    #   if (input$inLoadedData != "Dilution Analysis") {
-    #     return(NULL)
-    #   }
       req(classified_merged_rv())
       req(input$antigen_da_selector)
       req(input$dilution_da_selector)
-      req(study_configuration)
-      db_time_order <- strsplit(study_configuration[study_configuration$param_name == "timeperiod_order",]$param_character_value, ",")[[1]]
-      cat("merged table reactive names")
-      print(names(classified_merged_rv()))
-     #if (is.null(updated_classified_merged_rv())) {
-        margin_table <- produce_margin_table(classified_merged = classified_merged_rv() , selectedAntigen = input$antigen_da_selector,
-                                             selectedDilutions = input$dilution_da_selector,
-                                             time_order = db_time_order)
+      req(parsed_config_cache())
 
+      cat("\n=== PRODUCING MARGIN TABLE ===\n")
+      cat("Selected antigen:", input$antigen_da_selector, "\n")
 
-        return(margin_table)
-      # } else {
-      #   return(updated_margin_antigen_rv())
-      # }
-   #   return(margin_table)
+      produce_margin_table(
+        classified_merged = classified_merged_rv(),
+        selectedAntigen = input$antigen_da_selector,
+        selectedDilutions = input$dilution_da_selector,
+        time_order = parsed_config_cache()$timeperiod_order
+      )
     })
-   #
+
     output$margin_table_antigen <- renderDataTable({
+      req(dilution_analysis_active())
       req(antigen_margin_table())
 
       timeperiod_colors <- names(antigen_margin_table())[grepl(pattern = "color", names(antigen_margin_table()))]
-      dt <- DT::datatable(antigen_margin_table(),
-                          caption = 'Number of Subjects Passing Classification by Timepoint, Concentration Status, and Number of Passing Dilutions',
-                          selection = list(target = 'cell', mode = "single"),
-                          rownames = F, # all numbers in JS are -1 then before.
-                          options = list(columnDefs = list(list(visible=FALSE, targets= timeperiod_colors)),
-                                         rowCallback = JS(
-                                           'function(row, data, index) {
-            // Disable the "Number of Pass Dilutions" column (index of column 1)
-            $("td:nth-child(1)", row).css("background-color", "#f2f2f2");
-            $("td:nth-child(1)", row).addClass("disabled");
-            $("td:nth-child(1)", row).on("click", function(e) {
-              e.stopPropagation();
-              return false; // Disable click on first column
-            });
-            // Disable click on second column
-            $("td:nth-child(2)", row).css("background-color", "#f2f2f2");
-                    $("td:nth-child(2)", row).addClass("disabled");
-                    $("td:nth-child(2)", row).on("click", function(e) {
-                      e.stopPropagation();
-                      return false; // Disable click on second column
-                    });
 
-
-            // Disable the row with "Total as Number of Passing Dilutions"
-            if (data[0] === "Total") {
-              $(row).find("td").css("background-color", "#f2f2f2");  // Optional: color for the row
-              $(row).find("td").addClass("disabled");
-              $(row).find("td").on("click", function(e) {
-                e.stopPropagation();
-                return false; // Disable click on the row
-              });
-            }
-          }'
-                                         ) # end RowCallback
-                          )
+      dt <- DT::datatable(
+        antigen_margin_table(),
+        caption = 'Number of Subjects Passing Classification by Timepoint, Concentration Status, and Number of Passing Dilutions',
+        selection = list(target = 'cell', mode = "single"),
+        rownames = FALSE,
+        options = list(
+          columnDefs = list(list(visible = FALSE, targets = timeperiod_colors)),
+          rowCallback = JS(
+            'function(row, data, index) {
+                $("td:nth-child(1)", row).css("background-color", "#f2f2f2");
+                $("td:nth-child(1)", row).addClass("disabled");
+                $("td:nth-child(1)", row).on("click", function(e) {
+                  e.stopPropagation();
+                  return false;
+                });
+                $("td:nth-child(2)", row).css("background-color", "#f2f2f2");
+                $("td:nth-child(2)", row).addClass("disabled");
+                $("td:nth-child(2)", row).on("click", function(e) {
+                  e.stopPropagation();
+                  return false;
+                });
+                if (data[0] === "Total") {
+                  $(row).find("td").css("background-color", "#f2f2f2");
+                  $(row).find("td").addClass("disabled");
+                  $(row).find("td").on("click", function(e) {
+                    e.stopPropagation();
+                    return false;
+                  });
+                }
+              }'
+          )
+        )
       )
 
       id_cols <- c("Number of Passing Dilutions", "Concentration Status")
-      #
       timeperiods <- setdiff(names(antigen_margin_table()), c(id_cols, timeperiod_colors))
-
-      # match order of time periods to that in the table columns.
       timeperiod_colors <- timeperiod_colors[match(timeperiods, sub("_color$", "", timeperiod_colors))]
 
       for(i in 1:length(timeperiods)) {
@@ -741,58 +1110,59 @@ observeEvent(list(
         dt <- dt %>% formatStyle(
           dil_col,
           valueColumns = dil_color,
-          backgroundColor = styleEqual(c("all_au", "passing_au", "geom_all_au", "geom_passing_au", "replace_blank", "replace_positive_control",
-                                         "exclude_au", "Blank"), c("#a1caf1", "lightgrey", '#c2b280', '#875692','#008856','#dcd300','#b3446c', 'white'))
+          backgroundColor = styleEqual(
+            c("all_au", "passing_au", "geom_all_au", "geom_passing_au",
+              "replace_blank", "replace_positive_control", "exclude_au", "Blank"),
+            c("#a1caf1", "lightgrey", '#c2b280', '#875692', '#008856',
+              '#dcd300', '#b3446c', 'white')
+          )
         )
       }
 
+      removeNotification(id = "load_dilution_analysis")
       return(dt)
     })
-
-
 
     output$color_legend <- renderUI({
       div(
         style = "margin-bottom: 15px;",
         tags$b("Cell Color Legend:  "),
-
-        tags$span(style = "display: inline-block; width: 15px; height: 15px; background-color: #a1caf1; border: 1px solid black; margin-right: 5px;"), "Keep all AU Measurements",
-        tags$span(style = "display: inline-block; width: 15px; height: 15px; background-color: lightgrey; border: 1px solid black; margin: 0 5px 0 15px;"), "Keep Passing AU Measurements",
-        tags$span(style = "display: inline-block; width: 15px; height: 15px; background-color: #c2b280; border: 1px solid black; margin: 0 5px 0 15px;"), "Geometric Mean of all AU Measurements",
-        tags$span(style = "display: inline-block; width: 15px; height: 15px; background-color: #875692; border: 1px solid black; margin: 0 5px 0 15px;"), "Geometric Mean of passing AU Measurements",
-        tags$span(style = "display: inline-block; width: 15px; height: 15px; background-color: #008856; border: 1px solid black; margin: 0 5px 0 15px;"), "Replace AU Measurements with Geometric Mean of blank AUs",
-        tags$span(style = "display: inline-block; width: 15px; height: 15px; background-color: #b3446c; border: 1px solid black; margin: 0 5px 0 15px;"), "Exclude AU Measurements",
-        tags$span(style = "display: inline-block; width: 15px; height: 15px; background-color: white; border: 1px solid black; margin: 0 5px 0 15px;"), "No Subjects Present"
+        tags$span(style = "display: inline-block; width: 15px; height: 15px; background-color: #a1caf1; border: 1px solid black; margin-right: 5px;"),
+        "Keep all AU Measurements",
+        tags$span(style = "display: inline-block; width: 15px; height: 15px; background-color: lightgrey; border: 1px solid black; margin: 0 5px 0 15px;"),
+        "Keep Passing AU Measurements",
+        tags$span(style = "display: inline-block; width: 15px; height: 15px; background-color: #c2b280; border: 1px solid black; margin: 0 5px 0 15px;"),
+        "Geometric Mean of all AU Measurements",
+        tags$span(style = "display: inline-block; width: 15px; height: 15px; background-color: #875692; border: 1px solid black; margin: 0 5px 0 15px;"),
+        "Geometric Mean of passing AU Measurements",
+        tags$span(style = "display: inline-block; width: 15px; height: 15px; background-color: #008856; border: 1px solid black; margin: 0 5px 0 15px;"),
+        "Replace AU Measurements with Geometric Mean of blank AUs",
+        tags$span(style = "display: inline-block; width: 15px; height: 15px; background-color: #b3446c; border: 1px solid black; margin: 0 5px 0 15px;"),
+        "Exclude AU Measurements",
+        tags$span(style = "display: inline-block; width: 15px; height: 15px; background-color: white; border: 1px solid black; margin: 0 5px 0 15px;"),
+        "No Subjects Present"
       )
     })
 
-
-
+    # ========================================================================
+    # STEP 13: Subject level inspection
+    # ========================================================================
     da_filter_module <- datamods::select_group_server(
       id = "da_filters",
       data = classified_merged_rv,
       vars = c("n_pass_dilutions", "concentration_status", "timeperiod"),
-      selected_r = reactive(da_filters_rv$selected)
+      selected_r = reactive(NULL)
     )
 
-    #
     filtered_classified_merged <- reactive({
-      # if (is.null(input$inLoadedData) || input$inLoadedData != "Dilution Analysis") {
-      #   return(NULL)
-      # }
-      # req(input$inLoadedData == "Dilution Analysis")
-      # if (input$inLoadedData != "Dilution Analysis") {
-      #   return(NULL)
-      # }
+      req(dilution_analysis_active())
       req(da_filter_module())
       req(input$antigen_da_selector)
       req(input$dilution_da_selector)
-     #  selected <<- da_filter_module()
 
       df <- classified_merged_rv()
       df <- df[df$antigen == input$antigen_da_selector, ]
       df <- df[df$dilution %in% input$dilution_da_selector, ]
-
 
       if (!is.null(da_filter_module()$n_pass_dilutions)) {
         df <- df[df$n_pass_dilutions %in% unique(da_filter_module()$n_pass_dilutions), ]
@@ -803,456 +1173,177 @@ observeEvent(list(
       if (!is.null(da_filter_module()$timeperiod)) {
         df <- df[df$timeperiod %in% unique(da_filter_module()$timeperiod), ]
       }
-      return(df)
 
+      return(df)
     })
 
-
-
-   #
     output$passing_subject_selection <- renderUI({
-    #  req(input$inLoadedData == "Dilution Analysis")
+      req(dilution_analysis_active())
       req(input$antigen_da_selector)
       req(filtered_classified_merged())
-      choices_string <- unique(filtered_classified_merged()$patientid)
-      selectInput("Passing_subjects_da",
-                  label = "Select Subjects",
-                  choices = choices_string,
-                  multiple = T,
-                  selected = choices_string,
-                  width = "75vw"
-      )
 
+      choices_string <- unique(filtered_classified_merged()$patientid)
+
+      selectInput(
+        "Passing_subjects_da",
+        label = "Select Subjects",
+        choices = choices_string,
+        multiple = TRUE,
+        selected = choices_string,
+        width = "75vw"
+      )
     })
 
     output$patient_dilution_series_plot <- renderPlotly({
-    #  req(input$inLoadedData == "Dilution Analysis")
+      req(dilution_analysis_active())
       req(filtered_classified_merged())
-     # req(summary_gated_data_rv())
       req(input$antigen_da_selector)
       req(input$Passing_subjects_da)
       req(input$dilution_da_selector)
-      cat("after requirements in plot\n\n")
 
       selected_timepoint <- as.character(unique(filtered_classified_merged()$timeperiod))
       selected_status <- unique(filtered_classified_merged()$concentration_status)
 
-      print(selected_timepoint)
-      print(selected_status)
-      print(input$Passing_subjects_da)
-
-      plot_patient_dilution_series(sample_data = filtered_classified_merged(),
-                                   selectedAntigen =input$antigen_da_selector,
-                                   selectedPatient = input$Passing_subjects_da,
-                                   selectedTimepoints = selected_timepoint,
-                                   selectedDilutions = input$dilution_da_selector)
-
-
+      plot_patient_dilution_series(
+        sample_data = filtered_classified_merged(),
+        selectedAntigen = input$antigen_da_selector,
+        selectedPatient = input$Passing_subjects_da,
+        selectedTimepoints = selected_timepoint,
+        selectedDilutions = input$dilution_da_selector
+      )
     })
+
+    # ========================================================================
+    # STEP 14: Final output table
+    # ========================================================================
+    final_average_au_table_rv <- reactiveVal(NULL)
 
     output$final_average_au_table <- renderDT({
-   #   req(input$inLoadedData == "Dilution Analysis")
+      req(dilution_analysis_active())
       req(classified_merged_rv())
-      req(study_configuration)
-      req(dilution_table_cols)
-      classified_au_data <- classified_merged_rv()
-      classified_au_data$decision_nodes <- study_configuration[study_configuration$param_name == "node_order",]$param_character_value
-      classified_au_data$bkg_method <- study_configuration[study_configuration$param_name == "blank_option",]$param_character_value
+      req(parsed_config_cache())
 
-
-      final_average_table <- data.frame()
-      for (au_treatment in unique(classified_au_data$au_treatment)) {
-        au_treatment_sub <- classified_au_data[classified_au_data$au_treatment == au_treatment,]
-        if (au_treatment == "all_au") {
-          average_au <- preserve_all_au(au_treatment_sub)
-          # cat("\naverage_au:",au_treatment , "\n")
-          # print(names(average_au))
-        } else if (au_treatment == "passing_au") {
-          average_au <- preserve_passing_au(au_treatment_sub)
-          # cat("\naverage_au:",au_treatment , "\n")
-          # print(names(average_au))
-        } else if (au_treatment == "geom_all_au") {
-          average_au <- geometric_mean_all_au_2(au_treatment_sub)
-          # cat("\naverage_au:",au_treatment , "\n")
-          # print(names(average_au))
-        } else if (au_treatment == "geom_passing_au") {
-          average_au <- geometric_mean_passing_au_2(au_treatment_sub)
-          # cat("\naverage_au:",au_treatment , "\n")
-          # print(names(average_au))
-        } else if (au_treatment == "exclude_au") {
-          average_au <- preserve_all_au(au_treatment_sub)
-          # cat("\naverage_au:",au_treatment , "\n")
-          # print(names(average_au))
-
-        } else if (au_treatment == "replace_positive_control") {
-          req(controls)
-          positive_controls <- controls[controls$antigen %in% input$antigen_da_selector,]
-
-          average_au <- geometric_mean_positive_controls(au_treatment_sub, positive_controls)
-          # cat("\naverage_au:",au_treatment , "\n")
-          # print(names(average_au))
-        } else if (au_treatment == "replace_blank") {
-          req(std_curve_data_filtered_rv())
-          average_au <- geometric_mean_blanks(au_treatment_sub, std_curve_data_filtered_rv())
-          # cat("\naverage_au:",au_treatment , "\n")
-          # print(names(average_au))
-        }
-         cat("\naverage_au names\n")
-         print(names(average_au))
-        final_average_table <- rbind(final_average_table, average_au[, dilution_table_cols])
+      std_curve_filtered <- NULL
+      if (!is.null(loaded_data_cache()$std_curve) && !is.null(input$antigen_da_selector)) {
+        std_curve_filtered <- loaded_data_cache()$std_curve[
+          loaded_data_cache()$std_curve$antigen %in% input$antigen_da_selector,
+        ]
       }
 
+      final_table <- process_final_au_table(
+        classified_data = classified_merged_rv(),
+        std_curve_filtered = std_curve_filtered,
+        controls = loaded_data_cache()$controls,
+        parsed_config = parsed_config_cache(),
+        selected_antigen = input$antigen_da_selector,
+        table_columns = DILUTION_ANALYSIS_CONFIG$table_columns
+      )
 
-      # replace dilution that is not all au with NA because of averaging
-      final_average_table$dilution[!(final_average_table$au_treatment %in% c("all_au", "exclude_au"))] <- NA
+      final_average_au_table_rv(final_table)
 
-      # when exclude au the final au is NA.
-      final_average_table$final_au[final_average_table$au_treatment == "exclude_au"] <- NA
-
-      final_average_table$plateid[final_average_table$au_treatment %in% c("geom_all_au", "geom_passing_au", "replace_positive_control", "replace_blank")] <- NA
-
-      # Add type of sample limits used in classification
-      final_average_table$decision_nodes <- study_configuration[study_configuration$param_name == "node_order",]$param_character_value
-
-      #final_average_table_v <<- final_average_table
-      #reorder and subset the columns for saving
-     final_average_table <- final_average_table[, dilution_table_cols]
-     final_average_au_table_rv(final_average_table)
-
-      DT::datatable(final_average_table, caption = "Dilution Analysis Sample Output",
-                    colnames = colnames(final_average_table), filter = "top", options = list(
-                      scrollX = TRUE,  autoWidth = FALSE
-                    ))
+      DT::datatable(
+        final_table,
+        caption = "Dilution Analysis Sample Output",
+        colnames = colnames(final_table),
+        filter = "top",
+        options = list(scrollX = TRUE, autoWidth = FALSE)
+      )
     })
 
-
+    # Save to database (separate from rendering)
     observe({
-     # req(input$inLoadedData == "Dilution Analysis")
       req(final_average_au_table_rv())
-      req(dilution_table_cols)
-      final_average_df <- final_average_au_table_rv()
-      save_average_au(conn, final_average_df, dilution_table_cols)
+
+      isolate({
+        final_average_df <- final_average_au_table_rv()
+        save_average_au(conn, final_average_df, DILUTION_ANALYSIS_CONFIG$table_columns)
+      })
     })
 
-
+    # ========================================================================
+    # STEP 15: Download buttons
+    # ========================================================================
     output$download_classified_sample_UI <- renderUI({
-      # if (is.null(input$inLoadedData) || input$inLoadedData != "Dilution Analysis") {
-      #   return(NULL)
-      # }
-    #  req(input$inLoadedData == "Dilution Analysis")
-      # if (input$inLoadedData != "Dilution Analysis") {
-      #   return(NULL)
-      # }
+      req(dilution_analysis_active())
       req(classified_merged_rv())
-      req(selected_study)
-      req(selected_experiment)
+      req(selected_study, selected_experiment)
 
-      button_label <- paste0("Download Classified Sample Data: ", selected_experiment, "-", selected_study)
-
+      button_label <- paste0("Download Classified Sample Data: ",
+                             selected_experiment, "-", selected_study)
       downloadButton("download_classifed_sample_handle", button_label)
-      # download_classified_sample(download_df = classified_merged_rv(),
-      #                            selected_study = selected_study,
-      #                            selected_experiment = selected_experiment)
     })
 
-    output$download_classifed_sample_handle <-  downloadHandler(
+    output$download_classifed_sample_handle <- downloadHandler(
       filename = function() {
-        paste(input$readxMap_study_accession, input$readxMap_experiment_accession, "dilution_summary.csv", sep = "_")
+        paste(selected_study, selected_experiment, "classified_sample.csv", sep = "_")
       },
       content = function(file) {
-
+        req(dilution_analysis_active())
         req(classified_merged_rv())
-        req(selected_study)
-        req(selected_experiment)
-
-        # download data component (data frame)
         write.csv(classified_merged_rv(), file, row.names = FALSE)
       }
     )
 
-    # output$download_average_au_table_UI <- renderUI({
-    # #  req(input$inLoadedData == "Dilution Analysis")
-    #   req(final_average_au_table_rv())
-    #   req(selected_study)
-    #   req(selected_experiment)
-    #   download_processed_dilution_data(download_df = final_average_au_table_rv(),
-    #                                    selected_study = selected_study,
-    #                                    selected_experiment = selected_experiment)
-    #
-    # })
-
-    output$download_average_au_table_UI <-  downloadHandler(
+    output$download_average_au_table_UI <- downloadHandler(
       filename = function() {
-        paste(input$readxMap_study_accession, input$readxMap_experiment_accession, "_sample_data_processed", ".csv", sep = "_")
+        paste(selected_study, selected_experiment, "sample_data_processed.csv", sep = "_")
       },
       content = function(file) {
+        req(dilution_analysis_active())
         req(final_average_au_table_rv())
-        req(selected_study)
-        req(selected_experiment)
         write.csv(final_average_au_table_rv(), file, row.names = FALSE)
       }
     )
 
-    ### Dilutional Linearity
-    # output$da_lin_antigenUI <- renderUI({
-    #     req(study_configuration)
-    #     req(nrow(study_configuration) > 0)
-    #     cat("in antigen lin selector")
-    #     antigen_choices <- strsplit(study_configuration[study_configuration$param_name == "antigen_order",]$param_character_value, ",")[[1]]
-    #     if (all(is.na(antigen_choices))) {
-    #       node_order_in <- strsplit(study_configuration[study_configuration$param_name == "node_order",]$param_character_value, ",")[[1]]
-    #
-    #       gated_data <- calculate_sample_concentration_status(study_accession = selected_study, experiment_accession = selected_experiment, node_order = node_order_in)
-    #
-    #       antigen_choices <-  unique(gated_data$antigen)
-    #     }
-    #
-    #     selectInput("antigen_da_lin_selector",
-    #                 label = "Select Antigen",
-    #                 choices = antigen_choices,
-    #                 multiple = F)
-    #   })
-    #
-    # output$response_selectionUI <- renderUI({
-    #   selectInput(
-    #     inputId = "dil_lin_response",
-    #     label = "Response type",
-    #     choices = c("Arbritary Units" = "au",
-    #                 "MFI" = "mfi")
-    #   )
-    # })
-    #
-    # output$linear_correction_UI <- renderUI({
-    #   checkboxInput(inputId = "apply_lm_corr",
-    #                 label = "Apply Linear Correction",
-    #                 value = T)
-    # })
-    #
-    # output$exclude_concentrated_samples_UI <- renderUI({
-    #   checkboxInput(inputId = "exclude_conc_samples",
-    #                 label = "Exclude Concentrated Samples from Model Fittting",
-    #                 value = F)
-    # })
-    #
-    # plate_lm_facets <- reactive({
-    #   req(input$qc_component == "Dilutional Linearity")
-    #   req(selected_study)
-    #   req(selected_experiment)
-    #   req(input$dil_lin_response)
-    #   #req(is_log_mfi_axis)
-    #   req(input$antigen_da_lin_selector)
-    #
-    #   distinct_samples <- prepare_lm_sample_data(
-    #     study_accession = selected_study,
-    #     experiment_accession = selected_experiment,
-    #     is_log_mfi_axis = is_log_mfi_axis,
-    #     response_type = input$dil_lin_response
-    #   )
-    #
-    #
-    #
-    #   dil_lin_regress_list <- dil_lin_regress(
-    #     distinct_samples,
-    #     response_type = input$dil_lin_response,
-    #     exclude_conc_samples = input$exclude_conc_samples
-    #   )
-    #
-    #
-    #
-    #  produce_all_plate_facets(
-    #     distinct_samples = distinct_samples,
-    #     dil_lin_regress_list = dil_lin_regress_list,
-    #     selected_antigen = input$antigen_da_lin_selector,
-    #     is_dil_lin_corr = input$apply_lm_corr,
-    #     response_type = input$dil_lin_response,
-    #     is_log_mfi_axis = is_log_mfi_axis
-    #   )
-    #
-    # })
-    #
-    # observe({
-    #   req(plate_lm_facets())
-    #   for (i in seq_along(plate_lm_facets())) {
-    #     local({
-    #       my_i <- i
-    #       output[[paste0("facet_lm_plot_", my_i)]] <- renderPlotly({
-    #         plate_lm_facets()[[my_i]]
-    #       })
-    #     })
-    #   }
-    # })
-    #
-    # output$facet_tabs_ui <- renderUI({
-    #   req(plate_lm_facets())
-    #   plot_list <- plate_lm_facets()
-    #
-    #   # Create only non-NULL tabPanels
-    #   tab_list <- lapply(seq_along(plot_list), function(i) {
-    #     if (!is.null(plot_list[[i]])) {
-    #       tabPanel(
-    #         title = paste("Plate", i),
-    #         plotlyOutput(outputId = paste0("facet_lm_plot_", i), width = "75vw")
-    #       )
-    #     } else {
-    #       NULL
-    #     }
-    #   })
-    #
-    #   # Remove NULLs
-    #   tab_list <- tab_list[!sapply(tab_list, is.null)]
-    #
-    #
-    #   do.call(tabsetPanel, tab_list)
-    # })
-    #
-    #
-    #
-    # output$facet_model_glance <- renderTable({
-    # req(input$qc_component == "Dilutional Linearity")
-    #   req(selected_study)
-    #   req(selected_experiment)
-    #   req(input$dil_lin_response)
-    #   #req(is_log_mfi_axis)
-    #   req(input$antigen_da_lin_selector)
-    #
-    #
-    #   distinct_samples <- prepare_lm_sample_data(study_accession = selected_study, experiment_accession = selected_experiment, is_log_mfi_axis = is_log_mfi_axis, response_type = input$dil_lin_response)
-    #   dil_lin_regress_list <- dil_lin_regress(distinct_samples, response_type = input$dil_lin_response, exclude_conc_samples = input$exclude_conc_samples)
-    #
-    #   if (input$apply_lm_corr) {
-    #     glance_df <- dil_lin_regress_list$model_corr_glance_df
-    #   } else {
-    #     glance_df <- dil_lin_regress_list$glance_uncorrect_df
-    #   }
-    #
-    #   glance_df <- glance_df[glance_df$antigen == input$antigen_da_lin_selector,]
-    #
-    #   return(glance_df)
-    # }, caption = "Antigen Model Fit Statistics",
-    # caption.placement = getOption("xtable.caption.placement", "top"))
-    #
-    # # Download associated data for processed lm fits has corrected y value
-    # output$download_processed_lm_fit_data <-  downloadHandler(
-    #   filename = function() {
-    #     paste(input$readxMap_study_accession, input$readxMap_experiment_accession, "processed_lm_fit_data.csv", sep = "_")
-    #   },
-    #   content = function(file) {
-    #     req(selected_study)
-    #     req(selected_experiment)
-    #     req(input$dil_lin_response)
-    #     req(is_log_mfi_axis)
-    #     req(input$antigen_da_lin_selector)
-    #
-    #     distinct_samples <- prepare_lm_sample_data(study_accession = selected_study, experiment_accession = selected_experiment, is_log_mfi_axis = is_log_mfi_axis, response_type = input$dil_lin_response)
-    #     dil_lin_regress_list <- dil_lin_regress(distinct_samples, response_type = input$dil_lin_response, exclude_conc_samples = input$exclude_conc_samples)
-    #     proccessed_lm_fit_data <- dil_lin_regress_list$observed_data
-    #     # download data component (data frame)
-    #     write.csv(proccessed_lm_fit_data, file)
-    #   }
-    # )
-    #
-    # output$download_model_uncorrected_glance <- downloadHandler(
-    #   filename = function() {
-    #     paste(input$readxMap_study_accession, input$readxMap_experiment_accession, "lm_uncorrected_glance.csv", sep = "_")
-    #   },
-    #   content = function(file) {
-    #     req(selected_study)
-    #     req(selected_experiment)
-    #     req(input$dil_lin_response)
-    #     req(is_log_mfi_axis)
-    #     req(input$antigen_da_selector)
-    #
-    #
-    #     distinct_samples <- prepare_lm_sample_data(study_accession = selected_study, experiment_accession = selected_experiment, is_log_mfi_axis = is_log_mfi_axis, response_type = input$dil_lin_response)
-    #     dil_lin_regress_list <- dil_lin_regress(distinct_samples, response_type = input$dil_lin_response, exclude_conc_samples = input$exclude_conc_samples)
-    #
-    #     glance_df <- dil_lin_regress_list$glance_uncorrect_df
-    #
-    #
-    #     # download data component (data frame)
-    #     write.csv(glance_df, file)
-    #   }
-    # )
-    #
-    # output$download_model_correction_glance <- downloadHandler(
-    #   filename = function() {
-    #     paste(input$readxMap_study_accession, input$readxMap_experiment_accession, "lm_correction_glance.csv", sep = "_")
-    #   },
-    #   content = function(file) {
-    #     req(selected_study)
-    #     req(selected_experiment)
-    #     req(input$dil_lin_response)
-    #     req(is_log_mfi_axis)
-    #     req(input$antigen_da_selector)
-    #
-    #
-    #     distinct_samples <- prepare_lm_sample_data(study_accession = selected_study, experiment_accession = selected_experiment, is_log_mfi_axis = is_log_mfi_axis, response_type = input$dil_lin_response)
-    #     dil_lin_regress_list <- dil_lin_regress(distinct_samples, response_type = input$dil_lin_response, exclude_conc_samples = input$exclude_conc_samples)
-    #
-    #     glance_df <- dil_lin_regress_list$model_corr_glance_df
-    #
-    #
-    #     # download data component (data frame)
-    #     write.csv(glance_df, file)
-    #   }
-    # )
+    # ========================================================================
+    # STEP 16: Parameter dependencies & navigation
+    # ========================================================================
+    output$parameter_dependencies <- renderUI({
+      req(dilution_analysis_active())
+      tagList(
+        bsCollapse(
+          id = "param_dependencies",
+          bsCollapsePanel(
+            title = "Parameter Dependencies",
+            HTML(
+              "The decision tree is dependent on the selection of the type of sample limit and the order in which they are chosen.<br>
+                 In addition, the method selected for Blank Control influences the classification of the concentration status, as parameter estimates can vary depending on how the blanks
+                 are treated when fitting standard curves.<br>
+                 The final treatment of the arbitrary units is dependent on the selection chosen corresponding to the treatment for the combination of number of passing dilutions and concentration status.<br>
+                 The order of the timeperiods in the table 'Number of Subjects Passing Classification by Timepoint, Concentration Status, and Number of Passing Dilutions' is ordered by the timeperiod order set in the study parameters. <br>
+                 For dilutional linearity when the response is MFI the determination of if it is log10 of MFI or raw MFI is made in the study configuration for use log units for MFI control."
+            ),
+            style = "info"
+          )
+        ),
+        actionButton("to_study_parameters", label = "Return to Change Study Settings")
+      )
+    })
 
+    observeEvent(input$to_study_parameters, {
+      updateTabItems(session, inputId = "study_tabs", selected = "study_settings")
+    })
 
+  }
+) # End main observeEvent
 
-
-}
-  else {
-    output$dilutionAnalysisUI <- NULL  # remove UI if not on the tab
-  #  output$dilutionalLinearityUI <- NULL
-    output$dilutionAnalysisUI <- NULL
-    output$dilutionalLinearityUI <- NULL
-    output$dilution_summary_barplot <- NULL
-    output$download_classified_sample_UI <- NULL
-    output$final_average_au_table <- NULL
-    output$download_average_au_table_UI <- NULL
-    output$patient_dilution_series_plot <- NULL
-    output$passing_subject_selection <- NULL
-    output$antigen_selector_UI <- NULL
-    output$response_selectionUI <- NULL
-    # output$plate_lm_selectionUI <- NULL
-    output$linear_correction_UI <- NULL
-    output$facet_lm_plot <- NULL
-    output$facet_tabs_ui <- NULL
-    output$facet_model_glance <- NULL
-    output$download_processed_lm_fit_data <- NULL
-    output$download_model_uncorrected_glance <- NULL
-    output$download_model_correction_glance <- NULL
-  }# end in the tab
-
-}) # end in loaded data
-
-
-# observeEvent(input$inLoadedData, {
-#   if (!is.null(input$inLoadedData) && input$inLoadedData != "Dilution Analysis") {
-#     message("Not on Dilution Analysis tab")
-#
-#     # clear outputs
-#     output$dilutionAnalysisUI <- NULL
-#     output$dilutionalLinearityUI <- NULL
-#     output$dilution_summary_barplot <- NULL
-#     output$download_classified_sample_UI <- NULL
-#     output$final_average_au_table <- NULL
-#     output$download_average_au_table_UI <- NULL
-#     output$patient_dilution_series_plot <- NULL
-#     output$passing_subject_selection <- NULL
-#     output$antigen_selector_UI <- NULL
-#     output$response_selectionUI <- NULL
-#     # output$plate_lm_selectionUI <- NULL
-#     output$linear_correction_UI <- NULL
-#     output$facet_lm_plot <- NULL
-#     output$facet_tabs_ui <- NULL
-#     output$facet_model_glance <- NULL
-#     output$download_processed_lm_fit_data <- NULL
-#     output$download_model_uncorrected_glance <- NULL
-#     output$download_model_correction_glance <- NULL
-#      #output$download_model_glances <- NULL
-#
-#
-#   }
-# })
-
+# ============================================================================
+# DEBUG: Monitor tab changes
+# ============================================================================
+observeEvent(list(
+  input$study_level_tabs,
+  input$advanced_qc_component,
+  input$readxMap_experiment_accession
+), {
+  cat("\n=== TAB/CONTEXT CHANGE DETECTED ===\n")
+  cat("study_level_tabs:", input$study_level_tabs, "\n")
+  cat("advanced_qc_component:", input$advanced_qc_component, "\n")
+  cat("experiment:", input$readxMap_experiment_accession, "\n")
+  cat("dilution_analysis_active:", dilution_analysis_active(), "\n")
+  cat("current_context:", current_context(), "\n")
+  cat("current_config_signature:", current_config_signature(), "\n\n")
+  if (input$readxMap_experiment_accession == "Click here") {
+    removeNotification(id = "load_dilution_analysis")
+    return()
+  }
+}, ignoreInit = TRUE)
