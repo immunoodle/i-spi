@@ -758,6 +758,11 @@ summary_dilution_plot <- function(dilution_summary_df, antigen_families, antigen
   # add proportion
   df_long$proportion <- with(df_long, count / ave(count, antigen, dilution, FUN = sum))
 
+
+  # ensure 1 row/antigen
+  antigen_families <-antigen_families %>%
+    distinct(antigen, .keep_all = TRUE)
+
   df_prop <- merge(df_long, antigen_families[, c("antigen", "antigen_family")], by = "antigen", all.x = T)
 
   # Get unique dilutions
@@ -786,12 +791,13 @@ summary_dilution_plot <- function(dilution_summary_df, antigen_families, antigen
 
   df_prop$antigen <- factor(df_prop$antigen, levels = rev(antigen_levels))
 
+  format_dilution <- function(d) paste0("1:", d)
 
   # Create a plot for each dilution
   plots <- lapply(seq_along(dilutions), function(i) {
     dil <- dilutions[i]
     subset_data <- df_prop[df_prop$dilution == dil, ]
-
+    show_leg <- i == 1
 
     #subset_data$legend_label <- paste0(subset_data$concentration_status, "- Dilution: ", dil)
 
@@ -799,23 +805,53 @@ summary_dilution_plot <- function(dilution_summary_df, antigen_families, antigen
       add_bars(data = subset_data[subset_data$concentration_status == "Acceptable", ],
                x = ~proportion, y = ~antigen,
                color = I(concentration_colors["Acceptable"]),
-               name = paste("Acceptable <br> Dilution:", dil ))%>%
+               name = paste("Acceptable"),#<br> Dilution:", dil ),
+               legendgroup = "Acceptable",
+               showlegend = show_leg
+               )%>%
       add_bars(data = subset_data[subset_data$concentration_status == "Too Diluted", ],
                x = ~proportion, y = ~antigen,
                color = I(concentration_colors["Too Diluted"]),
-               name = paste("Too Diluted <br> Dilution:", dil)) %>%
+               name = paste("Too Diluted"), # <br> Dilution:", dil),
+               legendgroup = "Too Diluted",
+               showlegend = show_leg) %>%
       add_bars(data = subset_data[subset_data$concentration_status == "Too Concentrated", ],
                x = ~proportion, y = ~antigen,
                color = I(concentration_colors["Too Concentrated"]),
-               name = paste("Too Concentrated <br> Dilution:", dil)) %>%
-      layout(title = paste0(unique(df_prop$experiment_accession), ": Proportion of Subjects by Antigen, Dilution Factor, and Concentration Status"),
-             xaxis = list(title = dil, tickangle = 45),
-             yaxis = list(title = "Antigen"),
+               name = paste("Too Concentrated"), #"<br> Dilution:", dil),
+               legendgroup = "Too Concentrated",
+               showlegend = show_leg) %>%
+      layout(title = paste0(unique(df_prop$experiment_accession), ": Proportion of Subjects by Antigen, Sample Dilution, and Concentration Status"),
+             xaxis = list(title = format_dilution(dil), tickangle = 45, tickformat = ".1f"),
              barmode = "stack")
   })
 
   # Arrange the plots side by side
-  combined_plot <- subplot(plots, shareY = TRUE, titleX = TRUE, titleY = TRUE)
+  combined_plot <- subplot(plots, shareY = TRUE, titleX = TRUE, titleY = TRUE) %>%
+                            layout(
+                              margin = list(b = 90),
+                              legend = list(title = list(text = "Concentration Status")),
+                              yaxis = list(
+                                title = "Antigen",
+                                tickmode = "array",
+                                tickvals = antigen_levels,
+                                ticktext = antigen_levels
+                              ),
+                              annotations = list(
+                                list(
+                                  text = "Sample Dilution",
+                                  x = 0.5,
+                                  y = -0.24,
+                                  xref = "paper",
+                                  yref = "paper",
+                                  showarrow = FALSE,
+                                  xanchor = "center",
+                                  yanchor = "top",
+                                  font = list(size = 14)
+                                )
+                              )
+                            )
+
 
   return(combined_plot)
 
