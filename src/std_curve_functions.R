@@ -2205,6 +2205,10 @@ predict_and_propagate_error <- function(best_fit,
     log_plate_samples <- log10(antigen_plate$plate_samples[[response_var]])
   }
 
+  # keep the raw_assay_response
+  raw_assay_response <- antigen_plate$plate_samples[[response_var]]
+
+
   pred_se <- best_fit$best_pred
   if (verbose) {
     if (nrow(pred_se) == 0) {
@@ -2281,6 +2285,7 @@ predict_and_propagate_error <- function(best_fit,
 
 
   sample_se <- data.frame(y_new = log_plate_samples,
+                          raw_assay_response = raw_assay_response,
                           dilution = antigen_plate$plate_samples$dilution,
                           well = antigen_plate$plate_samples$well
                           )
@@ -2311,9 +2316,9 @@ predict_and_propagate_error <- function(best_fit,
   # sample_se$pcov <- 100 * log(10) * sample_se$se_x
 
   if(study_params$is_log_independent) {
-    sample_se$au <- 10^sample_se$predicted_concentration * sample_se$dilution
+    sample_se$final_predicted_concentration <- 10^sample_se$predicted_concentration * sample_se$dilution
   } else {
-    sample_se$au <- sample_se$predicted_concentration * sample_se$dilution
+    sample_se$final_predicted_concentration <- sample_se$predicted_concentration * sample_se$dilution
   }
   sample_se <- dplyr::inner_join(
     antigen_plate$plate_samples[, !(names(antigen_plate$plate_samples) %in% c("mfi", "dilution"))],
@@ -2343,14 +2348,14 @@ predict_and_propagate_error <- function(best_fit,
   names(sample_se)[names(sample_se) == "se_x"] <- "se_concentration"
   # add nominal sample dilution
   sample_se$nominal_sample_dilution <- unique(best_fit$best_data$nominal_sample_dilution)
-
+  # rename before returning the best fit
+  names(sample_se)[names(sample_se) == "predicted_concentration"] <- "raw_predicted_concentration"
   best_fit$sample_se <- sample_se
 
   if (verbose) {
     message("Finished predict_and_propagate_error")
   }
 
-  # best_fit_v <<- best_fit
   return(best_fit)
 }
 
@@ -2390,9 +2395,9 @@ gate_samples <- function(best_fit,
   llod <- as.numeric(best_fit$best_glance$llod)[1]
   inflect_x <- as.numeric(best_fit$best_glance$inflect_x)[1]
 
-  sample_se$gate_class_loq <- ifelse(sample_se$predicted_concentration >= lloq_x &sample_se$predicted_concentration <= uloq_x,
+  sample_se$gate_class_loq <- ifelse(sample_se$raw_predicted_concentration >= lloq_x &sample_se$raw_predicted_concentration <= uloq_x,
                                      "Acceptable",
-                                     ifelse(sample_se$predicted_concentration > uloq_x, "Too Concentrated", "Too Diluted"))
+                                     ifelse(sample_se$raw_predicted_concentration > uloq_x, "Too Concentrated", "Too Diluted"))
 
   sample_se$gate_class_lod <- ifelse(sample_se[[response_variable]] >= llod & sample_se[[response_variable]] <= ulod,
                                      "Acceptable",
@@ -2400,7 +2405,7 @@ gate_samples <- function(best_fit,
 
   sample_se$gate_class_pcov <- ifelse(sample_se$pcov <= pcov_threshold,
                                       "Acceptable",
-                                      ifelse(sample_se$predicted_concentration < inflect_x, "Too Diluted", "Too Concentrated"))
+                                      ifelse(sample_se$raw_predicted_concentration < inflect_x, "Too Diluted", "Too Concentrated"))
 
   best_fit$sample_se <- sample_se
 

@@ -370,6 +370,7 @@ create_data_form_df <- function(data, t0, t1, log_assay_outcome) {
 
   # update and filter combined data with log assay value  based on the outcome of interest
   combined_data <- combined_data[combined_data$agroup %in% arm_list, ]
+  combined_data <<- combined_data
   if (log_assay_outcome == "MFI") {
    # combined_data$log_assay_value <- log10(combined_data$assay_response + 1)
   combined_data$log_assay_value <- to_log2_plus1(combined_data$assay_response, combined_data$is_log_response)
@@ -377,7 +378,7 @@ create_data_form_df <- function(data, t0, t1, log_assay_outcome) {
     #combined_data$log_assay_value <- log10(combined_data$norm_assay_response + 1)
     combined_data$log_assay_value <- to_log2_plus1(combined_data$norm_assay_response, combined_data$is_log_response)
   } else {
-    keep <- is.finite(combined_data$au)
+    keep <- is.finite(combined_data$final_predicted_concentration)
     combined_data <- combined_data[keep, ]
 
     # samples out of predicted concentration range with infinite AUs are removed
@@ -386,7 +387,7 @@ create_data_form_df <- function(data, t0, t1, log_assay_outcome) {
    # combined_data$log_assay_value <- to_log2_plus1(combined_data$au, combined_data$is_log_response)
     combined_data$log_assay_value <-
       to_log2_plus1(
-        combined_data$au,
+        combined_data$final_predicted_concentration,
         is_log10 = rep(FALSE, nrow(combined_data))
       )
   }
@@ -436,6 +437,7 @@ create_data_form_df <- function(data, t0, t1, log_assay_outcome) {
   data_form$feature<-factor(data_form$feature)
   # table(data_form$arm_name)
   cat(names(data_form))
+  cat("end data form")
   return(data_form)
 }
 

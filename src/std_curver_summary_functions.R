@@ -225,7 +225,7 @@ aggregate_standard_curves <- function(best_pred_all,
     experiment_accession = experiment_accession,
     antigen = antigen,
     source = source,
-    predicted_concentration = x_values,
+    raw_predicted_concentration = x_values,
     yhat = predicted_mfi_agg
   )
 
@@ -480,7 +480,7 @@ summarize_sc_fits_plotly <- function(best_pred_all, cv_df, best_plate_all, exper
   p <- add_lines(
     p,
     data = aggregated_fit,
-    x = ~predicted_concentration,
+    x = ~raw_predicted_concentration,
     y = ~yhat,
     name = paste("Aggregated Fit", unique(aggregated_fit$mod_class)),
     line = list(
@@ -495,7 +495,7 @@ summarize_sc_fits_plotly <- function(best_pred_all, cv_df, best_plate_all, exper
     ),
     showlegend = TRUE
   )
-  # cv_df_antigen <<- cv_df_antigen
+   #cv_df_antigen <<- cv_df_antigen
   p <- p %>%
     add_trace(
       data = cv_df_antigen,
@@ -608,9 +608,9 @@ conduct_linear_interpolation <- function(best_sample_se_all, aggregated_fit_v) {
   selected_antigen <- unique(aggregated_fit_v$antigen)
   best_sample_se_antigen <- best_sample_se_all[best_sample_se_all$antigen == selected_antigen, ]
   interprolated_assay_response_df <- approx(
-    x = aggregated_fit_v$predicted_concentration,
+    x = aggregated_fit_v$raw_predicted_concentration,
     y = aggregated_fit_v$yhat,
-    xout = best_sample_se_antigen$predicted_concentration,
+    xout = best_sample_se_antigen$raw_predicted_concentration,
     method = "linear"
   )
   best_sample_se_antigen$norm_assay_response <- interprolated_assay_response_df$y
@@ -667,12 +667,12 @@ conduct_linear_interpolation_batch <- function(best_sample_se_all, aggregated_fi
       return(NULL)
 
     # optional sorting (helps approx() avoid warnings)
-    fit_sub <- fit_sub[order(fit_sub$predicted_concentration), ]
+    fit_sub <- fit_sub[order(fit_sub$raw_predicted_concentration), ]
 
     inter <- approx(
-      x = fit_sub$predicted_concentration,
+      x = fit_sub$raw_predicted_concentration,
       y = fit_sub$yhat,
-      xout = sample_sub$predicted_concentration,
+      xout = sample_sub$raw_predicted_concentration,
       method = "linear"
     )
 
