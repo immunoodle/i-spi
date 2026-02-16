@@ -739,10 +739,10 @@ fetch_best_glance_all_summary <- function(study_accession, experiment_accession,
 
 fetch_best_sample_se_all <- function(study_accession, experiment_accession, project_id, conn) {
   query <- glue("
-SELECT best_sample_se_all_id, predicted_concentration, study_accession, experiment_accession, timeperiod, patientid, well, stype, sampleid,
+SELECT best_sample_se_all_id, raw_predicted_concentration, study_accession, experiment_accession, timeperiod, patientid, well, stype, sampleid,
 agroup, pctaggbeads, samplingerrors, antigen,
 antibody_n, plateid, plate, nominal_sample_dilution, assay_response_variable, assay_independent_variable, dilution, overall_se, assay_response,
-se_concentration, au, pcov, source, gate_class_loq, gate_class_lod,
+se_concentration, final_predicted_concentration, pcov, source, gate_class_loq, gate_class_lod,
 gate_class_pcov, uid, best_glance_all_id, feature, norm_assay_response
 	FROM madi_results.best_sample_se_all
 	WHERE project_id = {project_id}
@@ -844,14 +844,14 @@ fetch_best_sample_se_all_summary <- function(study_accession, experiment_accessi
       GROUP BY study_accession
     )
     SELECT
-      ss.best_sample_se_all_id, ss.predicted_concentration,
+      ss.best_sample_se_all_id, ss.raw_predicted_concentration,
       ss.study_accession, ss.experiment_accession, ss.timeperiod,
       ss.patientid, ss.well, ss.stype, ss.sampleid, ss.agroup,
       ss.pctaggbeads, ss.samplingerrors, ss.antigen, ss.antibody_n,
       ss.plateid, ss.plate, ss.nominal_sample_dilution,
       ss.assay_response_variable, ss.assay_independent_variable,
       ss.dilution, ss.overall_se, ss.assay_response, ss.se_concentration,
-      ss.au, ss.pcov, ss.source, ss.gate_class_loq, ss.gate_class_lod,
+      ss.final_predicted_concentration, ss.pcov, ss.source, ss.gate_class_loq, ss.gate_class_lod,
       ss.gate_class_pcov, ss.uid, ss.best_glance_all_id, ss.feature, ss.norm_assay_response,
       g.is_log_response, g.is_log_x, g.bkg_method, g.apply_prozone
     FROM madi_results.best_sample_se_all ss

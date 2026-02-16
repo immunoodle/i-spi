@@ -298,7 +298,7 @@ plot_standard_curve <- function(best_fit,
   p <- plotly::plot_ly()
 
   samples_predicted_conc <- best_fit$sample_se
-  samples_predicted_conc <- samples_predicted_conc[!is.nan(samples_predicted_conc$predicted_concentration),]
+  samples_predicted_conc <- samples_predicted_conc[!is.nan(samples_predicted_conc$raw_predicted_concentration),]
   best_fit$best_pred$pcov_threshold <- pcov_threshold
   ### -------------------------
   ### 1. RESPONSE VARIABLE (Y)
@@ -330,7 +330,7 @@ plot_standard_curve <- function(best_fit,
     best_fit$best_glance$uloq                     <- 10^best_fit$best_glance$uloq
     best_fit$best_glance$inflect_x                <- 10^best_fit$best_glance$inflect_x
     best_fit$best_d2xy$x                          <- 10^best_fit$best_d2xy$x
-    samples_predicted_conc$predicted_concentration <- 10^samples_predicted_conc$predicted_concentration
+    samples_predicted_conc$raw_predicted_concentration <- 10^samples_predicted_conc$raw_predicted_concentration
   }
   y3_label <- paste(stringr::str_to_title(independent_variable), "Uncertainty (pCoV)")
   if (is_display_log_response) {
@@ -514,13 +514,13 @@ plot_standard_curve <- function(best_fit,
     visible = "legendonly"
   ) %>% add_trace(
     data = samples_predicted_conc,
-    x = ~predicted_concentration,
+    x = ~raw_predicted_concentration,
     y = ~pcov,
     type = "scatter",
     mode = "markers",
     name = "",                         ## no extra legend entry
     marker = list(color = "red", symbol = "circle"),
-    text = ~paste("Predicted", x_label, ":", predicted_concentration,
+    text = ~paste("Predicted", x_label, ":", raw_predicted_concentration,
                   "<br>Coefficient of Variation (pCoV):", round(pcov,2), "%"),
     yaxis = "y3",
     legendgroup = "linked_uncertainty",
@@ -542,13 +542,13 @@ plot_standard_curve <- function(best_fit,
   ### ------------------------
   p <- p %>% add_trace(
     data = samples_predicted_conc,
-    x = ~predicted_concentration,
+    x = ~raw_predicted_concentration,
     y = samples_predicted_conc[[response_variable]],
     type = "scatter",
     mode = "markers",
     name = "Samples",
     marker = list(color = "green", symbol = "circle"),
-    text = ~paste("Predicted", x_label, ":", predicted_concentration,
+    text = ~paste("Predicted", x_label, ":", raw_predicted_concentration,
                   "<br>",y_label , ":", samples_predicted_conc[[response_variable]],
                   "<br>Patient ID:", patientid,
                   "<br>Well:", well,

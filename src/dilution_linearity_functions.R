@@ -61,11 +61,11 @@ calculate_sample_concentration_status_new <- function(
 ) {
 
   query_samples <- glue::glue("
-                  SELECT se.best_sample_se_all_id, se.predicted_concentration, se.study_accession, se.experiment_accession,
+                  SELECT se.best_sample_se_all_id, se.raw_predicted_concentration, se.study_accession, se.experiment_accession,
                   se.timeperiod, se.patientid, se.well, se.stype, se.sampleid, se.agroup, se.pctaggbeads, se.samplingerrors, se.antigen,
                   se.antibody_n, se.plateid, se.plate, se.sample_dilution_factor,
                   se.assay_response_variable, se.assay_independent_variable, se.dilution, se.overall_se, se.assay_response, se.norm_assay_response, se.se_concentration,
-                  se.au, se.pcov, se.source, se.gate_class_loq, se.gate_class_lod, se.gate_class_pcov,
+                  se.final_predicted_concentration as au, se.pcov, se.source, se.gate_class_loq, se.gate_class_lod, se.gate_class_pcov,
                   se.uid, se.best_glance_all_id, g.is_log_response, g.is_log_x
                   FROM madi_results.best_sample_se_all se
                   LEFT JOIN madi_results.best_glance_all g
@@ -985,7 +985,7 @@ plot_patient_dilution_series  <- function(sample_data, selectedAntigen, selected
       text = ~paste0("Subject: ", patientid, "<br>Antigen: ",antigen, "<br>Visit: ",timeperiod,
                      "<br>Dilution Factor: ", dilution,
                      "<br> Dilution Fraction: ",dilution_fraction,
-                     "<br>",assay_independent_variable,": ", predicted_concentration,
+                     "<br>",assay_independent_variable,": ", raw_predicted_concentration,
                      "<br>AU: ", au,
                      "<br>",assay_response_variable, ": ", assay_response,
                      iq_text,
@@ -2824,11 +2824,11 @@ prepare_lm_sample_data <- function(study_accession, experiment_accession, is_log
   #   	WHERE study_accession = '{study_accession}'
   #   	AND experiment_accession = '{experiment_accession}';")
   query_samples <- glue::glue("
-                  SELECT se.best_sample_se_all_id, se.predicted_concentration, se.study_accession, se.experiment_accession,
+                  SELECT se.best_sample_se_all_id, se.raw_predicted_concentration, se.study_accession, se.experiment_accession,
                   se.timeperiod, se.patientid, se.well, se.stype, se.sampleid, se.agroup, se.pctaggbeads, se.samplingerrors, se.antigen,
                   se.antibody_n, se.plateid, se.plate, se.sample_dilution_factor,
                   se.assay_response_variable, se.assay_independent_variable, se.dilution, se.overall_se, se.assay_response, se.norm_assay_response, se.se_concentration,
-                  se.au, se.pcov, se.source, se.gate_class_loq, se.gate_class_lod, se.gate_class_pcov,
+                  se.final_predicted_concentration as au, se.pcov, se.source, se.gate_class_loq, se.gate_class_lod, se.gate_class_pcov,
                   se.uid, se.best_glance_all_id, g.is_log_response
                   FROM madi_results.best_sample_se_all se
                   LEFT JOIN madi_results.best_glance_all g
