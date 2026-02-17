@@ -822,7 +822,6 @@ observeEvent(list(
       )
       showNotification(id = "batch_sc_fit_notify",div(class = "big-notification", "Best parameter estimates saved"), duration = NULL)
 
-     # batch_outputs$best_pred_all$id_match <- match(batch_outputs$best_pred_all$x, unique(batch_outputs$best_pred_all$x))
 
 
       showNotification(id = "batch_sc_fit_notify",div(class = "big-notification", "Saving predicted standards..."), duration = NULL)
