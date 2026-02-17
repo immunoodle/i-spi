@@ -66,7 +66,7 @@ calculate_sample_concentration_status_new <- function(
                   se.antibody_n, se.plateid, se.plate, se.sample_dilution_factor,
                   se.assay_response_variable, se.assay_independent_variable, se.dilution, se.overall_se, se.assay_response, se.norm_assay_response, se.se_concentration,
                   se.final_predicted_concentration as au, se.pcov, se.source, se.gate_class_loq, se.gate_class_lod, se.gate_class_pcov,
-                  se.uid, se.best_glance_all_id, g.is_log_response, g.is_log_x
+                  se.best_glance_all_id, g.is_log_response, g.is_log_x
                   FROM madi_results.best_sample_se_all se
                   LEFT JOIN madi_results.best_glance_all g
                       ON se.best_glance_all_id = g.best_glance_all_id
@@ -2829,7 +2829,7 @@ prepare_lm_sample_data <- function(study_accession, experiment_accession, is_log
                   se.antibody_n, se.plateid, se.plate, se.sample_dilution_factor,
                   se.assay_response_variable, se.assay_independent_variable, se.dilution, se.overall_se, se.assay_response, se.norm_assay_response, se.se_concentration,
                   se.final_predicted_concentration as au, se.pcov, se.source, se.gate_class_loq, se.gate_class_lod, se.gate_class_pcov,
-                  se.uid, se.best_glance_all_id, g.is_log_response
+                  se.best_glance_all_id, g.is_log_response
                   FROM madi_results.best_sample_se_all se
                   LEFT JOIN madi_results.best_glance_all g
                       ON se.best_glance_all_id = g.best_glance_all_id

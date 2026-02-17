@@ -370,7 +370,7 @@ create_data_form_df <- function(data, t0, t1, log_assay_outcome) {
 
   # update and filter combined data with log assay value  based on the outcome of interest
   combined_data <- combined_data[combined_data$agroup %in% arm_list, ]
-  combined_data <<- combined_data
+  #combined_data <<- combined_data
   if (log_assay_outcome == "MFI") {
    # combined_data$log_assay_value <- log10(combined_data$assay_response + 1)
   combined_data$log_assay_value <- to_log2_plus1(combined_data$assay_response, combined_data$is_log_response)
@@ -492,6 +492,7 @@ compute_finite_mixture_model <- function(data_form_reference, t0, t1) {
   mo3 <- FLXMRglm(family = "gaussian")
 
   #cat("before flexmix")
+  day0set_v <<- day0set
   flexfit <- flexmix(log_assay_value ~ 1, data = day0set, k = 2, model = list(mo1, mo2))
 
   if (is.na(unlist(flexmix::parameters(flexfit)[1])[3])) {
@@ -596,7 +597,7 @@ obtain_difres_clustering <- function(data_form_reference_in, t0, t1, selected_fe
 
   #print(names(data_form_reference_in))
   #function outputs a list with two dataframes of the results - one in a wide and another in a long format. Wide format is used for scatter plot
-  formt1t2 <<- data_form_reference_in[data_form_reference_in$timeperiod %in% c(t0, t1), c("best_sample_se_all_id", "subject_accession","agroup",
+  formt1t2 <- data_form_reference_in[data_form_reference_in$timeperiod %in% c(t0, t1), c("best_sample_se_all_id", "subject_accession","agroup",
                                                                                          "timeperiod","antigen","feature", "antigen_feature",
                                                                                          "log_assay_value"),]
   # print(head(formt1t2))

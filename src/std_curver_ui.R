@@ -771,6 +771,7 @@ observeEvent(input$run_batch_fit, ignoreInit = TRUE, {
     batch_outputs_processed <- process_batch_outputs(batch_outputs = batch_outputs,
                                                      response_var = response_var,
                                                      project_id = userWorkSpaceID())
+    #batch_outputs_processed_v <<- batch_outputs_processed
 
 
 

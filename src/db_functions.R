@@ -228,6 +228,8 @@ upsert_best_curve <- function(conn,
 
   cols <- names(df)
   nk <- get_natural_keys(table)
+  pk <- get_primary_key(table)  # New function to get primary key
+
   if (is.null(nk)) stop("Unknown table: ", table)
 
   missing_keys <- setdiff(nk, cols)
@@ -235,38 +237,47 @@ upsert_best_curve <- function(conn,
     stop("Missing natural-key columns: ", paste(missing_keys, collapse = ", "))
   }
 
-  if (anyNA(df[, nk, drop = FALSE])) {
-    return(bail("Natural-key columns contain NA; cannot upsert."))
+  nk_has_na <- sapply(df[, nk, drop = FALSE], function(x) any(is.na(x)))
+
+  if (any(nk_has_na)) {
+    # Columns that contain any NA
+    cols_with_na <- names(nk_has_na)[nk_has_na]
+
+    # How many rows are affected per column (use `colSums` for a quick count)
+    rows_per_col <- colSums(is.na(df[, cols_with_na, drop = FALSE]))
+
+  # If you also want to know *which rows* are problematic you can
+  # collect the row numbers (limited to the first `max_rows_to_show`)
+  problematic_rows <- which(rowSums(is.na(df[, cols_with_na, drop = FALSE])) > 0)
+
+  # Build a helpful message
+  msg <- paste0(
+    "Natural‑key column(s) contain NA in table `", table, "`:\n",
+    paste0(" - ", cols_with_na, ": ", rows_per_col, " NA(s)"),
+    collapse = "\n"
+  )
+
+  if (length(problematic_rows) > 0) {
+    shown <- head(problematic_rows, 3)
+    msg <- paste0(
+      msg,
+      "\nFirst ", length(shown), " problematic row(s): ",
+      paste(shown, collapse = ", "),
+      if (length(problematic_rows) > 3) " …"
+    )
   }
 
-  ##
-  ## Cache index check (skip on repeated calls)
-  ##
-  if (!skip_index_check) {
-    cache_key <- paste0(schema, ".", table)
-    if (!exists(".upsert_index_cache", envir = .GlobalEnv)) {
-      assign(".upsert_index_cache", new.env(parent = emptyenv()), envir = .GlobalEnv)
-    }
-    cache <- get(".upsert_index_cache", envir = .GlobalEnv)
+  return(bail(msg))
+}
 
-    if (!isTRUE(cache[[cache_key]])) {
-      idx_exists <- DBI::dbGetQuery(conn, glue::glue_sql(
-        "SELECT 1 FROM pg_indexes
-         WHERE schemaname = {schema} AND tablename = {table}
-         AND indexdef LIKE '%UNIQUE%' LIMIT 1",
-        .con = conn
-      ))
-      if (nrow(idx_exists) == 0) {
-        return(bail(paste0("No UNIQUE index for ", schema, ".", table)))
-      }
-      cache[[cache_key]] <- TRUE
-    }
-  }
+  # if (anyNA(df[, nk, drop = FALSE])) {
+  #   return(bail("Natural-key columns contain NA; cannot upsert."))
+  # }
 
   ##
-  ## Pre-compute SQL components (avoid repeated quoting)
+  ## Pre-compute SQL components
   ##
-  sql_parts <- build_sql_components(conn, schema, table, cols, nk)
+  sql_parts <- build_sql_components_pk(conn, schema, table, cols, nk, pk)
 
   ##
   ## Batch processing for large datasets
@@ -293,7 +304,7 @@ upsert_best_curve <- function(conn,
           duration = NULL,
           type = "message"
         )
-        upsert_batch(conn, batches[[i]], sql_parts, use_copy, notify)
+        upsert_batch_pk(conn, batches[[i]], table, sql_parts, use_copy, notify)
       }, logical(1))
     }, error = function(e) {
       showNotification(
@@ -305,7 +316,6 @@ upsert_best_curve <- function(conn,
       return(NULL)
     })
 
-    # Handle error case (NULL returned from tryCatch)
     if (is.null(results)) {
       return(invisible(FALSE))
     }
@@ -331,7 +341,7 @@ upsert_best_curve <- function(conn,
 
   ## Single batch
   ok <- tryCatch({
-    upsert_batch(conn, df, sql_parts, use_copy, notify)
+    upsert_batch_pk(conn, df, table, sql_parts, use_copy, notify)
   }, error = function(e) {
     showNotification(
       sprintf("Upsert failed: %s", conditionMessage(e)),
@@ -352,9 +362,21 @@ upsert_best_curve <- function(conn,
   invisible(ok)
 }
 
-## Pre-compute SQL components once
+## Get primary key for each table
+get_primary_key <- function(table) {
+  keys <- list(
+    best_plate_all = "best_plate_all_id",
+    best_glance_all = "best_glance_all_id",
+    best_tidy_all = "best_tidy_all_id",
+    best_sample_se_all = "best_sample_se_all_id",
+    best_standard_all = "best_standard_all_id",
+    best_pred_all = "best_pred_all_id"
+  )
+  keys[[table]]
+}
 
-build_sql_components <- function(conn, schema, table, cols, nk) {
+## Build SQL components for primary key based upsert
+build_sql_components_pk <- function(conn, schema, table, cols, nk, pk) {
   schema_id <- as.character(DBI::dbQuoteIdentifier(conn, schema))
   table_id <- as.character(DBI::dbQuoteIdentifier(conn, table))
 
@@ -366,80 +388,371 @@ build_sql_components <- function(conn, schema, table, cols, nk) {
     as.character(DBI::dbQuoteIdentifier(conn, x))
   }, character(1), USE.NAMES = FALSE)
 
+  pk_quoted <- as.character(DBI::dbQuoteIdentifier(conn, pk))
+
   cols_list <- paste(cols_quoted, collapse = ", ")
   nk_list <- paste(nk_quoted, collapse = ", ")
 
-  update_cols <- setdiff(cols, nk)
+  # Build WHERE clause for natural key matching
+  nk_conditions <- vapply(nk, function(x) {
+    col_quoted <- as.character(DBI::dbQuoteIdentifier(conn, x))
+    paste0("t.", col_quoted, " = tmp.", col_quoted)
+  }, character(1), USE.NAMES = FALSE)
+
+  nk_where_clause <- paste(nk_conditions, collapse = " AND ")
+
+  # Build UPDATE SET clause for non-key columns
+  update_cols <- setdiff(cols, c(nk, pk))
   if (length(update_cols) > 0) {
     update_quoted <- vapply(update_cols, function(x) {
       as.character(DBI::dbQuoteIdentifier(conn, x))
     }, character(1), USE.NAMES = FALSE)
     set_clause <- paste(
-      vapply(update_quoted, function(col) paste0(col, " = EXCLUDED.", col), character(1)),
+      vapply(update_quoted, function(col) paste0(col, " = tmp.", col), character(1)),
       collapse = ", "
     )
-    conflict_action <- paste("DO UPDATE SET", set_clause)
   } else {
-    conflict_action <- "DO NOTHING"
+    set_clause <- NULL
   }
+
+  # Columns for INSERT (excluding primary key - let it auto-generate)
+  insert_cols <- setdiff(cols, pk)
+  insert_cols_quoted <- vapply(insert_cols, function(x) {
+    as.character(DBI::dbQuoteIdentifier(conn, x))
+  }, character(1), USE.NAMES = FALSE)
+  insert_cols_list <- paste(insert_cols_quoted, collapse = ", ")
 
   list(
     schema_id = schema_id,
     table_id = table_id,
+    pk = pk,
+    pk_quoted = pk_quoted,
     cols = cols,
     cols_list = cols_list,
+    insert_cols = insert_cols,
+    insert_cols_list = insert_cols_list,
+    nk = nk,
     nk_list = nk_list,
-    conflict_action = conflict_action
+    nk_where_clause = nk_where_clause,
+    set_clause = set_clause
   )
 }
 
-
-## Execute single batch with COPY optimization
-
-upsert_batch <- function(conn, df, sql_parts, use_copy, notify) {
+## Execute single batch using DELETE/INSERT strategy based on natural keys
+upsert_batch_pk <- function(conn, df, table, sql_parts, use_copy, notify) {
   tryCatch({
     DBI::dbWithTransaction(conn, {
       tmp_name <- paste0("tmp_", substr(digest::digest(Sys.time()), 1, 8))
       tmp_id <- as.character(DBI::dbQuoteIdentifier(conn, tmp_name))
 
-      # Minimal temp table - UNLOGGED equivalent for temp tables
+      # Create temp table (excluding primary key column if present)
+      temp_cols <- setdiff(sql_parts$cols, sql_parts$pk)
+
+      # Filter df to exclude primary key column for temp table
+      df_temp <- df[, temp_cols, drop = FALSE]
+
       create_sql <- sprintf(
         "CREATE TEMP TABLE %s (%s) ON COMMIT DROP",
         tmp_id,
         paste(sprintf("%s %s",
-                      vapply(sql_parts$cols, function(x) as.character(DBI::dbQuoteIdentifier(conn, x)), character(1)),
-                      vapply(df, pg_type_map, character(1))
+                      vapply(temp_cols, function(x) as.character(DBI::dbQuoteIdentifier(conn, x)), character(1)),
+                      vapply(df_temp, pg_type_map, character(1))
         ), collapse = ", ")
       )
       DBI::dbExecute(conn, create_sql)
 
-      # Use COPY for bulk loading (much faster than INSERT)
+      # Load data into temp table using COPY
       if (use_copy && requireNamespace("RPostgres", quietly = TRUE)) {
         RPostgres::dbWriteTable(
-          conn, tmp_name, df,
+          conn, tmp_name, df_temp,
           append = TRUE,
           row.names = FALSE,
-          copy = TRUE  # Uses PostgreSQL COPY protocol
+          copy = TRUE
         )
       } else {
-        DBI::dbWriteTable(conn, tmp_name, df, append = TRUE, row.names = FALSE)
+        DBI::dbWriteTable(conn, tmp_name, df_temp, append = TRUE, row.names = FALSE)
       }
 
-      # Execute upsert
-      upsert_sql <- sprintf(
-        "INSERT INTO %s.%s (%s) SELECT %s FROM %s ON CONFLICT (%s) %s",
+      # Step 1: DELETE existing rows that match natural keys
+      delete_sql <- sprintf(
+        "DELETE FROM %s.%s t
+         USING %s tmp
+         WHERE %s",
         sql_parts$schema_id, sql_parts$table_id,
-        sql_parts$cols_list, sql_parts$cols_list, tmp_id,
-        sql_parts$nk_list, sql_parts$conflict_action
+        tmp_id,
+        sql_parts$nk_where_clause
       )
-      DBI::dbExecute(conn, upsert_sql)
+      DBI::dbExecute(conn, delete_sql)
+
+      # Step 2: INSERT all rows from temp table (primary key auto-generates)
+      insert_sql <- sprintf(
+        "INSERT INTO %s.%s (%s)
+         SELECT %s FROM %s",
+        sql_parts$schema_id, sql_parts$table_id,
+        sql_parts$insert_cols_list,
+        sql_parts$insert_cols_list,
+        tmp_id
+      )
+      DBI::dbExecute(conn, insert_sql)
     })
     TRUE
   }, error = function(e) {
-    showNotification(id = "error_batch" ,paste0("Batch failed: ", conditionMessage(e)), duration = NULL, closeButton = T, type = "error")
+    showNotification(
+      id = "error_batch",
+      paste0("Batch failed for ", table, ": ", conditionMessage(e)),
+      duration = NULL,
+      closeButton = TRUE,
+      type = "error"
+    )
     FALSE
   })
 }
+
+
+
+
+
+# upsert_best_curve <- function(conn,
+#                               df,
+#                               schema = "madi_results",
+#                               table  = "best_plate_all",
+#                               notify = NULL,
+#                               quiet  = FALSE,
+#                               batch_size = 50000,
+#                               use_copy = TRUE,
+#                               skip_index_check = FALSE) {
+#
+#   ##
+#   ## Notifier
+#   ##
+#   if (is.null(notify)) {
+#     notify <- function(msg) if (!quiet) message(Sys.time(), " - ", msg)
+#   }
+#   bail <- function(msg) {
+#     notify(msg)
+#     invisible(FALSE)
+#   }
+#
+#   ##
+#   ## Basic checks
+#   ##
+#   if (!DBI::dbIsValid(conn)) return(bail("Database connection is not valid."))
+#   if (!is.data.frame(df) || nrow(df) == 0) return(bail("No data provided."))
+#
+#   cols <- names(df)
+#   nk <- get_natural_keys(table)
+#   if (is.null(nk)) stop("Unknown table: ", table)
+#
+#   missing_keys <- setdiff(nk, cols)
+#   if (length(missing_keys) > 0) {
+#     stop("Missing natural-key columns: ", paste(missing_keys, collapse = ", "))
+#   }
+#
+#   if (anyNA(df[, nk, drop = FALSE])) {
+#     return(bail("Natural-key columns contain NA; cannot upsert."))
+#   }
+#
+#   ##
+#   ## Cache index check (skip on repeated calls)
+#   ##
+#   # if (!skip_index_check) {
+#   #   cache_key <- paste0(schema, ".", table)
+#   #   if (!exists(".upsert_index_cache", envir = .GlobalEnv)) {
+#   #     assign(".upsert_index_cache", new.env(parent = emptyenv()), envir = .GlobalEnv)
+#   #   }
+#   #   cache <- get(".upsert_index_cache", envir = .GlobalEnv)
+#   #
+#   #   if (!isTRUE(cache[[cache_key]])) {
+#   #     idx_exists <- DBI::dbGetQuery(conn, glue::glue_sql(
+#   #       "SELECT 1 FROM pg_indexes
+#   #        WHERE schemaname = {schema} AND tablename = {table}
+#   #        AND indexdef LIKE '%UNIQUE%' LIMIT 1",
+#   #       .con = conn
+#   #     ))
+#   #     if (nrow(idx_exists) == 0) {
+#   #       return(bail(paste0("No UNIQUE index for ", schema, ".", table)))
+#   #     }
+#   #     cache[[cache_key]] <- TRUE
+#   #   }
+#  # }
+#
+#   ##
+#   ## Pre-compute SQL components (avoid repeated quoting)
+#   ##
+#   sql_parts <- build_sql_components(conn, schema, table, cols, nk)
+#
+#   ##
+#   ## Batch processing for large datasets
+#   ##
+#   n_rows <- nrow(df)
+#
+#   if (n_rows > batch_size) {
+#     notif_id <- paste0("upsert_", table)
+#
+#     showNotification(
+#       sprintf("Processing %d rows in %d batches", n_rows, ceiling(n_rows / batch_size)),
+#       id = notif_id,
+#       duration = 3,
+#       type = "message"
+#     )
+#
+#     batches <- split(df, ceiling(seq_len(n_rows) / batch_size))
+#
+#     results <- tryCatch({
+#       vapply(seq_along(batches), function(i) {
+#         showNotification(
+#           sprintf("Batch %d/%d (%d rows)", i, length(batches), nrow(batches[[i]])),
+#           id = notif_id,
+#           duration = NULL,
+#           type = "message"
+#         )
+#         upsert_batch(conn, batches[[i]], table, sql_parts, use_copy, notify)
+#       }, logical(1))
+#     }, error = function(e) {
+#       showNotification(
+#         sprintf("Error during batch processing: %s", conditionMessage(e)),
+#         id = notif_id,
+#         duration = NULL,
+#         type = "error"
+#       )
+#       return(NULL)
+#     })
+#
+#     # Handle error case (NULL returned from tryCatch)
+#     if (is.null(results)) {
+#       return(invisible(FALSE))
+#     }
+#
+#     if (all(results)) {
+#       removeNotification(notif_id)
+#       showNotification(
+#         sprintf("All %d batches completed successfully", length(batches)),
+#         duration = 5,
+#         type = "message"
+#       )
+#       return(invisible(TRUE))
+#     } else {
+#       showNotification(
+#         sprintf("%d/%d batches failed", sum(!results), length(batches)),
+#         id = notif_id,
+#         duration = NULL,
+#         type = "error"
+#       )
+#       return(invisible(FALSE))
+#     }
+#   }
+#
+#   ## Single batch
+#   ok <- tryCatch({
+#     upsert_batch(conn, df, table, sql_parts, use_copy, notify)
+#   }, error = function(e) {
+#     showNotification(
+#       sprintf("Upsert failed: %s", conditionMessage(e)),
+#       duration = NULL,
+#       type = "error"
+#     )
+#     return(FALSE)
+#   })
+#
+#   if (ok) {
+#     showNotification(
+#       paste0(table, " upsert completed (", n_rows, " rows)."),
+#       duration = 5,
+#       type = "message"
+#     )
+#   }
+#
+#   invisible(ok)
+# }
+
+## Pre-compute SQL components once
+#
+# build_sql_components <- function(conn, schema, table, cols, nk) {
+#   schema_id <- as.character(DBI::dbQuoteIdentifier(conn, schema))
+#   table_id <- as.character(DBI::dbQuoteIdentifier(conn, table))
+#
+#   cols_quoted <- vapply(cols, function(x) {
+#     as.character(DBI::dbQuoteIdentifier(conn, x))
+#   }, character(1), USE.NAMES = FALSE)
+#
+#   nk_quoted <- vapply(nk, function(x) {
+#     as.character(DBI::dbQuoteIdentifier(conn, x))
+#   }, character(1), USE.NAMES = FALSE)
+#
+#   cols_list <- paste(cols_quoted, collapse = ", ")
+#   nk_list <- paste(nk_quoted, collapse = ", ")
+#
+#   update_cols <- setdiff(cols, nk)
+#   if (length(update_cols) > 0) {
+#     update_quoted <- vapply(update_cols, function(x) {
+#       as.character(DBI::dbQuoteIdentifier(conn, x))
+#     }, character(1), USE.NAMES = FALSE)
+#     set_clause <- paste(
+#       vapply(update_quoted, function(col) paste0(col, " = EXCLUDED.", col), character(1)),
+#       collapse = ", "
+#     )
+#     conflict_action <- paste("DO UPDATE SET", set_clause)
+#   } else {
+#     conflict_action <- "DO NOTHING"
+#   }
+#
+#   list(
+#     schema_id = schema_id,
+#     table_id = table_id,
+#     cols = cols,
+#     cols_list = cols_list,
+#     nk_list = nk_list,
+#     conflict_action = conflict_action
+#   )
+# }
+
+
+## Execute single batch with COPY optimization
+#
+# upsert_batch <- function(conn, df, table, sql_parts, use_copy, notify) {
+#   tryCatch({
+#     DBI::dbWithTransaction(conn, {
+#       tmp_name <- paste0("tmp_", substr(digest::digest(Sys.time()), 1, 8))
+#       tmp_id <- as.character(DBI::dbQuoteIdentifier(conn, tmp_name))
+#
+#       # Minimal temp table - UNLOGGED equivalent for temp tables
+#       create_sql <- sprintf(
+#         "CREATE TEMP TABLE %s (%s) ON COMMIT DROP",
+#         tmp_id,
+#         paste(sprintf("%s %s",
+#                       vapply(sql_parts$cols, function(x) as.character(DBI::dbQuoteIdentifier(conn, x)), character(1)),
+#                       vapply(df, pg_type_map, character(1))
+#         ), collapse = ", ")
+#       )
+#       DBI::dbExecute(conn, create_sql)
+#
+#       # Use COPY for bulk loading (much faster than INSERT)
+#       if (use_copy && requireNamespace("RPostgres", quietly = TRUE)) {
+#         RPostgres::dbWriteTable(
+#           conn, tmp_name, df,
+#           append = TRUE,
+#           row.names = FALSE,
+#           copy = TRUE  # Uses PostgreSQL COPY protocol
+#         )
+#       } else {
+#         DBI::dbWriteTable(conn, tmp_name, df, append = TRUE, row.names = FALSE)
+#       }
+#
+#       # Execute upsert
+#       upsert_sql <- sprintf(
+#         "INSERT INTO %s.%s (%s) SELECT %s FROM %s ON CONFLICT (%s) %s",
+#         sql_parts$schema_id, sql_parts$table_id,
+#         sql_parts$cols_list, sql_parts$cols_list, tmp_id,
+#         sql_parts$nk_list, sql_parts$conflict_action
+#       )
+#       DBI::dbExecute(conn, upsert_sql)
+#     })
+#     TRUE
+#   }, error = function(e) {
+#     showNotification(id = "error_batch" ,paste0("Batch failed for ", table, ":", conditionMessage(e)), duration = NULL, closeButton = T, type = "error")
+#     FALSE
+#   })
+# }
 
 
 ## Map R types to PostgreSQL types
@@ -504,8 +817,7 @@ get_natural_keys <- function(table) {
     best_sample_se_all = c(
       "study_accession", "experiment_accession",
       "plateid", "plate", "nominal_sample_dilution", "source", "antigen",
-      "patientid", "timeperiod", "sampleid", "dilution",
-      "uid"
+      "patientid", "timeperiod", "sampleid", "dilution"
     ),
     best_standard_all = c(
       "study_accession", "experiment_accession",
@@ -513,8 +825,7 @@ get_natural_keys <- function(table) {
     ), # dilution not included as it can be NA when geometric mean is used
     best_pred_all = c(
       "study_accession", "experiment_accession",
-      "plateid", "plate", "nominal_sample_dilution", "source", "antigen",
-      "id_match"
+      "plateid", "plate", "nominal_sample_dilution", "source", "antigen"
     )
   )
 
@@ -664,7 +975,7 @@ fetch_best_tidy_all <- function(study_accession,experiment_accession, project_id
 }
 fetch_best_pred_all <- function(study_accession, experiment_accession, project_id, conn) {
   query <- glue("SELECT best_pred_all_id, x, model, yhat, overall_se, predicted_concentration, se_x, pcov, study_accession, experiment_accession, nominal_sample_dilution, plateid, plate,
-  antigen, source, id_match, best_glance_all_id
+  antigen, source, best_glance_all_id
 	FROM madi_results.best_pred_all
 	WHERE project_id = {project_id}
 	AND study_accession = '{study_accession}'
@@ -741,9 +1052,9 @@ fetch_best_sample_se_all <- function(study_accession, experiment_accession, proj
   query <- glue("
 SELECT best_sample_se_all_id, raw_predicted_concentration, study_accession, experiment_accession, timeperiod, patientid, well, stype, sampleid,
 agroup, pctaggbeads, samplingerrors, antigen,
-antibody_n, plateid, plate, nominal_sample_dilution, assay_response_variable, assay_independent_variable, dilution, overall_se, assay_response,
+antibody_n, plateid, plate, nominal_sample_dilution, assay_response_variable, assay_independent_variable, dilution, overall_se, raw_assay_response, assay_response,
 se_concentration, final_predicted_concentration, pcov, source, gate_class_loq, gate_class_lod,
-gate_class_pcov, uid, best_glance_all_id, feature, norm_assay_response
+gate_class_pcov, best_glance_all_id, feature, norm_assay_response
 	FROM madi_results.best_sample_se_all
 	WHERE project_id = {project_id}
 	AND study_accession = '{study_accession}'
@@ -774,7 +1085,7 @@ fetch_best_pred_all_summary <- function(study_accession, experiment_accession, p
       p.best_pred_all_id, p.x, p.model, p.yhat, p.overall_se,
       p.predicted_concentration, p.se_x, p.pcov,
       p.study_accession, p.experiment_accession, p.nominal_sample_dilution,
-      p.plateid, p.plate, p.antigen, p.source, p.id_match, p.best_glance_all_id,
+      p.plateid, p.plate, p.antigen, p.source, p.best_glance_all_id,
       g.is_log_response, g.is_log_x, g.bkg_method, g.apply_prozone
     FROM madi_results.best_pred_all p
     LEFT JOIN madi_results.best_glance_all g
@@ -852,7 +1163,7 @@ fetch_best_sample_se_all_summary <- function(study_accession, experiment_accessi
       ss.assay_response_variable, ss.assay_independent_variable,
       ss.dilution, ss.overall_se, ss.assay_response, ss.se_concentration,
       ss.final_predicted_concentration, ss.pcov, ss.source, ss.gate_class_loq, ss.gate_class_lod,
-      ss.gate_class_pcov, ss.uid, ss.best_glance_all_id, ss.feature, ss.norm_assay_response,
+      ss.gate_class_pcov, ss.best_glance_all_id, ss.feature, ss.norm_assay_response,
       g.is_log_response, g.is_log_x, g.bkg_method, g.apply_prozone
     FROM madi_results.best_sample_se_all ss
     LEFT JOIN madi_results.best_glance_all g
