@@ -342,19 +342,19 @@ process_batch_outputs <- function(batch_outputs, response_var, project_id) {
              if_else(is.finite(raw_predicted_concentration),
                      raw_predicted_concentration,
                      NA_real_))
-
-  batch_outputs$best_pred_all <- batch_outputs$best_pred_all %>%
-    dplyr::group_by(
-      study_accession,
-      experiment_accession,
-      plateid,
-      plate,
-      nominal_sample_dilution,
-      source,
-      antigen
-    ) %>%
-    dplyr::mutate(id_match = dplyr::row_number()) %>%
-    dplyr::ungroup()
+#
+#   batch_outputs$best_pred_all <- batch_outputs$best_pred_all %>%
+#     dplyr::group_by(
+#       study_accession,
+#       experiment_accession,
+#       plateid,
+#       plate,
+#       nominal_sample_dilution,
+#       source,
+#       antigen
+#     ) %>%
+#     dplyr::mutate(id_match = dplyr::row_number()) %>%
+#     dplyr::ungroup()
 
 
   # batch_outputs$best_sample_se_all <- batch_outputs$best_sample_se_all %>%
@@ -368,10 +368,21 @@ process_batch_outputs <- function(batch_outputs, response_var, project_id) {
   #   dplyr::ungroup()
   batch_outputs$best_sample_se_all <- batch_outputs$best_sample_se_all %>%
     dplyr::rename(assay_response = all_of(response_var)) %>%
-    dplyr::mutate(uid = dplyr::row_number())
+    dplyr::distinct()
+    # dplyr::group_by(
+    #   study_accession, experiment_accession,
+    #   plateid, plate, nominal_sample_dilution, source, antigen,
+    #   patientid, timeperiod, sampleid, dilution
+    # ) %>%
+    # dplyr::ungroup() %>%
+   # dplyr::distinct()
+  # batch_outputs$best_sample_se_all <- batch_outputs$best_sample_se_all %>%
+  #   dplyr::rename(assay_response = all_of(response_var)) %>%
+  #   dplyr::mutate(uid = dplyr::row_number())
 
   batch_outputs$best_standard_all <- batch_outputs$best_standard_all %>%
-    dplyr::rename(assay_response = all_of(response_var))
+    dplyr::rename(assay_response = all_of(response_var)) %>%
+    dplyr::distinct()
 
 
   # add project_id

@@ -360,7 +360,7 @@ WITH study_config AS (
    ------------------------------------------------------------- */
 SELECT
     b.best_sample_se_all_id,
-    b.predicted_concentration,
+   -- b.raw_predicted_concentration as predicted_concentration,
     b.study_accession,
     b.experiment_accession,
     b.timeperiod,
@@ -387,13 +387,12 @@ SELECT
     b.overall_se,
     b.assay_response        AS MFI,
     b.se_concentration,
-    b.au                    AS AU,
+    --b.final_predicted_concentration AS concentration,
     b.pcov,
     b.source,
     b.gate_class_loq,
     b.gate_class_lod,
     b.gate_class_pcov,
-    b.uid,
     b.norm_assay_response,
     b.best_glance_all_id,
 
