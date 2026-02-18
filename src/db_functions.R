@@ -135,6 +135,9 @@ pull_data <- function(study_accession, experiment_accession, project_id, conn = 
                             conn = conn)
   plates$plate_id <- trimws(plates$plate_id)
 
+  plates$plate_nom <- paste(plates$plate, plates$nominal_sample_dilution, sep = "-")
+
+
   antigen_constraints <- fetch_antigen_parameters(study_accession = study_accession,
                                                   experiment_accession = experiment_accession,
                                                   project_id = project_id,

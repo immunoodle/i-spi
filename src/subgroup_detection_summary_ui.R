@@ -83,7 +83,7 @@ observeEvent(list(
                      title = "Subgroup Summary Methods",
                      tagList(
                        tags$p("Use the dropdown menu titled 'Response type' to choose the desired type of outcome measured.
-                              Currently the options include MFI, Normalized MFI and Arbitrary Units.
+                              Currently the options include MFI, Normalized MFI and Concentration.
                               Use the dropdown menu to select the desired transformation that is applied to the data.
                               Select the first and second visits of interest from the dropdown menu titled 'First Visit' and 'Second Visit respectively.
                               To change the reference arm selection navigate to the 'Study Overview' tab and to the Set Reference Arm settings.
@@ -188,7 +188,7 @@ observeEvent(list(
           HTML(
             "The subgroup summary depends on the first (baseline) and second (followup) timepoints are set in the subgroup detection section within the study paramaters.
              Normalized MFI is only available when normalized values have been computed for all antigens for the selected feature.
-             For subject–antigen pairs, arbitrary unit values falling outside the standard curve prediction range were rendered in white."
+             For subject–antigen pairs, concentration values falling outside the standard curve prediction range were rendered in white."
            )
       #     style = "info"
       #   )
@@ -223,10 +223,10 @@ observeEvent(list(
 
       #sample_data_v_class <<- sample_data
 
-      choices <- c("MFI", "Arbitrary Units")
+      choices <- c("MFI", "Concentration")
 
       if (any(!is.na(sample_data$norm_assay_response))) {
-        choices <- c("MFI", "Normalized MFI", "Arbitrary Units")
+        choices <- c("MFI", "Normalized MFI", "Concentration")
       }
       selectInput(
         inputId = "responseClassSelection",

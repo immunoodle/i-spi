@@ -84,7 +84,19 @@ observeEvent(list(
               plotlyOutput("standard_curve", width = "75vw", height = "800px"),
               # # div(class = "table-container",tableOutput("parameter_estimates")),
               div(class = "table-container",tableOutput("summary_statistics")),
-              actionButton("run_batch_fit", "Calculate Standard Curves for all Experiments")
+              radioButtons(
+                inputId = "save_scope",
+                label = "Calculation scope",
+                choices = c(
+                  "Current plate"      = "plate",
+                  "Current experiment" = "experiment",
+                  "All experiments"    = "study"
+                ),
+                selected = "study",
+                inline = TRUE
+              ),
+              actionButton("run_batch_fit", "Calculate Standard Curves")
+              #uiOutput("run_batch_fit")
 
           )
           # div(class = "table-container",tableOutput("samples_above_ulod")),
@@ -98,7 +110,10 @@ observeEvent(list(
         )
       })
 
- #   }
+
+
+
+
 
     output$standard_curve_context <- renderUI({
       standards_n <- nrow(loaded_data$standards[loaded_data$standards$experiment_accession == selected_experiment,])
@@ -670,7 +685,26 @@ observeEvent(list(
 # Reactive value to track if batch processing is currently running
 is_batch_processing <- reactiveVal(FALSE)
 
+observeEvent(input$save_scope, {
+
+  label <- switch(
+    input$save_scope,
+    plate      = "Calculate Standard Curves (Current Plate)",
+    experiment = "Calculate Standard Curves (Current Experiment)",
+    study      = "Calculate Standard Curves (All Experiments)"
+  )
+
+  updateActionButton(
+    session,
+    "run_batch_fit",
+    label = label
+  )
+})
+
+
 observeEvent(input$run_batch_fit, ignoreInit = TRUE, {
+
+  scope <- input$save_scope
 
   # First check: Is processing already running?
   if (is_batch_processing()) {
@@ -705,7 +739,14 @@ observeEvent(input$run_batch_fit, ignoreInit = TRUE, {
 
     # Pull fresh data for the batch processing
     headers <- fetch_db_header_experiments(study_accession = input$readxMap_study_accession, conn = conn)
-    exp_list <- unique(headers$experiment_accession)
+    #exp_list <- unique(headers$experiment_accession)
+
+    exp_list <- switch(
+      scope,
+      "study"      = unique(headers$experiment_accession),
+      "experiment" = input$readxMap_experiment_accession,
+      "plate"      = input$readxMap_experiment_accession
+    )
 
     loaded_data_list <- list()
     for(exp in exp_list) {
@@ -714,6 +755,31 @@ observeEvent(input$run_batch_fit, ignoreInit = TRUE, {
                                            project_id = userWorkSpaceID(),
                                            conn = conn)
     }
+
+    if (scope == "plate") {
+      plate <- input$sc_plate_select
+      loaded_data_list <- lapply(loaded_data_list, function(x) {
+
+        if (!is.null(x$plates) && nrow(x$plates) > 0) {
+          x$plates <- x$plates[x$plates$plate_nom == plate,, drop = F]
+        }
+        if (!is.null(x$standards) && nrow(x$standards) > 0) {
+          x$standards <- x$standards[x$standards$plate_nom == plate,, drop = F]
+        }
+
+        if (!is.null(x$samples) && nrow(x$samples) > 0) {
+          x$samples <- x$samples[x$samples$plate_nom == plate,, drop = F]
+        }
+
+        if (!is.null(x$blanks) && nrow(x$blanks) > 0) {
+          x$blanks <- x$blanks[x$blanks$plate_nom == plate,, drop = F]
+        }
+
+        x
+      })
+
+    }
+
 
     # Get response variable from first experiment's loaded data
     response_var <- loaded_data_list[[exp_list[1]]]$response_var
@@ -931,7 +997,7 @@ observeEvent(input$run_batch_fit, ignoreInit = TRUE, {
       duration = NULL,
       closeButton = TRUE
     )
-    # removeNotification("batch_sc_fit_notify")
+  removeNotification("batch_sc_fit_notify")
   }, finally = {
     # Always reset the processing flag, even if there was an error
     is_batch_processing(FALSE)
