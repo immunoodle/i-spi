@@ -828,13 +828,16 @@ select_model_fit_AIC <- function(fit_summary,
   selected_fit <- fit_robust_lm[[selected_model_name]]$fit
   selected_data <-  fit_robust_lm[[selected_model_name]]$data
   selected_params <- fit_params[fit_params$model == selected_model_name,]
-  pred_df <- plot_data$pred_df[plot_data$pred_df$model == selected_model_name,]
-  d2xy_df <- plot_data$d2xy_df[plot_data$d2xy_df$model == selected_model_name,]
-  dydx_df <- plot_data$dydx_df[plot_data$dydx_df$model == selected_model_name,]
+  pred_df    <- plot_data$pred_df[plot_data$pred_df$model == selected_model_name,]
+  d2xy_df    <- plot_data$d2xy_df[plot_data$d2xy_df$model == selected_model_name,]
+  dydx_df    <- plot_data$dydx_df[plot_data$dydx_df$model == selected_model_name,]
+  curve_ci_df <- if (!is.null(plot_data$ci_df))
+    plot_data$ci_df[plot_data$ci_df$model == selected_model_name,]
+  else NULL
 
-  return(list(best_model_name =selected_model_name, best_fit = selected_fit, best_data = selected_data,
+  return(list(best_model_name = selected_model_name, best_fit = selected_fit, best_data = selected_data,
               best_ci = selected_params, best_pred = pred_df,
-              best_d2xy = d2xy_df, best_dydx = dydx_df))
+              best_d2xy = d2xy_df, best_dydx = dydx_df, best_curve_ci = curve_ci_df))
 
 }
 
