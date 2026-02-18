@@ -82,6 +82,108 @@ observeEvent(list(
                 column(3, uiOutput("is_display_log_independent_variable"))
               ),
               plotlyOutput("standard_curve", width = "75vw", height = "800px"),
+              br(),
+              bsCollapsePanel(
+                title = "Standard Curve QC Glossary",
+                style = "success",
+                tagList(
+                  tags$dl(
+                    style = "margin-bottom:0;",
+
+                    tags$dt(tags$strong("Standards")),
+                    tags$dd("Known concentration reference points used to construct the standard curve."),
+
+                    tags$dt(tags$strong("Samples")),
+                    tags$dd("Unknown test samples interpolated against the standard curve to determine their concentrations based on measured assay response values."),
+
+                    tags$dt(tags$strong("Fitted Curve")),
+                    tags$dd("The fitted sigmoidal curve to the standard data points."),
+
+                    tags$dt(tags$strong("95% CI (Confidence Interval)")),
+                    tags$dd("The 95% CI around the fitted standard curve."),
+
+                    tags$dt(tags$strong("Lower and Upper LODs (Limit of Detection)")),
+                    tags$dd(
+                      "Lower and upper LODs are defined as the upper 97.5% confidence bound of the lower asymptote and the lower 2.5% confidence bound of the upper asymptote, respectively ",
+                      tags$a(
+                        href = "Development%20and%20validation%20of%20a%20robust%20multiplex%20serological%20assay.pdf",
+                        "(Rajam et al.).",
+                        target = "_blank"
+                      ),
+                      " Limits of Detection correspond to the y-coordinate in the legend, as they are defined on the response axis."
+                    ),
+
+                    tags$dt(tags$strong("Mininum Detectable Concentration")),
+                    tags$dd(
+                      "The smallest antibody concentration that produces a signal the assay can detect above background ",
+                      tags$a(
+                        href = "Development%20and%20validation%20of%20a%20robust%20multiplex%20serological%20assay.pdf",
+                        "(Rajam et al.).",
+                        target = "_blank"
+                      ),
+                      " This corresponds to the x-coordinate of the Lower Limit of Detection in the legend, as it is on the concentration axis."
+                    ),
+
+                    tags$dt(tags$strong("Lower and Upper RDL (Reliable Detection Limit)")),
+                    tags$dd(
+                      "Lower RDL: The lowest concentration at which the assay consistently produces a signal above background with 95% confidence based on the fit of the standard curve ",
+                      tags$a(
+                        href = "Development%20and%20validation%20of%20a%20robust%20multiplex%20serological%20assay.pdf",
+                        "(Rajam et al.).",
+                        target = "_blank"
+                      ),
+                      tags$br(),
+                      " Upper RDL: Analogously, the highest concentration at which the assay consistently produces a signal below the upper asymptote (saturation) with 95% confidence, based on the fit of the standard curve."
+                    ),
+
+                    tags$dt(tags$strong("Lower and Upper LOQs (Limits of Quantification)")),
+                    tags$dd(
+                      "Defines a region of assay response (MFI) and concentration where sample estimates have less measurement error. Limits of Quantification are derived from the local minimum and maximum of the second derivative of x given y of the standard curve ",
+                      tags$a(
+                        href = "Daly%20et.%20al%202005_BMCBioinformatics_Evaluating%20concentration%20estimation%20errors%20in%20ELISA%20microarray%20experiments1471-2105-6-17.pdf",
+                        "(Daly et al.)",
+                        target = "_blank"
+                      ),
+                      ", ",
+                      tags$a(
+                        href = "LinearPortion_BendPoints.pdf",
+                        "(Jeanne L Sebaugh and P. D. McCray)",
+                        target = "_blank"
+                      ),
+                      ", ",
+                      tags$a(
+                        href = "drLumi-An_open-source_package_to_manage_data_calibrate_and_conduct_quality_control_of_multiplex_bead-based_immunoassays_data_analysis.pdf",
+                        "(Sanz et al.).",
+                        target = "_blank"
+                      )
+                    ),
+
+                    tags$dt(tags$strong("2nd Derivative of x given y")),
+                    tags$dd("The second derivative curve used to identify Limits of Quantification."),
+
+                    tags$dt(tags$strong("pCoV (predicted concentration Coefficient of Variation)")),
+                    tags$dd(
+                      "A measure of the concentration estimation error corresponding to each sample measurement and is on the concentration uncertainty axis ",
+                      tags$a(
+                        href = "Daly%20et.%20al%202005_BMCBioinformatics_Evaluating%20concentration%20estimation%20errors%20in%20ELISA%20microarray%20experiments1471-2105-6-17.pdf",
+                        "(Daly et al.).",
+                        target = "_blank"
+                      )
+                    ),
+
+                    tags$dt(tags$strong("pCoV Threshold")),
+                    tags$dd("The acceptable cutoff for the predicted concentration coefficient of variation."),
+
+                    tags$dt(tags$strong("Inflection Point")),
+                    tags$dd(
+                      "The point on the standard curve where the concavity transitions from concave up to concave down.
+           It is the point where the assay is most sensitive to measurement errors in the measured response of the assay."
+                    )
+                  )
+                )
+              ),
+
+
               # # div(class = "table-container",tableOutput("parameter_estimates")),
               div(class = "table-container",tableOutput("summary_statistics")),
               radioButtons(

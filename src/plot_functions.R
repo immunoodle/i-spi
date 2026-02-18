@@ -427,7 +427,7 @@ plot_standard_curve <- function(best_fit,
       best_fit$best_curve_ci$x                   <- 10^best_fit$best_curve_ci$x
     }
   }
-  y3_label <- paste(stringr::str_to_title(independent_variable), "Uncertainty (pCoV)")
+  y3_label <- paste(stringr::str_to_title(independent_variable), "Uncertainty (pCoV %)")
   if (is_display_log_response) {
     y_label <- paste("log<sub>10</sub>", format_assay_terms(response_variable))
 
