@@ -838,6 +838,13 @@ select_model_fit_AIC <- function(fit_summary,
 
 }
 
+# Helper: dispatch to the correct dydx<model> function by name
+dispatch_dydx <- function(model_name, x, theta) {
+  fn <- match.fun(paste0("dydx", model_name))
+  args <- c(list(x = x), as.list(theta[intersect(names(theta), c("a","b","c","d","g"))]))
+  do.call(fn, args)
+}
+
 # This function depends on get_loqs, generate_inflection_point, generate_lods as it is a wrapper and calls them
 fit_qc_glance <- function(best_fit,
                           response_variable,
@@ -848,36 +855,39 @@ fit_qc_glance <- function(best_fit,
                           verbose = TRUE) {
 
 
+  # Refactor 3: Extract frequently-used members once
+  fit        <- best_fit$best_fit
+  best_data  <- best_fit$best_data
+  model_name <- best_fit$best_model_name
+
   if (antigen_settings$l_asy_constraint_method == "range_of_blanks" && antigen_fit_options$is_log_response && !is.null(fixed_a_result)) {
     .eps = 0.00005
     fixed_a_result <- log10(fixed_a_result + .eps)
   }
   # obtain qc metrics
-  loqs <- get_loqs(best_d2xy = best_fit$best_d2xy, fit = best_fit$best_fit, independent_variable = independent_variable)
+  loqs <- get_loqs(best_d2xy = best_fit$best_d2xy, fit = fit, independent_variable = independent_variable)
 
-  std_error_blank <- list(std_error_blank = get_blank_se(antigen_settings = antigen_settings))
+  # Refactor 5: keep blank SE as plain scalar until final assembly
+  blank_se_value <- get_blank_se(antigen_settings = antigen_settings)
 
-  lods <- generate_lods(best_fit = best_fit, fixed_a_result = fixed_a_result, std_error_blank = std_error_blank)
+  lods <- generate_lods(best_fit = best_fit, fixed_a_result = fixed_a_result, std_error_blank = blank_se_value)
 
-  inflection_point <- generate_inflection_point(model_name = best_fit$best_model_name, fit = best_fit$best_fit, fixed_a_result = fixed_a_result,independent_variable = independent_variable)
+  inflection_point <- generate_inflection_point(model_name = model_name, fit = fit, fixed_a_result = fixed_a_result, independent_variable = independent_variable)
 
+  # Refactor 1: pass pre-computed lods into generate_mdc_rdl
+  mdc_rdl <- generate_mdc_rdl(best_fit = best_fit, lods = lods,
+                               independent_variable = independent_variable,
+                               verbose = verbose)
 
-  theta <- coef(best_fit$best_fit)
+  theta <- coef(fit)
   theta["a"] <- ifelse(!is.null(fixed_a_result), fixed_a_result, theta["a"])
   # Use inflect_x (concentration) for the derivative, not inflect_y (response)
   # The dydx functions take x (concentration) as the first argument
   xi <- as.numeric(inflection_point$inflect_x)
-  dydx_inflect <- as.numeric(switch(best_fit$best_model_name,
-                                    Y4      = dydxY4(xi, a = theta["a"], b = theta["b"], c = theta["c"], d = theta["d"]),
-                                    Yd4     = dydxYd4(xi, a = theta["a"], b = theta["b"], c = theta["c"], d = theta["d"]),
-                                    Ygomp4  = dydxYgomp4(xi, a = theta["a"], b = theta["b"], c = theta["c"], d = theta["d"]),
-                                    Y5      = dydxY5(xi, a = theta["a"], b = theta["b"], c = theta["c"], d = theta["d"], g = theta["g"]),
-                                    Yd5     = dydxYd5(xi, a = theta["a"], b = theta["b"], c = theta["c"], d = theta["d"], g = theta["g"]),
-                                    stop("Unsupported model")
-  )
-  )
+  # Refactor 4: use dispatch_dydx helper instead of switch block
+  dydx_inflect <- as.numeric(dispatch_dydx(model_name, xi, theta))
 
-  combined_qc_list <- c(loqs, lods, inflection_point, std_error_blank, dydx_inflect = dydx_inflect)
+  combined_qc_list <- c(loqs, lods, inflection_point, std_error_blank = blank_se_value, dydx_inflect = dydx_inflect, mdc_rdl)
 
   # Ensure all values in the list are scalar numerics before creating dataframe
   combined_qc_list <- lapply(combined_qc_list, function(x) {
@@ -895,7 +905,7 @@ fit_qc_glance <- function(best_fit,
     qc_glance$uloq_y <- NA_real_
   }
   # obtain fit statistics and parameter estimates
-  s <-  summary(best_fit$best_fit)
+  s <-  summary(fit)
   coefs <- coef(s)
   coef_df <- as.data.frame(t(coefs[, "Estimate"]))
 
@@ -908,29 +918,29 @@ fit_qc_glance <- function(best_fit,
   df_resid <- s$df[2]
 
   # Compute R-squared
-  response <- best_fit$best_data[[response_variable]]
+  response <- best_data[[response_variable]]
 
-  rss <- sum(residuals(best_fit$best_fit)^2)
+  rss <- sum(residuals(fit)^2)
   tss <- sum((response - mean(response))^2)
   r_squared <- 1 - rss / tss
 
   # AIC and BIC
-  aic <- AIC(best_fit$best_fit)
-  bic <- BIC(best_fit$best_fit)
+  aic <- AIC(fit)
+  bic <- BIC(fit)
 
-  logLik_val <- as.numeric(logLik(best_fit$best_fit))
-  converged <- best_fit$best_fit$convInfo$isConv
-  iter <- best_fit$best_fit$convInfo$finIter
+  logLik_val <- as.numeric(logLik(fit))
+  converged <- fit$convInfo$isConv
+  iter <- fit$convInfo$finIter
 
-  crit <- best_fit$best_model_name
+  crit <- model_name
 
-  model_formula <- paste(deparse(formula(best_fit$best_fit)), collapse = " ")
+  model_formula <- paste(deparse(formula(fit)), collapse = " ")
   model_formula <- gsub("I\\((.*)\\)", "\\1", model_formula)
 
-  n_obs <- length(residuals(best_fit$best_fit))
+  n_obs <- length(residuals(fit))
 
   # calculate mse
-  mse <- mean(resid(best_fit$best_fit)^2, na.rm = T)
+  mse <- mean(resid(fit)^2, na.rm = T)
   # mean of observed response
   mean_obs_mfi<- mean(response, na.rm = TRUE)
   # coefficient of variation.
@@ -938,12 +948,12 @@ fit_qc_glance <- function(best_fit,
 
 
   glance_df <-  data.frame(
-    study_accession = unique(best_fit$best_data$study_accession),
-    experiment_accession = unique(best_fit$best_data$experiment_accession),
-    plateid = unique(best_fit$best_data$plateid),
-    plate = unique(best_fit$best_data$plate),
-    nominal_sample_dilution = unique(best_fit$best_data$nominal_sample_dilution),
-    antigen = unique(best_fit$best_data$antigen),
+    study_accession = unique(best_data$study_accession),
+    experiment_accession = unique(best_data$experiment_accession),
+    plateid = unique(best_data$plateid),
+    plate = unique(best_data$plate),
+    nominal_sample_dilution = unique(best_data$nominal_sample_dilution),
+    antigen = unique(best_data$antigen),
     iter = iter,
     status = converged,
     crit = crit,
@@ -957,7 +967,7 @@ fit_qc_glance <- function(best_fit,
     loglik = logLik_val,
     mse = mse,
     cv = cv,
-    source = unique(best_fit$best_data$source),
+    source = unique(best_data$source),
     bkg_method =  antigen_fit_options$blank_option, #blank_option,
     is_log_response = antigen_fit_options$is_log_response,
     is_log_x = antigen_fit_options$is_log_concentration,
@@ -1141,10 +1151,8 @@ generate_lods <- function(best_fit, fixed_a_result, std_error_blank,  verbose = 
   ulod <- best_ci[best_ci$parameter == "d",]$conf.low
 
   if (!is.null(fixed_a_result)) {
-    if (is.na(std_error_blank)) {
+    if (is.null(std_error_blank) || is.na(std_error_blank)) {
       std_error_blank <- 0
-    } else {
-      std_error_blank <- as.numeric(std_error_blank)
     }
     critical_value <- qt(0.975, df = nrow(best_data) - length(best_ci$parameter))
     cat("critical value:\n")
@@ -1162,6 +1170,114 @@ generate_lods <- function(best_fit, fixed_a_result, std_error_blank,  verbose = 
   }
   return(list(llod = llod, ulod = ulod))
 
+}
+
+generate_mdc_rdl <- function(best_fit, lods,
+                             independent_variable, verbose = TRUE) {
+
+  # Refactor 1: accept pre-computed lods instead of recomputing
+  llod <- as.numeric(lods$llod)
+  ulod <- as.numeric(lods$ulod)
+
+  fit        <- best_fit$best_fit
+  best_data  <- best_fit$best_data
+
+  # x-range of the standards (search bounds for uniroot)
+  x_data <- best_data[[independent_variable]]
+  x_lo   <- min(x_data, na.rm = TRUE)
+  x_hi   <- max(x_data, na.rm = TRUE)
+
+  # Degrees of freedom for t-quantile (used by CI calculations)
+  n_params <- length(coef(fit))
+  n_obs    <- nrow(best_data)
+  t_crit   <- qt(0.975, df = n_obs - n_params)
+
+  # Variance-covariance matrix of fitted parameters
+  V <- vcov(fit)
+
+  # Refactor 2: hoist invariants out of pred_se inner loop
+  theta <- coef(fit)
+  p     <- length(theta)
+  rhs   <- as.list(formula(fit))[[3]]
+
+  # --- helper: predicted y at a single x ----------------------------------
+  pred_y <- function(x_val) {
+    nd <- setNames(data.frame(x_val), independent_variable)
+    as.numeric(predict(fit, newdata = nd))
+  }
+
+  # --- helper: SE of predicted y via delta method -------------------------
+  #     grad(theta) evaluated numerically; se = sqrt(grad' V grad)
+  #     theta, p, rhs, V are captured from enclosing scope (hoisted)
+  pred_se <- function(x_val, eps = 1e-6) {
+    y0   <- pred_y(x_val)
+    nd   <- setNames(data.frame(x_val), independent_variable)
+    grad <- vapply(seq_len(p), function(j) {
+      theta_j    <- theta
+      theta_j[j] <- theta[j] + eps
+      env <- c(as.list(theta_j), as.list(nd))
+      (as.numeric(eval(rhs, envir = env)) - y0) / eps
+    }, numeric(1))
+    sqrt(as.numeric(crossprod(grad, V %*% grad)))
+  }
+
+  # --- helper: safe uniroot wrapper --------------------------------------
+  safe_uniroot <- function(f, lower, upper) {
+    tryCatch({
+      f_lo <- f(lower)
+      f_hi <- f(upper)
+      if (is.na(f_lo) || is.na(f_hi)) return(NA_real_)
+      if (sign(f_lo) == sign(f_hi)) return(NA_real_)
+      uniroot(f, lower = lower, upper = upper, tol = .Machine$double.eps^0.5)$root
+    }, error = function(e) NA_real_)
+  }
+
+  # --- 1. mindc: fitted curve == llod -------------------------------------
+  mindc <- NA_real_
+  if (!is.na(llod)) {
+    mindc <- safe_uniroot(function(x_val) pred_y(x_val) - llod,
+                          lower = x_lo, upper = x_hi)
+  }
+
+  # --- 2. maxdc: fitted curve == ulod -------------------------------------
+  maxdc <- NA_real_
+  if (!is.na(ulod)) {
+    maxdc <- safe_uniroot(function(x_val) pred_y(x_val) - ulod,
+                          lower = x_lo, upper = x_hi)
+  }
+
+  # --- 3. minrdl: 2.5% CI of fitted curve == llod ------------------------
+  #        lower CI = pred_y(x) - t * se(x)
+  minrdl <- NA_real_
+  if (!is.na(llod)) {
+    minrdl <- safe_uniroot(
+      function(x_val) (pred_y(x_val) - t_crit * pred_se(x_val)) - llod,
+      lower = x_lo, upper = x_hi
+    )
+  }
+
+  # --- 4. maxrdl: 97.5% CI of fitted curve == ulod -----------------------
+  #        upper CI = pred_y(x) + t * se(x)
+  maxrdl <- NA_real_
+  if (!is.na(ulod)) {
+    maxrdl <- safe_uniroot(
+      function(x_val) (pred_y(x_val) + t_crit * pred_se(x_val)) - ulod,
+      lower = x_lo, upper = x_hi
+    )
+  }
+
+  if (verbose) {
+    message(sprintf("MDC/RDL — mindc: %s, maxdc: %s, minrdl: %s, maxrdl: %s",
+                    format(mindc, digits = 4), format(maxdc, digits = 4),
+                    format(minrdl, digits = 4), format(maxrdl, digits = 4)))
+  }
+
+  list(
+    mindc  = as.numeric(mindc),
+    maxdc  = as.numeric(maxdc),
+    minrdl = as.numeric(minrdl),
+    maxrdl = as.numeric(maxrdl)
+  )
 }
 
 tidy.nlsLM <- function(best_fit, fixed_a_result, model_constraints, antigen_settings, antigen_fit_options,  verbose = TRUE) {

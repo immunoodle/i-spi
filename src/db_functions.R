@@ -685,7 +685,7 @@ fetch_best_standard_all <- function(study_accession,experiment_accession, projec
 }
 
 fetch_best_glance_all <- function(study_accession,experiment_accession, project_id, conn) {
-  query <- glue("SELECT best_glance_all_id, study_accession, experiment_accession, plateid, plate, nominal_sample_dilution, antigen, iter, status, crit, a, b, c, d, lloq, uloq, lloq_y, uloq_y, llod, ulod, inflect_x, inflect_y, std_error_blank, dydx_inflect, dfresidual, nobs, rsquare_fit, aic, bic, loglik, mse, cv, source, bkg_method, is_log_response, is_log_x, apply_prozone, formula, g
+  query <- glue("SELECT best_glance_all_id, study_accession, experiment_accession, plateid, plate, nominal_sample_dilution, antigen, iter, status, crit, a, b, c, d, lloq, uloq, lloq_y, uloq_y, llod, ulod, inflect_x, inflect_y, std_error_blank, dydx_inflect, mindc, maxdc, minrdl, maxrdl, dfresidual, nobs, rsquare_fit, aic, bic, loglik, mse, cv, source, bkg_method, is_log_response, is_log_x, apply_prozone, formula, g
 	FROM madi_results.best_glance_all
 	WHERE project_id = {project_id}
 	AND study_accession = '{study_accession}'
