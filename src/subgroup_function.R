@@ -380,16 +380,15 @@ create_data_form_df <- function(data, t0, t1, log_assay_outcome) {
   } else {
     keep <- is.finite(combined_data$final_predicted_concentration)
     combined_data <- combined_data[keep, ]
-
-    # samples out of predicted concentration range with infinite AUs are removed
-     #combined_data <- combined_data[is.finite(combined_data$au),]
-    #combined_data$log_assay_value <- log10(combined_data$au + 1)
-   # combined_data$log_assay_value <- to_log2_plus1(combined_data$au, combined_data$is_log_response)
     combined_data$log_assay_value <-
       to_log2_plus1(
         combined_data$final_predicted_concentration,
         is_log10 = rep(FALSE, nrow(combined_data))
       )
+
+    #model only detectable antibody concentration among respondents set to very low concentrations for stability
+    #when final predicted concentration is used.
+    combined_data$log_assay_value[combined_data$log_assay_value == 0] <- 0.001
   }
 
   # #### connection.R generates unstandardized, not scaled connection_data
@@ -492,7 +491,7 @@ compute_finite_mixture_model <- function(data_form_reference, t0, t1) {
   mo3 <- FLXMRglm(family = "gaussian")
 
   #cat("before flexmix")
-  day0set_v <<- day0set
+  #day0set_v <<- day0set
   flexfit <- flexmix(log_assay_value ~ 1, data = day0set, k = 2, model = list(mo1, mo2))
 
   if (is.na(unlist(flexmix::parameters(flexfit)[1])[3])) {

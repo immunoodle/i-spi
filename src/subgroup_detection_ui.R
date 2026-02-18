@@ -160,7 +160,7 @@ observeEvent(list(
                      title = "Subgroup Detection Methods",
                      tagList(
                        tags$p("Use the dropdown menu titled 'Response type' to choose the desired type of outcome measured.
-                              Currently the options include MFI, Normalized MFI and Arbitrary Units.
+                              Currently the options include MFI, Normalized MFI and Concentration.
                               Use the dropdown menu to select the desired transformation that is applied to the data.
                               Select the first and second visits of interest from the dropdown menu titled 'First Visit' and 'Second Visit respectively,  and the antigen of interest from the dropdown titled 'Antigen'.
                               To change the reference arm selection navigate to the 'Study Overview' tab and to the Set Reference Arm settings."),
@@ -320,10 +320,10 @@ observeEvent(list(
 
       dat <- sample_data[sample_data$antigen == input$antigenSampleSelection,]
 
-      choices <- c("MFI", "Arbitrary Units")
+      choices <- c("MFI", "Concentration")
 
       if (any(!is.na(dat$norm_assay_response))) {
-        choices <- c("MFI", "Normalized MFI", "Arbitrary Units")
+        choices <- c("MFI", "Normalized MFI", "Concentration")
       }
 
       selectInput(
