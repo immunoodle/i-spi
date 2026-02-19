@@ -174,8 +174,8 @@ output$landing_page_ui <- renderUI({
       div(style = "padding-left: 50px; padding-right: 50px;",
       tagList(
        # img(src = "I_SPI_logo.png"),
-        img(src = "I_SPI_logo_transparent.png",
-            style = "max-width:40%; height:auto;"),
+        img(src = "ispi_new.png",
+            style = "max-width:100%; height:auto;"), # 40% old logo
         br(),
         br(),
         p(strong("Overview")),
