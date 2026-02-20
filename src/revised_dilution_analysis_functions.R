@@ -214,7 +214,7 @@ produce_margin_table <- function(classified_merged, selectedAntigen, selectedDil
 
   margin_table <- margin_table[, (!names(margin_table) == "au_treatment")]
 
-  names(margin_table)[names(margin_table) == "n_pass_dilutions"] <- "Number of Passing Dilutions"
+  names(margin_table)[names(margin_table) == "n_pass_dilutions"] <- "Number of Acceptable Dilutions"
   names(margin_table)[names(margin_table) == "concentration_status"] <- "Concentration Status"
   return(margin_table)
 

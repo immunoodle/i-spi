@@ -910,6 +910,8 @@ plot_patient_dilution_series  <- function(sample_data, selectedAntigen, selected
   sample_data$dilution_fraction <- 1 / sample_data$dilution
 
   sample_data <- sample_data[order(sample_data$dilution), ]
+  
+ 
 
   #sample_data_v <<- sample_data
   # antigens <- unique(sample_data$antigen)
@@ -930,15 +932,14 @@ plot_patient_dilution_series  <- function(sample_data, selectedAntigen, selected
   # pad <- 0.05 * max_au   # 5% padding
 
   sample_data <- sample_data %>% group_by(patientid, timeperiod)
-
-
+  
   #sample_data_v <<- sample_data
-  sample_data$class_flag <- ifelse(
-    trimws(tolower(sample_data$Classification)) == "pass classification",
-    TRUE, FALSE
-  )
-  sample_data$class_flag <- factor(sample_data$class_flag, levels = c(FALSE, TRUE),
-                                   labels = c("Does Not Pass", "Pass"))
+  # sample_data$class_flag <- ifelse(
+  #   trimws(tolower(sample_data$Classification)) == "pass classification",
+  #   TRUE, FALSE
+  # )
+  # sample_data$class_flag <- factor(sample_data$class_flag, levels = c(FALSE, TRUE),
+  #                                  labels = c("Does Not Pass", "Pass"))
 
   # named_colors <- c("Pass Classification" = "#0067a5", "Does Not Pass Classification" = "#be0032")
   # sample_data$color <- named_colors[sample_data$Classification]
@@ -978,8 +979,13 @@ plot_patient_dilution_series  <- function(sample_data, selectedAntigen, selected
       mode = 'lines+markers',  # Lines and markers for connecting patient id
       # group = ~patientid,
       # marker = list(color = ~class_flag),#list(color = ~I(color)),#list(color = named_colors[sample_data$Classification]), # Assign in linear region color per point
-      color = ~class_flag,
-      colors = c("Does Not Pass" = "#be0032", "Pass" = "#0067a5"),#symbol = ~marker_symbol),  # symbol is gate class
+      color = ~concentration_status,
+      colors = c(
+        "Too Diluted" = "#d46a6a",
+        "Acceptable" = "#6699cc",
+        "Too Concentrated" = "#e6b800",
+        "Too Concentrated_Too Diluted" = "#dd8f35"
+      ), #c("Does Not Pass" = "#be0032", "Pass" = "#0067a5"),#symbol = ~marker_symbol),  # symbol is gate class
       line = list(color = "grey", dash = linetype),    # Assign grey color for a line and line type is the timeperiod. named_line_types[timeperiod]
       hoverinfo = 'text',
       text = ~paste0("Subject: ", patientid, "<br>Antigen: ",antigen, "<br>Visit: ",timeperiod,
@@ -990,7 +996,7 @@ plot_patient_dilution_series  <- function(sample_data, selectedAntigen, selected
                      "<br>",assay_response_variable, ": ", assay_response,
                      iq_text,
                      "<br> LOD Gate Class: ", gate_class_lod,
-                     "<br> Pass Classification: ", as.character(class_flag))
+                     "<br> Concentration Status: ", concentration_status)# as.character(class_flag))
     )
 
 
@@ -1004,7 +1010,7 @@ plot_patient_dilution_series  <- function(sample_data, selectedAntigen, selected
                    type = "log"),
 
       showlegend = TRUE,
-      legend = list(title = list(text = "Classification Status")),
+      legend = list(title = list(text = "Concentration Status")),
       annotations = list(
 
         list(
@@ -1013,7 +1019,7 @@ plot_patient_dilution_series  <- function(sample_data, selectedAntigen, selected
           xref = "paper",
           yref = "paper",
           text = paste(
-            "The highest concentration values (Arbitrary Units) correspond to samples with", toupper(assay_response_variable), "values above the upper asymptote of the standard curve."
+            "The highest concentration values correspond to samples with", toupper(assay_response_variable), "values above the upper asymptote of the standard curve."
           ),
           showarrow = FALSE,
           font = list(size = 12),
