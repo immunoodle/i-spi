@@ -32,4 +32,5 @@ shiny-server.sock
 .Rapp.auth.token.user.superadmin
 .Rapp.auth.secret.user.superadmin
 .Rproj
+.DS_Store
 
