@@ -1,15 +1,3 @@
-get_db_connection <- function() {
-  dbConnect(RPostgres::Postgres(),
-            dbname = Sys.getenv("db"),
-            host = Sys.getenv("db_host"),
-            port = Sys.getenv("db_port"),
-            user = Sys.getenv("db_userid_x"),
-            password = Sys.getenv("db_pwd_x"),
-            sslmode = 'require',
-            options = "-c search_path=madi_results"
-  )
-}
-
 fetch_study_parameters <- function(study_accession, param_user, param_group = "standard_curve_options", project_id = userWorkSpaceID(), conn) {
   query <- glue("
   SELECT study_accession, param_name, param_boolean_value, param_character_value
