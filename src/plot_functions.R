@@ -498,9 +498,9 @@ plot_standard_curve <- function(best_fit,
     color = ~stype,
     colors = c("B" = "#c2b280", "S" = "#2b3d26"),
     text = ~paste0(
-      "<br>", independent_variable, ": ", best_fit$best_data[[independent_variable]],
+      "<br>", format_assay_terms(independent_variable), ": ", best_fit$best_data[[independent_variable]],
       "<br>Dilution Factor: ", dilution,
-      "<br>", response_variable, ": ", best_fit$best_data[[response_variable]]
+      "<br>", format_assay_terms(response_variable), ": ", best_fit$best_data[[response_variable]]
     ),
     hoverinfo = "text"
   )
@@ -512,6 +512,8 @@ plot_standard_curve <- function(best_fit,
     x = best_fit$best_pred$x,
     y = best_fit$best_pred$yhat,
     name = "Fitted Curve",
+    legendgroup = "fitted_curve",
+    showlegend = TRUE,
     line = list(color = "#2b3d26")
   )
 
@@ -523,14 +525,16 @@ plot_standard_curve <- function(best_fit,
       y           = best_fit$best_curve_ci$ci_lo,
       name        = "95% CI",
       line        = list(color = "#2b3d26", dash = "dash"),
-      legendgroup = "linked_curve_ci"
+      #legendgroup = "linked_curve_ci"
+      legendgroup = "fitted_curve",
       # visible     = "legendonly"
     ) %>% add_lines(
       x           = best_fit$best_curve_ci$x,
       y           = best_fit$best_curve_ci$ci_hi,
       name        = "",
       line        = list(color = "#2b3d26", dash = "dash"),
-      legendgroup = "linked_curve_ci",
+      legendgroup = "fitted_curve",
+     # legendgroup = "linked_curve_ci",
       showlegend  = FALSE
       # visible     = "legendonly"
     )
@@ -744,6 +748,7 @@ plot_standard_curve <- function(best_fit,
     text = ~paste("Predicted", x_label, ":", raw_predicted_concentration,
                   "<br>",y_label , ":", samples_predicted_conc[[response_variable]],
                   "<br>Patient ID:", patientid,
+                  "<br> Timepoint:", timeperiod,
                   "<br>Well:", well,
                   "<br>LOQ Gate Class:", samples_predicted_conc$gate_class_loq,
                   "<br>LOD Gate Class:", samples_predicted_conc$gate_class_lod,
@@ -765,8 +770,10 @@ plot_standard_curve <- function(best_fit,
       round(best_fit$best_glance$inflect_x, 3), ",",
       round(best_fit$best_glance$inflect_y, 3), ")"
     ),
-    marker = list(color = "#2724F0", size = 8),
-    visible     = "legendonly"
+    legendgroup = "fitted_curve",
+    showlegend = TRUE,
+    marker = list(color = "#2724F0", size = 8)
+   # visible     = "legendonly"
   )
 
 
