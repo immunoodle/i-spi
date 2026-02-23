@@ -523,16 +523,16 @@ plot_standard_curve <- function(best_fit,
       y           = best_fit$best_curve_ci$ci_lo,
       name        = "95% CI",
       line        = list(color = "#2b3d26", dash = "dash"),
-      legendgroup = "linked_curve_ci",
-      visible     = "legendonly"
+      legendgroup = "linked_curve_ci"
+      # visible     = "legendonly"
     ) %>% add_lines(
       x           = best_fit$best_curve_ci$x,
       y           = best_fit$best_curve_ci$ci_hi,
       name        = "",
       line        = list(color = "#2b3d26", dash = "dash"),
       legendgroup = "linked_curve_ci",
-      showlegend  = FALSE,
-      visible     = "legendonly"
+      showlegend  = FALSE
+      # visible     = "legendonly"
     )
   }
 
@@ -548,7 +548,8 @@ plot_standard_curve <- function(best_fit,
     ),
     # name = paste("Upper LOD:", round(best_fit$best_glance$ulod, 3)),
     line = list(color = "#e25822", dash = "dash"),
-    legendgroup = "linked_ulod"
+    legendgroup = "linked_ulod",
+    visible     = "legendonly"
   )
 
   p <- p %>% add_lines(
@@ -561,7 +562,8 @@ plot_standard_curve <- function(best_fit,
     ),
     # name = paste("Lower LOD:", round(best_fit$best_glance$llod, 3)),
     line = list(color = "#e25822", dash = "dash"),
-    legendgroup = "linked_llod"
+    legendgroup = "linked_llod",
+    visible     = "legendonly"
   )
 
 
@@ -582,7 +584,8 @@ plot_standard_curve <- function(best_fit,
       line = list(color = "#e25822", dash = "dash"),
       legendgroup = "linked_llod",
       showlegend = FALSE,
-      hoverinfo = "text"
+      hoverinfo = "text",
+      visible     = "legendonly"
     )
   }
 
@@ -595,7 +598,8 @@ plot_standard_curve <- function(best_fit,
       line = list(color = "#e25822"),
       legendgroup = "linked_llod",
       showlegend = TRUE,
-      hoverinfo = "text"
+      hoverinfo = "text",
+      visible     = "legendonly"
     )
   }
 
@@ -608,7 +612,8 @@ plot_standard_curve <- function(best_fit,
       line = list(color = "#e25822", dash = "dash"),
       legendgroup = "linked_ulod",
       showlegend = FALSE,
-      hoverinfo = "text"
+      hoverinfo = "text",
+      visible     = "legendonly"
     )
   }
 
@@ -621,7 +626,8 @@ plot_standard_curve <- function(best_fit,
       line = list(color = "#e25822"),
       legendgroup = "linked_ulod",
       showlegend = TRUE,
-      hoverinfo = "text"
+      hoverinfo = "text",
+      visible     = "legendonly"
     )
   }
 
@@ -636,7 +642,8 @@ plot_standard_curve <- function(best_fit,
     ),
     line = list(color = "#875692"),
     legendgroup = "linked_lloq",
-    hoverinfo = "text"
+    hoverinfo = "text",
+    visible     = "legendonly"
   )
 
   ### ULOQ – vertical line
@@ -650,7 +657,8 @@ plot_standard_curve <- function(best_fit,
     ),
     line = list(color = "#875692"),
     legendgroup = "linked_uloq",
-    hoverinfo = "text"
+    hoverinfo = "text",
+    visible     = "legendonly"
   )
 
   ### Horizontal LOQ lines
@@ -659,7 +667,8 @@ plot_standard_curve <- function(best_fit,
     y = best_fit$best_glance$uloq_y,
     name = "",
     legendgroup = "linked_uloq", showlegend = FALSE,
-    line = list(color = "#875692")
+    line = list(color = "#875692"),
+    visible     = "legendonly"
   )
 
   p <- p %>% add_lines(
@@ -667,7 +676,8 @@ plot_standard_curve <- function(best_fit,
     y = best_fit$best_glance$lloq_y,
     name = "",
     legendgroup = "linked_lloq", showlegend = FALSE,
-    line = list(color = "#875692")
+    line = list(color = "#875692"),
+    visible     = "legendonly"
   )
 
 
@@ -755,7 +765,8 @@ plot_standard_curve <- function(best_fit,
       round(best_fit$best_glance$inflect_x, 3), ",",
       round(best_fit$best_glance$inflect_y, 3), ")"
     ),
-    marker = list(color = "#2724F0", size = 8)
+    marker = list(color = "#2724F0", size = 8),
+    visible     = "legendonly"
   )
 
 
