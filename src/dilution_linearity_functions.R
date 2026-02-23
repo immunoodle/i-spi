@@ -3355,16 +3355,16 @@ dil_lin_regress <- function(distinct_samples, response_type, exclude_conc_sample
  }
 }
 # Plot one regression in the facet
-plot_single_regres <- function(distinct_samples, dil_lin_regress_list, plate, antigen, y_dil, is_dil_lin_corr, response_type, is_log_mfi_axis) {
-  # distinct_samples <<- distinct_samples
-  # dil_lin_regress_list <<- dil_lin_regress_list
-  # plate <<- plate
-  # antigen <<- antigen
-  # is_dil_lin_corr <<- is_dil_lin_corr
-  # response_type <<- response_type
-  # y_dil <<- y_dil
-  # is_log_mfi_axis <<- is_log_mfi_axis
-
+plot_single_regres <- function(distinct_samples,
+                               dil_lin_regress_list,
+                               plate,
+                               antigen,
+                               y_dil,
+                               is_dil_lin_corr,
+                               response_type,
+                               is_log_mfi_axis,
+                               legend_tracker = list()) {
+  
   concentration_colors <- c(
     "Acceptable / Acceptable" = "#6699cc",
     "Acceptable / Too Concentrated" = "#fc8d62",
@@ -3372,286 +3372,235 @@ plot_single_regres <- function(distinct_samples, dil_lin_regress_list, plate, an
     "Too Concentrated / Acceptable" = "#e78ac3",
     "Too Concentrated / Too Concentrated" = "#e6b800",
     "Too Concentrated / Too Diluted" = "#ffd92f",
-    "Too Diluted / Acceptable" = "#5e4fa2",#"#e5c494",
+    "Too Diluted / Acceptable" = "#5e4fa2",
     "Too Diluted / Too Concentrated" = "#b3b3b3",
     "Too Diluted / Too Diluted" = "#d46a6a"
   )
-  if (!is_dil_lin_corr) {
-    tidy_df <- dil_lin_regress_list$tidy_uncorrect_df
-    glance_df <- dil_lin_regress_list$glance_uncorrect_df
-    pred <- dil_lin_regress_list$predict_uncorect_df
+  
+  ## -------------------------
+  ## Select prediction object
+  ## -------------------------
+  pred <- if (is_dil_lin_corr) {
+    dil_lin_regress_list$predict_corr_df
   } else {
-    tidy_df <- dil_lin_regress_list$model_corr_tidy_df
-    glance_df <- dil_lin_regress_list$model_corr_glance_df
-    pred <- dil_lin_regress_list$predict_corr_df
+    dil_lin_regress_list$predict_uncorect_df
   }
-
-  pred <- pred[pred$plate == plate & pred$antigen == antigen & pred$y_dilution == y_dil,]
-  tidy_df <- tidy_df[tidy_df$plate == plate & tidy_df$antigen == antigen & tidy_df$y_dilution == y_dil,]
-  glance_df <- glance_df[glance_df$plate == plate & glance_df$antigen == antigen & glance_df$y_dilution == y_dil, ]
-
+  
+  pred <- pred[pred$plate == plate &
+                 pred$antigen == antigen &
+                 pred$y_dilution == y_dil, ]
+  
   observed_data <- dil_lin_regress_list$observed_data
-
-
-  observed_data <- observed_data[observed_data$antigen == antigen &
-                                   observed_data$plate == plate &
-                                   observed_data$y_dilution == y_dil,]
-
-  observed_data$xy_status <-  as.factor(paste(observed_data$x_gate_class_loq, observed_data$y_gate_class_loq, sep = " / "))
-
-  # capture joined in log/not logged status from dataset
-  # cat("Observed data\n")
-  # print(names(observed_data))
-  is_log_response <- isTRUE(unique(observed_data$y_is_log_response)[1])
-  #print(is_log_response)
-  # assay_response_variable <- unique(observed_data$y_assay_response_variable)[1]
-  vals <- unique(trimws(observed_data$y_assay_response_variable))
-  vals <- vals[!is.na(vals) & vals != ""]
-
-  assay_response_variable <- if (length(vals) == 0) "Assay Response" else vals[1]
-  # format the assay response variable to proper case if it is in lookup table
-  assay_response_variable <- format_assay_terms(assay_response_variable)
-
-
-  x_label <- if (response_type == "raw_assay_response") {
-    if (is_log_response) {
-      paste0("log<sub>10 </sub>", assay_response_variable, " (Dilution ", observed_data$x_dilution, ")")
-    } else {
-      paste0(assay_response_variable, " (Dilution ", observed_data$x_dilution, ")")
-    }
-  } else if (response_type == "au") {
-    paste0("AU (Dilution ", observed_data$x_dilution, ")")
+  observed_data <- observed_data[
+    observed_data$plate == plate &
+      observed_data$antigen == antigen &
+      observed_data$y_dilution == y_dil, ]
+  
+  if (nrow(observed_data) == 0 || nrow(pred) == 0) {
+    return(list(plot = NULL, legend_tracker = legend_tracker))
   }
-  y_label <- if (response_type == "raw_assay_response") {
-    if (is_log_response) {
-      paste0("log<sub>10 </sub>", assay_response_variable, " (Dilution ", observed_data$y_dilution, ")")
-    } else {
-      paste0(assay_response_variable, " (Dilution ", observed_data$y_dilution, ")")
-    }
-  } else if (response_type == "au") {
-    paste0("AU (Dilution ", observed_data$y_dilution, ")")
-  }
-
-  if (response_type == "au") {
-  if (is_dil_lin_corr) {
-    observed_data$hover_text <- paste0(
-      "Subject Accession: ", observed_data$patientid, "<br>",
-      "Timpoint: ", observed_data$timeperiod, "<br>",
-      x_label, ": ", observed_data$x_au, "<br>",
-      y_label, ": ", observed_data$new_y, "<br>",
-      "Concentration Status at ", observed_data$x_dilution, ": ", observed_data$x_gate_class_loq, "<br>",
-      "Concentration Status at ", observed_data$y_dilution, ": ", observed_data$y_gate_class_loq
-    )
-  }else {
-    observed_data$hover_text <- paste0(
-      "Subject Accession: ", observed_data$patientid, "<br>",
-      "Timpoint: ", observed_data$timeperiod, "<br>",
-      x_label, ": ", observed_data$x_au, "<br>",
-      y_label, ": ", observed_data$y_au, "<br>",
-      "Concentration Status at ", observed_data$x_dilution, ": ", observed_data$x_gate_class_loq, "<br>",
-      "Concentration Status at ", observed_data$y_dilution, ": ", observed_data$y_gate_class_loq
-    )
-  }
-
-  #return(x_seq)
-  p <- plot_ly()
-
-  p <- p %>%
-    add_ribbons(data = pred, x = ~x_au, ymin = ~lwr, ymax = ~upr,
-                line = list(color = "transparent"),
-                fillcolor = "lightgrey",
-                name = '95% CI',
-                showlegend = TRUE)
-
-  for (gc in levels(observed_data$xy_status)) {
-    group_data <- observed_data[observed_data$xy_status == gc, ]
-    if (is_dil_lin_corr) {
-      p <- p %>%
-        add_trace(
-          data = group_data,
-          x = ~x_au,
-          y = ~new_y,
-          type = 'scatter',
-          mode = 'markers',
-          marker = list(color = concentration_colors[[gc]], size = 6),
-          text = ~hover_text,
-          hoverinfo = "text",
-          name = gc
-        )
-    } else {
-      p <- p %>%
-        add_trace(
-          data = group_data,
-          x = ~x_au,
-          y = ~y_au,
-          type = 'scatter',
-          mode = 'markers',
-          marker = list(color = concentration_colors[[gc]], size = 6),
-          text = ~hover_text,
-          hoverinfo = "text",
-          name = gc
-        )
-    }
-  }
-
-
-  p <- p %>%
-    add_lines(data = pred, x = ~x_au, y = ~fit,
-              line = list(color = 'darkred'),
-              name = 'Linear Fit')
-
-  identity_range <- range(c(pred$x_au, pred$fit), na.rm = TRUE)
-
-  p <- p %>%  add_trace(
-    x = identity_range,
-    y = identity_range,
-    # y = x_seq,
-    type = 'scatter',
-    mode = 'lines',
-    line = list(color = 'black', dash = 'dash'),
-    name = 'Identity Line'
+  
+  observed_data$xy_status <- factor(
+    paste(observed_data$x_gate_class_loq,
+          observed_data$y_gate_class_loq,
+          sep = " / ")
   )
-
+  
+  ## -------------------------
+  ## Axis + response variables
+  ## -------------------------
+  is_log_response <- isTRUE(unique(observed_data$y_is_log_response)[1])
+  
+  assay_term <- unique(trimws(observed_data$y_assay_response_variable))
+  assay_term <- assay_term[!is.na(assay_term) & assay_term != ""]
+  assay_term <- if (length(assay_term) == 0) "Assay Response" else assay_term[1]
+  assay_term <- format_assay_terms(assay_term)
+  
+  if (response_type == "au") {
+    x_var <- "x_au"
+    y_var <- if (is_dil_lin_corr) "new_y" else "y_au"
+    x_label <- paste0("Concentration (Serum Dilution ", observed_data$x_dilution, ")")
+    y_label <- paste0("Concentration (Serum Dilution ", observed_data$y_dilution, ")")
+  } else {
+    x_var <- "x_assay_response"
+    y_var <- if (is_dil_lin_corr) "new_y" else "y_assay_response"
+    
+    prefix <- if (is_log_response) "log<sub>10 </sub>" else ""
+    x_label <- paste0(prefix, assay_term, " (Serum Dilution ", observed_data$x_dilution, ")")
+    y_label <- paste0(prefix, assay_term, " (Serum Dilution ", observed_data$y_dilution, ")")
+  }
+  
+  ## -------------------------
+  ## Hover text
+  ## -------------------------
+  observed_data$hover_text <- paste0(
+    "Subject Accession: ", observed_data$patientid, "<br>",
+    "Timepoint: ", observed_data$timeperiod, "<br>",
+    x_label, ": ", observed_data[[x_var]], "<br>",
+    y_label, ": ", observed_data[[y_var]], "<br>",
+    "Concentration Status at ", observed_data$x_dilution, ": ",
+    observed_data$x_gate_class_loq, "<br>",
+    "Concentration Status at ", observed_data$y_dilution, ": ",
+    observed_data$y_gate_class_loq
+  )
+  
+  ## -------------------------
+  ## Start plot
+  ## -------------------------
+  p <- plot_ly()
+  
+  ## ---- CI ribbon
+  show_ci <- is.null(legend_tracker[["ci"]])
+  legend_tracker[["ci"]] <- TRUE
+  
+  p <- p %>%
+    add_ribbons(
+      data = pred,
+      x = as.formula(paste0("~", x_var)),
+      ymin = ~lwr,
+      ymax = ~upr,
+      fillcolor = "lightgrey",
+      line = list(color = "transparent"),
+      name = "95% CI",
+      legendgroup = "ci",
+      legendrank = 2,
+      showlegend = show_ci
+    )
+  
+  ## ---- Linear fit
+  show_fit <- is.null(legend_tracker[["fit"]])
+  legend_tracker[["fit"]] <- TRUE
+  
+  p <- p %>%
+    add_lines(
+      data = pred,
+      x = as.formula(paste0("~", x_var)),
+      y = ~fit,
+      line = list(color = "darkred"),
+      name = "Linear Fit",
+      legendgroup = "fit",
+      legendrank = 1,
+      showlegend = show_fit
+    )
+  
+  
+  
+  ## ---- Identity line
+  rng <- range(c(pred[[x_var]], pred$fit), na.rm = TRUE)
+  
+  show_id <- is.null(legend_tracker[["identity"]])
+  legend_tracker[["identity"]] <- TRUE
+  
+  p <- p %>%
+    add_trace(
+      x = rng,
+      y = rng,
+      type = "scatter",
+      mode = "lines",
+      line = list(color = "black", dash = "dash"),
+      name = "Identity Line",
+      legendgroup = "identity",
+      legendrank = 3,
+      showlegend = show_id
+    )
+  
+  
+  ## ---- Points by gate class
+  for (gc in levels(observed_data$xy_status)) {
+    
+    group_data <- observed_data[observed_data$xy_status == gc, ]
+    if (nrow(group_data) == 0) next
+    
+    show_gc <- is.null(legend_tracker[[gc]])
+    legend_tracker[[gc]] <- TRUE
+    
+    p <- p %>%
+      add_trace(
+        data = group_data,
+        x = as.formula(paste0("~", x_var)),
+        y = as.formula(paste0("~", y_var)),
+        type = "scatter",
+        mode = "markers",
+        marker = list(color = concentration_colors[[gc]], size = 6),
+        text = ~hover_text,
+        hoverinfo = "text",
+        name = gc,
+        legendgroup = gc,
+        showlegend = show_gc
+      )
+  }
+  
+  ## ---- Layout
   p <- p %>%
     layout(
-      title = paste0(plate, ":", antigen),
-      xaxis = list(title = unique(x_label)),# range = pred$x_au),
-      yaxis = list(title = unique(y_label)), #range = pred$x_au),
+      title = paste0(plate, " : ", antigen),
+      xaxis = list(title = unique(x_label)),
+      yaxis = list(title = unique(y_label)),
       showlegend = TRUE
     )
-  } else {
-    if (is_dil_lin_corr) {
-      observed_data$hover_text <- paste0(
-        "Subject Accession: ", observed_data$patientid, "<br>",
-        "Timpoint: ", observed_data$timeperiod, "<br>",
-        x_label, ": ", observed_data$x_assay_response, "<br>",
-        y_label, ": ", observed_data$new_y, "<br>",
-        "Concentration Status at ", observed_data$x_dilution, ": ", observed_data$x_gate_class_loq, "<br>",
-        "Concentration Status at ", observed_data$y_dilution, ": ", observed_data$y_gate_class_loq
-      )
-    }else {
-      observed_data$hover_text <- paste0(
-        "Subject Accession: ", observed_data$patientid, "<br>",
-        "Timpoint: ", observed_data$timeperiod, "<br>",
-        x_label, ": ", observed_data$x_assay_response, "<br>",
-        y_label, ": ", observed_data$y_assay_response, "<br>",
-        "Concentration Status at ", observed_data$x_dilution, ": ", observed_data$x_gate_class_loq, "<br>",
-        "Concentration Status at ", observed_data$y_dilution, ": ", observed_data$y_gate_class_loq
-      )
-    }
-
-    observed_data_v <- observed_data
-
-    #return(x_seq)
-    p <- plot_ly()
-    # p <- p %>% add_trace(data = observed_data,
-    #              x = ~x_au,
-    #              y = ~y_au,
-    #              type = "scatter",
-    #              mode = "markers",
-    #              marker = list(color = "black"))
-    #
-    p <- p %>%
-      add_ribbons(data = pred, x = ~x_assay_response, ymin = ~lwr, ymax = ~upr,
-                  line = list(color = "transparent"),
-                  fillcolor = "lightgrey",
-                  name = '95% CI',
-                  showlegend = TRUE)
-
-    for (gc in levels(observed_data$xy_status)) {
-      group_data <- observed_data[observed_data$xy_status == gc, ]
-      if (is_dil_lin_corr) {
-        p <- p %>%
-          add_trace(
-            data = group_data,
-            x = ~x_assay_response,
-            y = ~new_y,
-            type = 'scatter',
-            mode = 'markers',
-            marker = list(color = concentration_colors[[gc]], size = 6),
-            text = ~hover_text,
-            hoverinfo = "text",
-            name = gc
-          )
-      } else {
-        p <- p %>%
-          add_trace(
-            data = group_data,
-            x = ~x_assay_response,
-            y = ~y_assay_response,
-            type = 'scatter',
-            mode = 'markers',
-            marker = list(color = concentration_colors[[gc]], size = 6),
-            text = ~hover_text,
-            hoverinfo = "text",
-            name = gc
-          )
-      }
-    }
-
-
-    p <- p %>%
-      add_lines(data = pred, x = ~x_assay_response, y = ~fit,
-                line = list(color = 'darkred'),
-                name = 'Linear Fit')
-
-    identity_range <- range(c(pred$x_assay_response, pred$fit), na.rm = TRUE)
-
-    p <- p %>%  add_trace(
-      x = identity_range,
-      y = identity_range,
-      # y = x_seq,
-      type = 'scatter',
-      mode = 'lines',
-      line = list(color = 'black', dash = 'dash'),
-      name = 'Identity Line'
-    )
-
-    p <- p %>%
-      layout(
-        title = paste0(plate, ":", antigen),
-        xaxis = list(title = unique(x_label)),# range = pred$x_au),
-        yaxis = list(title = unique(y_label)), #range = pred$x_au),
-        showlegend = TRUE
-      )
-  }
-  #
-
-
-  #
-  #  return(list(observed_data,pred, tidy_df, glance_df))
-  return(p)
-  # return(list(p, model_tidy, model_corr1_tidy,model_corr1_glance, filtered_data, x_label, y_label))
+  
+  return(list(
+    plot = p,
+    legend_tracker = legend_tracker
+  ))
 }
 
+
 # Plot a single plate facet
-dilution_lm_facet <- function(distinct_samples, dil_lin_regress_list, plate, antigen, is_dil_lin_corr, response_type, is_log_mfi_axis) {
-
-  # if (is.null(dil_lin_regress_list)) {
-  #   return(NULL)
-  # }
-
+dilution_lm_facet <- function(distinct_samples,
+                              dil_lin_regress_list,
+                              plate,
+                              antigen,
+                              is_dil_lin_corr,
+                              response_type,
+                              is_log_mfi_axis) {
+  
   observed_dat <- dil_lin_regress_list$observed_data
   middle_dilution <- unique(observed_dat$x_dilution)
-  y_dilutions <-  unique(observed_dat$y_dilution)
+  y_dilutions <- sort(unique(observed_dat$y_dilution))
+  
   dilution_pairs <- data.frame(
     x_dilution = middle_dilution,
     y_dilutions = y_dilutions,
     stringsAsFactors = FALSE
   )
-
+  
   plot_plate_list <- list()
+  legend_tracker <- list()   # <-- NEW
+  
   for (y_dil in dilution_pairs$y_dilutions) {
-    plot_plate_list[[y_dil]] <-  plot_single_regres(distinct_samples, dil_lin_regress_list = dil_lin_regress_list, plate = plate, antigen = antigen, y_dil = y_dil, is_dil_lin_corr = is_dil_lin_corr, response_type = response_type, is_log_mfi_axis = is_log_mfi_axis)
-
+    
+    res <- plot_single_regres(
+      distinct_samples,
+      dil_lin_regress_list = dil_lin_regress_list,
+      plate = plate,
+      antigen = antigen,
+      y_dil = y_dil,
+      is_dil_lin_corr = is_dil_lin_corr,
+      response_type = response_type,
+      is_log_mfi_axis = is_log_mfi_axis,
+      legend_tracker = legend_tracker   # <-- pass forward
+    )
+    
+    if (!is.null(res$plot)) {
+      plot_plate_list[[as.character(y_dil)]] <- res$plot
+      legend_tracker <- res$legend_tracker  # <-- update tracker
+    }
   }
-
-  plot_plate_list <- plot_plate_list[!sapply(plot_plate_list, is.null)]
-
+  
+  if (length(plot_plate_list) == 0) {
+    return(NULL)
+  }
+  
   n_plots <- length(plot_plate_list)
   n_cols <- 3
   n_rows <- ceiling(n_plots / n_cols)
-
+  
+  if (response_type == "au") {
+    title_subtext <- "Interpolated Sample Concentrations" 
+  } else {
+    title_subtext <- "Raw Assay Responses"
+  }
   plate_facet_plot <- subplot(
     plot_plate_list,
     nrows = n_rows,
@@ -3660,21 +3609,28 @@ dilution_lm_facet <- function(distinct_samples, dil_lin_regress_list, plate, ant
     titleX = TRUE,
     titleY = TRUE,
     margin = 0.1
-  ) %>% layout(title = paste0("Regression Facet Plot: ", plate, ", ", antigen))
-
+  ) %>%
+    layout(title = paste0("Linearity of ", title_subtext, " (",plate, ", ", antigen, ")"),
+           margin = list(t = 60, b = 60))
+  
   return(plate_facet_plot)
-
 }
 
 # Produce all plate facets
-produce_all_plate_facets <- function(distinct_samples, dil_lin_regress_list, selected_antigen, is_dil_lin_corr, response_type, is_log_mfi_axis) {
-  if (!is.null(dil_lin_regress_list)) {
+produce_all_plate_facets <- function(distinct_samples,
+                                     dil_lin_regress_list,
+                                     selected_antigen,
+                                     is_dil_lin_corr,
+                                     response_type,
+                                     is_log_mfi_axis) {
+  
+  if (is.null(dil_lin_regress_list)) {
+    return(NULL)
+  }
+  
   available_plates <- sort(unique(distinct_samples$plate))
-  # ensure it is just plate then a number
   available_plates <- sub(".*?(plate[0-9]+).*", "\\1", available_plates)
-
-  #available_plates <- available_plates[order(as.numeric(gsub("\\D+", "", available_plates)))]
-
+  
   nested_results <- lapply(available_plates, function(pl) {
     dilution_lm_facet(
       distinct_samples,
@@ -3686,17 +3642,16 @@ produce_all_plate_facets <- function(distinct_samples, dil_lin_regress_list, sel
       is_log_mfi_axis = is_log_mfi_axis
     )
   })
+  
   names(nested_results) <- available_plates
-
-  # sort numerically for alignment.
-  nested_results  <- nested_results[order(as.numeric(gsub("\\D+", "", names(nested_results))))]
-
+  
+  nested_results <- nested_results[
+    order(as.numeric(gsub("\\D+", "", names(nested_results))))
+  ]
+  
   return(nested_results)
-  }
-  else {
-    return(NULL)
-  }
 }
+
 # prepare_lm_sample_data <- function(study_accession, experiment_accession, is_log_mfi_axis, response_type) {
 #   query_samples <- glue::glue("SELECT xmap_sample_id, study_accession, experiment_accession, plate_id, timeperiod, patientid, well, stype, sampleid, id_imi, agroup, dilution, pctaggbeads, samplingerrors, antigen, antibody_mfi, antibody_n, antibody_name, feature, gate_class, antibody_au, antibody_au_se, reference_dilution, gate_class_dil, norm_mfi, in_linear_region, gate_class_loq, in_quantifiable_range, gate_class_linear_region, quality_score
 #     	FROM madi_results.xmap_sample
