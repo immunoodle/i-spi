@@ -966,7 +966,7 @@ fetch_best_tidy_all <- function(study_accession,experiment_accession, project_id
 }
 fetch_best_pred_all <- function(study_accession, experiment_accession, project_id, conn) {
   query <- glue("SELECT best_pred_all_id, x, model, yhat, overall_se, predicted_concentration, se_x, pcov, study_accession, experiment_accession, nominal_sample_dilution, plateid, plate,
-  antigen, source, best_glance_all_id
+  antigen, source, best_glance_all_id, raw_robust_concentration, final_robust_concentration, se_robust_concentration, pcov_robust_concentration
 	FROM madi_results.best_pred_all
 	WHERE project_id = {project_id}
 	AND study_accession = '{study_accession}'
@@ -1045,7 +1045,7 @@ SELECT best_sample_se_all_id, raw_predicted_concentration, study_accession, expe
 agroup, pctaggbeads, samplingerrors, antigen,
 antibody_n, plateid, plate, nominal_sample_dilution, assay_response_variable, assay_independent_variable, dilution, overall_se, raw_assay_response, assay_response,
 se_concentration, final_predicted_concentration, pcov, source, gate_class_loq, gate_class_lod,
-gate_class_pcov, best_glance_all_id, feature, norm_assay_response
+gate_class_pcov, best_glance_all_id, feature, norm_assay_response, raw_robust_concentration, final_robust_concentration, se_robust_concentration, pcov_robust_concentration
 	FROM madi_results.best_sample_se_all
 	WHERE project_id = {project_id}
 	AND study_accession = '{study_accession}'
@@ -1054,6 +1054,14 @@ gate_class_pcov, best_glance_all_id, feature, norm_assay_response
   return(best_sample_se_all)
 }
 
+
+
+#etch_concentration_calculation_status <- function(study_accession, experiment_accession, project_id, conn) {
+#   query <- glue("
+#   
+#   
+#   ")
+# }
 
 ## Specific fetch queries for the summary of standard curves accounting for
 # selected study_configuration based on glance_id

@@ -54,6 +54,7 @@ library(tmvtnorm)
 ## std-curver
 library(patchwork)
 library(rlang)
+library(rjags)
 
 # For standard curve Summary
 library(fracture)

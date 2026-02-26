@@ -5,7 +5,7 @@ source("global.R", local = TRUE)
 
 # Set to 1 for local and do not push in prod
 # Sys.setenv(LOCAL_DEV = "1")
-# # # local_email_user <- "seamus.owen.stein@dartmouth.edu"
+# local_email_user <- "seamus.owen.stein@dartmouth.edu"
 # local_email_user <- "mscotzens@gmail.com"
 
 # Source authentication configuration (Step 1)
@@ -208,6 +208,7 @@ body <- dashboardBody(
         content: '';
         animation: dotPulse 1.5s steps(3, start) infinite;
       }
+      
     "))
   ),
 
@@ -956,6 +957,8 @@ server <- function(input, output, session) {
       #outliers
       outlierJobStatus <- reactiveVal(list())
       outlierUIRefresher <- reactiveVal(0)
+      concentrationJobStatus <- reactiveVal(list())
+      concentrationUIRefresher <- reactiveVal(0)
 
       ### Sourcing all the application logic files from `main`
       source("user.R", local = TRUE)
@@ -991,6 +994,7 @@ server <- function(input, output, session) {
       source("model_functions.R", local = TRUE)
       # source("se_x_robust_fix.R", local = TRUE)
       source("plot_functions.R", local = TRUE)
+      source("bayes_concentration_functions.R", local = T)
       source("batch_fit_functions.R", local = TRUE)
 
       source("std_curver_summary_ui.R", local = TRUE)
