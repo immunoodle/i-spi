@@ -987,13 +987,58 @@ fetch_best_standard_all <- function(study_accession,experiment_accession, projec
 }
 
 fetch_best_glance_all <- function(study_accession,experiment_accession, project_id, conn) {
-  query <- glue("SELECT best_glance_all_id, study_accession, experiment_accession, plateid, plate, nominal_sample_dilution, antigen, iter, status, crit, a, b, c, d, lloq, uloq, lloq_y, uloq_y, llod, ulod, inflect_x, inflect_y, std_error_blank, dydx_inflect, mindc, maxdc, minrdl, maxrdl, dfresidual, nobs, rsquare_fit, aic, bic, loglik, mse, cv, source, bkg_method, is_log_response, is_log_x, apply_prozone, formula, g
+  query <- glue("SELECT best_glance_all_id, study_accession, experiment_accession, plateid, plate, nominal_sample_dilution, antigen, iter, status, crit, a, b, c, d, g, lloq, uloq, lloq_y, uloq_y, llod, ulod, inflect_x, inflect_y, std_error_blank, dydx_inflect, mindc, maxdc, minrdl, maxrdl, dfresidual, nobs, rsquare_fit, aic, bic, loglik, mse, cv, source, bkg_method, is_log_response,
+  is_log_x, apply_prozone, formula, last_concentration_calc_method
 	FROM madi_results.best_glance_all
 	WHERE project_id = {project_id}
 	AND study_accession = '{study_accession}'
   AND experiment_accession = '{experiment_accession}';")
   best_glance_all <- dbGetQuery(conn, query)
   return(best_glance_all)
+}
+
+fetch_best_glance_mcmc <- function(study_accession, project_id, conn) {
+  query <- glue("SELECT best_glance_all_id, study_accession, experiment_accession, plateid, plate,  nominal_sample_dilution, CONCAT(plate, '-',nominal_sample_dilution) as plate_nom,
+  antigen, feature, 
+  iter, status, crit as model_name, a, b, c, d, g,  is_log_response,
+  is_log_x, last_concentration_calc_method,
+  CASE WHEN nobs > 1 THEN mse * dfresidual / (nobs - 1) ELSE NULL END AS resid_sample_variance
+	FROM madi_results.best_glance_all
+	WHERE project_id = {project_id}
+	AND study_accession = '{study_accession}'
+  AND nominal_sample_dilution is NOT NULL;")
+  best_glance_all <- dbGetQuery(conn, query)
+  
+  best_glance_all$best_glance_all_id <- bit64::as.integer64(best_glance_all$best_glance_all_id)
+  
+  return(best_glance_all)
+}
+
+# fetch_best_pred_mcmc - fixed
+fetch_best_pred_mcmc <- function(study_accession, project_id, best_glance_ids, conn) {
+  ids_collapsed <- paste(best_glance_ids, collapse = ", ")
+  query <- glue("
+    SELECT best_pred_all_id, x, yhat, best_glance_all_id
+    FROM madi_results.best_pred_all
+    WHERE project_id = {project_id}
+      AND study_accession = '{study_accession}'
+      AND best_glance_all_id IN ({ids_collapsed})
+  ")
+  dbGetQuery(conn, query)
+}
+
+# fetch_best_sample_se_mcmc - fixed
+fetch_best_sample_se_mcmc <- function(study_accession, project_id, best_glance_ids, conn) {
+  ids_collapsed <- paste(best_glance_ids, collapse = ", ")
+  query <- glue("
+    SELECT best_sample_se_all_id, assay_response_variable,
+           dilution, assay_response, best_glance_all_id
+    FROM madi_results.best_sample_se_all
+    WHERE project_id = {project_id}
+      AND study_accession = '{study_accession}'
+      AND best_glance_all_id IN ({ids_collapsed})
+  ")
+  dbGetQuery(conn, query)
 }
 
 #' Fetch best_glance_all filtered by user's current study parameters
@@ -1025,7 +1070,7 @@ fetch_best_glance_all_summary <- function(study_accession, experiment_accession,
       g.uloq_y, g.llod, g.ulod, g.inflect_x, g.inflect_y, g.std_error_blank,
       g.dydx_inflect, g.dfresidual, g.nobs, g.rsquare_fit, g.aic, g.bic,
       g.loglik, g.mse, g.cv, g.source, g.bkg_method, g.is_log_response,
-      g.is_log_x, g.apply_prozone, g.formula, g.g
+      g.is_log_x, g.apply_prozone, g.formula, g.g, g.last_concentration_calc_method
     FROM madi_results.best_glance_all g
     CROSS JOIN params
     WHERE g.project_id = {project_id}
@@ -1085,7 +1130,7 @@ fetch_best_pred_all_summary <- function(study_accession, experiment_accession, p
       p.predicted_concentration, p.se_x, p.pcov,
       p.study_accession, p.experiment_accession, p.nominal_sample_dilution,
       p.plateid, p.plate, p.antigen, p.source, p.best_glance_all_id,
-      g.is_log_response, g.is_log_x, g.bkg_method, g.apply_prozone
+      g.is_log_response, g.is_log_x, g.bkg_method, g.apply_prozone, g.last_concentration_calc_method
     FROM madi_results.best_pred_all p
     LEFT JOIN madi_results.best_glance_all g
       ON p.best_glance_all_id = g.best_glance_all_id
@@ -1179,6 +1224,245 @@ fetch_best_sample_se_all_summary <- function(study_accession, experiment_accessi
   dbGetQuery(conn, query)
 }
 
+# fetch_best_glance_all_study <- function(study_accession, project_id, conn) {
+#   query <- glue("
+#     SELECT best_glance_all_id::integer,
+#            study_accession,
+#            experiment_accession,
+#            plateid,
+#            plate,
+#            nominal_sample_dilution,
+#            antigen,
+#            source,
+#            bkg_method,
+#            is_log_response,
+#            is_log_x,
+#            apply_prozone,
+#            a, b, c, d, g,
+#            formula,
+#            status,
+#            iter,
+#            crit,
+#            lloq,
+#            uloq,
+#            lloq_y,
+#            uloq_y,
+#            llod,
+#            ulod,
+#            inflect_x,
+#            inflect_y,
+#            std_error_blank,
+#            dydx_inflect,
+#            mindc,
+#            maxdc,
+#            minrdl,
+#            maxrdl,
+#            dfresidual,
+#            nobs,
+#            rsquare_fit,
+#            aic,
+#            bic,
+#            loglik,
+#            mse,
+#            cv
+#     FROM madi_results.best_glance_all
+#     WHERE project_id = {project_id}
+#       AND study_accession = '{study_accession}'
+#   ")
+#   df <- dbGetQuery(conn, query)
+#   df$best_glance_all_id <- as.integer(df$best_glance_all_id)
+#   df
+# }
+# 
+# fetch_best_glance_all_experiment <- function(study_accession, experiment_accession, project_id, conn) {
+#   query <- glue("
+#     SELECT best_glance_all_id::integer,
+#            study_accession,
+#            experiment_accession,
+#            plateid,
+#            plate,
+#            nominal_sample_dilution,
+#            antigen,
+#            source,
+#            bkg_method,
+#            is_log_response,
+#            is_log_x,
+#            apply_prozone,
+#            a, b, c, d, g,
+#            formula,
+#            status,
+#            iter,
+#            crit,
+#            lloq,
+#            uloq,
+#            lloq_y,
+#            uloq_y,
+#            llod,
+#            ulod,
+#            inflect_x,
+#            inflect_y,
+#            std_error_blank,
+#            dydx_inflect,
+#            mindc,
+#            maxdc,
+#            minrdl,
+#            maxrdl,
+#            dfresidual,
+#            nobs,
+#            rsquare_fit,
+#            aic,
+#            bic,
+#            loglik,
+#            mse,
+#            cv
+#     FROM madi_results.best_glance_all
+#     WHERE project_id = {project_id}
+#       AND study_accession = '{study_accession}'
+#       AND experiment_accession = '{experiment_accession}'
+#   ")
+#   df <- dbGetQuery(conn, query)
+#   df$best_glance_all_id <- as.integer(df$best_glance_all_id)
+#   df
+# }
+# 
+# fetch_best_glance_all_plate <- function(study_accession, experiment_accession, plate, project_id, conn) {
+#   plate_only <- sub("-.*$", "", plate)
+#   query <- glue("
+#     SELECT best_glance_all_id::integer,
+#            study_accession,
+#            experiment_accession,
+#            plateid,
+#            plate,
+#            nominal_sample_dilution,
+#            antigen,
+#            source,
+#            bkg_method,
+#            is_log_response,
+#            is_log_x,
+#            apply_prozone,
+#            a, b, c, d, g,
+#            formula,
+#            status,
+#            iter,
+#            crit,
+#            lloq,
+#            uloq,
+#            lloq_y,
+#            uloq_y,
+#            llod,
+#            ulod,
+#            inflect_x,
+#            inflect_y,
+#            std_error_blank,
+#            dydx_inflect,
+#            mindc,
+#            maxdc,
+#            minrdl,
+#            maxrdl,
+#            dfresidual,
+#            nobs,
+#            rsquare_fit,
+#            aic,
+#            bic,
+#            loglik,
+#            mse,
+#            cv
+#     FROM madi_results.best_glance_all
+#     WHERE project_id = {project_id}
+#       AND study_accession = '{study_accession}'
+#       AND experiment_accession = '{experiment_accession}'
+#       AND plate = '{plate_only}'
+#   ")
+#   df <- dbGetQuery(conn, query)
+#   df$best_glance_all_id <- as.integer(df$best_glance_all_id)
+#   df
+# }
+# 
+# fetch_best_pred_all_by_ids <- function(ids, project_id, conn) {
+#   ids <- as.integer(ids)
+#   ids_sql <- paste(ids, collapse = ", ")
+#   query <- glue("
+#     SELECT best_pred_all_id::integer,
+#            best_glance_all_id::integer,
+#            x,
+#            model,
+#            yhat,
+#            overall_se,
+#            predicted_concentration,
+#            se_x,
+#            pcov,
+#            study_accession,
+#            experiment_accession,
+#            nominal_sample_dilution,
+#            plateid,
+#            plate,
+#            antigen,
+#            source,
+#            raw_robust_concentration,
+#            final_robust_concentration,
+#            se_robust_concentration,
+#            pcov_robust_concentration
+#     FROM madi_results.best_pred_all
+#     WHERE project_id = {project_id}
+#       AND best_glance_all_id IN ({ids_sql})
+#   ")
+#   df <- dbGetQuery(conn, query)
+#   df$best_glance_all_id <- as.integer(df$best_glance_all_id)
+#   df$best_pred_all_id   <- as.integer(df$best_pred_all_id)
+#   df
+# }
+# 
+# fetch_best_sample_se_all_by_ids <- function(ids, project_id, conn) {
+#   ids <- as.integer(ids)
+#   ids_sql <- paste(ids, collapse = ", ")
+#   query <- glue("
+#     SELECT best_sample_se_all_id::integer,
+#            best_glance_all_id::integer,
+#            study_accession,
+#            experiment_accession,
+#            patientid,
+#            timeperiod,
+#            sampleid,
+#            well,
+#            stype,
+#            agroup,
+#            dilution,
+#            antigen,
+#            source,
+#            plateid,
+#            plate,
+#            nominal_sample_dilution,
+#            raw_assay_response,
+#            assay_response,
+#            norm_assay_response,
+#            overall_se,
+#            se_concentration,
+#            raw_predicted_concentration,
+#            final_predicted_concentration,
+#            pcov,
+#            gate_class_loq,
+#            gate_class_lod,
+#            gate_class_pcov,
+#            feature,
+#            antibody_n,
+#            pctaggbeads,
+#            samplingerrors,
+#            assay_response_variable,
+#            assay_independent_variable,
+#            raw_robust_concentration,
+#            final_robust_concentration,
+#            se_robust_concentration,
+#            pcov_robust_concentration
+#     FROM madi_results.best_sample_se_all
+#     WHERE project_id = {project_id}
+#       AND best_glance_all_id IN ({ids_sql})
+#   ")
+#   df <- dbGetQuery(conn, query)
+#   df$best_glance_all_id    <- as.integer(df$best_glance_all_id)
+#   df$best_sample_se_all_id <- as.integer(df$best_sample_se_all_id)
+#   df
+# }
+
 fetch_current_sc_options_wide <- function(currentuser, study_accession, project_id, conn) {
   query <- glue_sql(
     "
@@ -1203,6 +1487,8 @@ GROUP BY study_accession, param_user
   print(query)
   dbGetQuery(conn, query)
 }
+
+
 
 attach_antigen_familes <- function(best_pred_all, antigen_families, default_family = "All Antigens") {
   # Handle case where antigen_families is NULL or empty

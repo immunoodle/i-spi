@@ -1570,6 +1570,145 @@ observeEvent(input$run_batch_fit, ignoreInit = TRUE, {
 # -----------------------------------------------------------------
 # D. MCMC Robust calculation handler
 # -----------------------------------------------------------------
+observeEvent(input$run_mcmc_calc, ignoreInit = TRUE, {
+  scope <- input$save_scope
+  if (is_batch_processing()) {
+    showNotification("Batch processing is already running. Please wait.",
+                     type = "warning", duration = 10, closeButton = TRUE)
+    return()
+  }
+  req(input$qc_component == "Standard Curve",
+      input$readxMap_study_accession != "Click here",
+      input$readxMap_experiment_accession != "Click here")
+  df <- concentration_calc_df()
+  interp_status <- get_status(df, scope, "interpolated")
+  if (interp_status != "completed") {
+    showNotification(
+      "Interpolated concentrations must be completed before running MCMC Robust.",
+      type = "error", duration = 10, closeButton = TRUE
+    )
+    return()
+  }
+  is_batch_processing(TRUE)
+  tryCatch({
+    scope_label <- switch(scope,
+                          "study"      = "all experiments",
+                          "experiment" = "current experiment",
+                          "plate"      = "current plate"
+    )
+    showNotification(
+      id = "mcmc_calc_notify",
+      div(class = "big-notification",
+          paste0("Running MCMC Robust for ", scope_label, "...")),
+      duration = NULL, closeButton = TRUE
+    )
+    
+    study      <- input$readxMap_study_accession
+    experiment <- input$readxMap_experiment_accession
+    plate      <- input$sc_plate_select
+    proj       <- userWorkSpaceID()
+    
+    ## ── 1. Fetch and filter best_glance by scope ──
+    best_glance <- fetch_best_glance_mcmc(
+      study_accession = study,
+      project_id      = proj,
+      conn            = conn
+    )
+    
+    best_glance <- switch(scope,
+                          "plate"      = best_glance[best_glance$experiment_accession == experiment &
+                                                       best_glance$plate_nom == plate, ],
+                          "experiment" = best_glance[best_glance$experiment_accession == experiment, ],
+                          "study"      = best_glance
+    )
+    
+    if (nrow(best_glance) == 0) {
+      showNotification("No fitted curves found for this scope.",
+                       type = "warning", duration = 10, closeButton = TRUE)
+      is_batch_processing(FALSE)
+      return()
+    }
+    
+    ## ── 2. Fetch pred and sample for all matching IDs ──
+    id_set      <- best_glance$best_glance_all_id
+    best_pred   <- fetch_best_pred_mcmc(study, proj, id_set, conn)
+    best_sample <- fetch_best_sample_se_mcmc(study, proj, id_set, conn)
+    
+    ## ── 3. Loop over each curve (plate × antigen × feature) ──
+    n_total           <- length(id_set)
+    all_result_pred   <- vector("list", n_total)
+    all_result_sample <- vector("list", n_total)
+    
+    for (i in seq_along(id_set)) {
+      my_id <- id_set[i]
+      
+      glance_row <- best_glance[best_glance$best_glance_all_id == my_id, ]
+      pred_df    <- best_pred[best_pred$best_glance_all_id == my_id, ]
+      sample_df  <- best_sample[best_sample$best_glance_all_id == my_id, ]
+      
+      if (nrow(pred_df) == 0 || nrow(sample_df) == 0) {
+        warning("Skipping ID ", my_id, ": no pred or sample data")
+        next
+      }
+      
+      progress_msg <- paste0(
+        "MCMC Robust: ", i, " / ", n_total, "\n",
+        "Study: ", glance_row$study_accession, "\n",
+        "Experiment: ", glance_row$experiment_accession, "\n",
+        "Plate: ", glance_row$plate_nom, "\n",
+        "Antigen: ", glance_row$antigen, "\n",
+        "Model: ", glance_row$model_name
+      )
+      
+      showNotification(
+        id = "mcmc_calc_notify",
+        div(class = "big-notification", style = "white-space: pre-line;", progress_msg),
+        duration = NULL, closeButton = TRUE
+      )
+      
+      # SE on prediction grid
+      all_result_pred[[i]] <- run_jags_predicted_concentration(
+        glance_row   = glance_row,
+        best_pred_df = pred_df,
+        sample_df    = pred_df,
+        response_col = "yhat",
+        verbose      = FALSE
+      )
+      
+      # SE on actual samples
+      all_result_sample[[i]] <- run_jags_predicted_concentration(
+        glance_row   = glance_row,
+        best_pred_df = pred_df,
+        sample_df    = sample_df,
+        response_col = "assay_response",
+        verbose      = FALSE
+      )
+    }
+    
+    ## ── 4. Combine results ──
+    result_pred_all   <<- do.call(rbind, Filter(Negate(is.null), all_result_pred))
+    result_sample_all <<- do.call(rbind, Filter(Negate(is.null), all_result_sample))
+    
+    ## ── 5. Save / update DB ──
+    # save_mcmc_pred_results(result_pred_all, study, proj, conn)
+    # save_mcmc_sample_results(result_sample_all, study, proj, conn)
+    
+    showNotification(
+      id = "mcmc_calc_notify",
+      div(class = "big-notification",
+          paste0("MCMC Robust complete: ", n_total, " curves processed")),
+      duration = 10, closeButton = TRUE
+    )
+    
+  }, error = function(e) {
+    showNotification(
+      paste("MCMC Robust error:", e$message),
+      type = "error", duration = 15, closeButton = TRUE
+    )
+  }, finally = {
+    is_batch_processing(FALSE)
+  })
+})
 # observeEvent(input$run_mcmc_calc, ignoreInit = TRUE, {
 #   
 #   scope <- input$save_scope
@@ -1584,193 +1723,6 @@ observeEvent(input$run_batch_fit, ignoreInit = TRUE, {
 #       input$readxMap_study_accession != "Click here",
 #       input$readxMap_experiment_accession != "Click here")
 #   
-#   ## Verify interpolated completed
-#   df <- concentration_calc_df()
-#   interp_status <- get_status(df, scope, "interpolated")
-#   
-#   if (interp_status != "completed") {
-#     showNotification(
-#       "Interpolated concentrations must be completed before running MCMC Robust.",
-#       type = "error", duration = 10, closeButton = TRUE
-#     )
-#     return()
-#   }
-#   
-#   is_batch_processing(TRUE)
-#   
-#   tryCatch({
-#     
-#     scope_label <- switch(scope,
-#                           "study"      = "all experiments",
-#                           "experiment" = "current experiment",
-#                           "plate"      = "current plate")
-#     
-#     showNotification(
-#       id = "mcmc_calc_notify",
-#       div(class = "big-notification",
-#           paste0("Running MCMC Robust for ", scope_label, "...")),
-#       duration = NULL, closeButton = TRUE
-#     )
-#     
-#     study_id      <- input$readxMap_study_accession
-#     experiment_id <- input$readxMap_experiment_accession
-#     plate_id      <- input$sc_plate_select
-#     
-#     ## ─────────────────────────────
-#     ## 1️⃣ Pull study-level data
-#     ## ─────────────────────────────
-#     
-#     best_glance_all <- fetch_best_glance_all(conn, study_id)
-#     best_pred_all   <- fetch_best_pred_all(conn, study_id)
-#     best_sample_all <- fetch_best_sample_se_all(conn, study_id)
-#     
-#     ## ─────────────────────────────
-#     ## 2️⃣ Apply scope filtering
-#     ## ─────────────────────────────
-#     
-#     if (scope == "experiment") {
-#       best_glance_all <- best_glance_all[
-#         best_glance_all$experiment_accession == experiment_id, ]
-#     }
-#     
-#     if (scope == "plate") {
-#       best_glance_all <- best_glance_all[
-#         best_glance_all$experiment_accession == experiment_id &
-#           best_glance_all$plate == plate_id, ]
-#     }
-#     
-#     ids_to_run <- unique(best_glance_all$best_glance_all_id)
-#     
-#     if (length(ids_to_run) == 0) {
-#       stop("No interpolated results found for selected scope.")
-#     }
-#     
-#     ## ─────────────────────────────
-#     ## 3️⃣ Restrict child tables by IDs
-#     ## ─────────────────────────────
-#     
-#     best_pred_all <- best_pred_all[
-#       best_pred_all$best_glance_all_id %in% ids_to_run, ]
-#     
-#     best_sample_all <- best_sample_all[
-#       best_sample_all$best_glance_all_id %in% ids_to_run, ]
-#     
-#     ## ─────────────────────────────
-#     ## 4️⃣ Loop per plate-model
-#     ## ─────────────────────────────
-#     
-#     mcmc_pred_list   <- list()
-#     mcmc_sample_list <- list()
-#     
-#     for (pid in ids_to_run) {
-#       
-#       glance_row <- best_glance_all[
-#         best_glance_all$best_glance_all_id == pid, ]
-#       
-#       pred_df <- best_pred_all[
-#         best_pred_all$best_glance_all_id == pid, ]
-#       
-#       sample_df <- best_sample_all[
-#         best_sample_all$best_glance_all_id == pid, ]
-#       
-#       best_fit_out <- list(
-#         best_model_name = glance_row$model_name,
-#         fit             = unserialize(glance_row$fit_object[[1]]),
-#         pred_se         = pred_df,
-#         plate_samples   = sample_df,
-#         best_fit        = list(
-#           best_model_name = glance_row$model_name,
-#           best_fit        = unserialize(glance_row$fit_object[[1]]),
-#           best_data       = pred_df
-#         ),
-#         fixed_a_result  = glance_row$fixed_a_result,
-#         response_var    = glance_row$response_variable
-#       )
-#       
-#       ## Run JAGS
-#       
-#       bayes_pred <- run_jags_predicted_concentration_wrapper(
-#         best_fit_out,
-#         input_df = "pred_se"
-#       )
-#       
-#       bayes_sample <- run_jags_predicted_concentration_wrapper(
-#         best_fit_out,
-#         input_df = "sample_se"
-#       )
-#       
-#       bayes_pred$best_glance_all_id   <- pid
-#       bayes_sample$best_glance_all_id <- pid
-#       
-#       mcmc_pred_list[[as.character(pid)]]   <- bayes_pred
-#       mcmc_sample_list[[as.character(pid)]] <- bayes_sample
-#     }
-#     
-#     mcmc_pred_all   <<- dplyr::bind_rows(mcmc_pred_list)
-#     mcmc_sample_all <<- dplyr::bind_rows(mcmc_sample_list)
-#     
-#     ## ─────────────────────────────
-#     ## 5️⃣ Save results
-#     ## ─────────────────────────────
-#     # 
-#     # upsert_best_curve(
-#     #   conn   = conn,
-#     #   df     = mcmc_pred_all,
-#     #   schema = "madi_results",
-#     #   table  = "mcmc_pred_all",
-#     #   notify = shiny_notify(session)
-#     # )
-#     # 
-#     # upsert_best_curve(
-#     #   conn   = conn,
-#     #   df     = mcmc_sample_all,
-#     #   schema = "madi_results",
-#     #   table  = "mcmc_sample_all",
-#     #   notify = shiny_notify(session)
-#     # )
-#     # 
-#     # showNotification(
-#     #   id = "mcmc_calc_notify",
-#     #   div(class = "big-notification",
-#     #       paste0("Completed: MCMC Robust (", scope_label, ")")),
-#     #   duration = 5, closeButton = TRUE
-#     # )
-#     
-#     removeNotification("mcmc_calc_notify")
-#     
-#   }, error = function(e) {
-#     
-#     showNotification(
-#       paste("Error during MCMC processing:", e$message),
-#       type = "error",
-#       duration = NULL,
-#       closeButton = TRUE
-#     )
-#     
-#     removeNotification("mcmc_calc_notify")
-#     
-#   }, finally = {
-#     
-#     is_batch_processing(FALSE)
-#     
-#   })
-# })
-
-# observeEvent(input$run_mcmc_calc, ignoreInit = TRUE, {
-#   
-#   scope <- input$save_scope
-#   
-#   if (is_batch_processing()) {
-#     showNotification("Batch processing is already running. Please wait.",
-#                      type = "warning", duration = 10, closeButton = TRUE)
-#     return()
-#   }
-#   
-#   req(input$qc_component == "Standard Curve",
-#       input$readxMap_study_accession != "Click here",
-#       input$readxMap_experiment_accession != "Click here")
-#   
-#   ## Verify interpolated is completed for this scope
 #   df <- concentration_calc_df()
 #   interp_status <- get_status(df, scope, "interpolated")
 #   
@@ -1799,525 +1751,1451 @@ observeEvent(input$run_batch_fit, ignoreInit = TRUE, {
 #       duration = NULL, closeButton = TRUE
 #     )
 #     
-#     ## ──────────────────────────────────────────────
-#     ## Add your MCMC Robust calculation logic here
-#     ## ──────────────────────────────────────────────
-#     ## ──────────────────────────────────────────────
-#     ## Pull best interpolated results
-#     ## ──────────────────────────────────────────────
+#     study      <- input$readxMap_study_accession
+#     experiment <- input$readxMap_experiment_accession
+#     plate      <- input$sc_plate_select
+#     proj       <- userWorkSpaceID()
 #     
-#     study_id      <- input$readxMap_study_accession
-#     experiment_id <- input$readxMap_experiment_accession
-#     plate_id      <- if (scope == "plate") input$sc_plate_select else NULL
-#     
-#     best_glance <- fetch_best_glance_all(
-#       conn              = conn,
-#       study_accession   = study_id,
-#       experiment_accession = if (scope == "study") NULL else experiment_id,
-#       plate             = plate_id
+#     ## ── 1. Same prep pipeline as interpolated observer ──
+#     headers <- fetch_db_header_experiments(
+#       study_accession = study, conn = conn
 #     )
 #     
-#     best_pred <- fetch_best_pred_all(
-#       conn              = conn,
-#       study_accession   = study_id,
-#       experiment_accession = if (scope == "study") NULL else experiment_id,
-#       plate             = plate_id
+#     exp_list <- switch(scope,
+#                        "study"      = unique(headers$experiment_accession),
+#                        "experiment" = experiment,
+#                        "plate"      = experiment
 #     )
 #     
-#     best_sample_se <- fetch_best_sample_se_all(
-#       conn              = conn,
-#       study_accession   = study_id,
-#       experiment_accession = if (scope == "study") NULL else experiment_id,
-#       plate             = plate_id
-#     )
-#     
-#     ## ──────────────────────────────────────────────
-#     ## Split by best_glance_all_id (one plate-model per row)
-#     ## ──────────────────────────────────────────────
-#     
-#     plate_ids <- unique(best_glance$best_glance_all_id)
-#     
-#     mcmc_pred_all   <- list()
-#     mcmc_sample_all <- list()
-#     
-#     for (pid in plate_ids) {
-#       
-#       glance_row <- best_glance[best_glance$best_glance_all_id == pid, ]
-#       pred_df    <- best_pred[best_pred$best_glance_all_id == pid, ]
-#       sample_df  <- best_sample_se[best_sample_se$best_glance_all_id == pid, ]
-#       
-#       ## Rebuild best_fit_out structure
-#       best_fit_out <- list(
-#         best_model_name = glance_row$model_name,
-#         fit             = unserialize(glance_row$fit_object),
-#         pred_se         = pred_df,
-#         plate_samples   = sample_df,
-#         best_fit        = list(
-#           best_model_name = glance_row$model_name,
-#           best_fit        = unserialize(glance_row$fit_object),
-#           best_data       = pred_df
-#         ),
-#         fixed_a_result  = glance_row$fixed_a_result,
-#         response_var    = glance_row$response_variable
-#       )
-#       
-#       ## ── Run JAGS for pred_se
-#       bayes_pred <- run_jags_predicted_concentration_wrapper(
-#         best_fit_out,
-#         input_df = "pred_se"
-#       )
-#       
-#       ## ── Run JAGS for sample_se
-#       bayes_sample <- run_jags_predicted_concentration_wrapper(
-#         best_fit_out,
-#         input_df = "sample_se"
-#       )
-#       
-#       bayes_pred$best_glance_all_id   <- pid
-#       bayes_sample$best_glance_all_id <- pid
-#       
-#       mcmc_pred_all[[as.character(pid)]]   <- bayes_pred
-#       mcmc_sample_all[[as.character(pid)]] <- bayes_sample
+#     best_glance <- fetch_best_glance_mcmc(study_accession = input$readxMap_study_accession, 
+#                                           project_id =userWorkSpaceID() , conn = conn)
+#     if (scope == "plate") {
+#       plate <- input$sc_plate_select
+#       best_glance <- best_glance[best_glance$experiment_accession == input$readxMap_experiment_accession &
+#                                    best_glance$plate_nom == plate,]
+#     } else if (scope == "experiment") {
+#       best_glance <- best_glance[best_glance$experiment_accession == input$readxMap_experiment_accession,]
 #     }
 #     
-#     mcmc_pred_all   <<- dplyr::bind_rows(mcmc_pred_all)
-#     mcmc_sample_all <<- dplyr::bind_rows(mcmc_sample_all)
+#     best_glance <<- best_glance
+#     best_glance_id_set <- best_glance$best_glance_all_id
+#     best_pred   <<- fetch_best_pred_mcmc(study, proj, best_glance_id_set, conn)
+#     best_sample <<- fetch_best_sample_se_mcmc(study, proj, best_glance_id_set, conn)
 #     
-#     ## ──────────────────────────────────────────────
-#     ## Save results
-#     ## ──────────────────────────────────────────────
-#     # upsert_best_curve(
-#     #   conn   = conn,
-#     #   df     = mcmc_pred_all,
-#     #   schema = "madi_results",
-#     #   table  = "mcmc_pred_all",
-#     #   notify = shiny_notify(session)
+#     my_id      <- "some_best_glance_all_id"
+#     glance_row <- best_glance[best_glance$best_glance_all_id == my_id, ]
+#     pred_df    <- best_pred[best_pred$best_glance_all_id == my_id, ]
+#     sample_df  <- best_sample[best_sample$best_glance_all_id == my_id, ]
+#     
+#     # On the prediction grid
+#     result_pred <- run_jags_predicted_concentration(
+#       glance_row   = glance_row,
+#       best_pred_df = pred_df,
+#       sample_df    = pred_df,
+#       response_col = "yhat"
+#     )
+#     
+#     # On actual samples
+#     result_samples <- run_jags_predicted_concentration(
+#       glance_row   = glance_row,
+#       best_pred_df = pred_df,
+#       sample_df    = sample_df,
+#       response_col = "assay_response"
+#     )
+#     
+#     # loaded_data_list <- list()
+#     # for (exp in exp_list) {
+#     #   loaded_data_list[[exp]] <- pull_data(
+#     #     study_accession      = study,
+#     #     experiment_accession = exp,
+#     #     project_id           = proj,
+#     #     conn                 = conn
+#     #   )
+#     # }
+#     # 
+#     # if (scope == "plate") {
+#     #   loaded_data_list <- lapply(loaded_data_list, function(x) {
+#     #     for (tbl in c("plates", "standards", "samples", "blanks")) {
+#     #       if (!is.null(x[[tbl]]) && nrow(x[[tbl]]) > 0) {
+#     #         x[[tbl]] <- x[[tbl]][x[[tbl]]$plate_nom == plate, , drop = FALSE]
+#     #       }
+#     #     }
+#     #     x
+#     #   })
+#     # }
+#     # 
+#     # response_var <- loaded_data_list[[exp_list[1]]]$response_var
+#     # 
+#     # all_standards <- do.call(rbind, lapply(loaded_data_list, function(x) x$standards))
+#     # se_antigen_table <- compute_antigen_se_table(
+#     #   standards_data = all_standards,
+#     #   response_col   = response_var,
+#     #   dilution_col   = "dilution",
+#     #   plate_col      = "plate",
+#     #   grouping_cols  = c("study_accession", "experiment_accession", "source", "antigen"),
+#     #   method         = "pooled_within",
+#     #   verbose        = FALSE
+#     # )
+#     # 
+#     # verbose     <- FALSE
+#     # model_names <- c("Y5", "Yd5", "Y4", "Yd4", "Ygomp4")
+#     # param_group <- "standard_curve_options"
+#     # 
+#     # study_params <- fetch_study_parameters(
+#     #   study_accession = study,
+#     #   param_user      = currentuser(),
+#     #   param_group     = param_group,
+#     #   project_id      = proj,
+#     #   conn            = conn
+#     # )
+#     # 
+#     # antigen_list_res <- build_antigen_list(
+#     #   exp_list         = exp_list,
+#     #   loaded_data_list = loaded_data_list,
+#     #   study_accession  = study
+#     # )
+#     # 
+#     # antigen_plate_list_res <- build_antigen_plate_list(
+#     #   antigen_list_result = antigen_list_res,
+#     #   loaded_data_list    = loaded_data_list
+#     # )
+#     # 
+#     # prepped_data_list_res <- prep_plate_data_batch(
+#     #   antigen_plate_list_res = antigen_plate_list_res,
+#     #   study_params           = study_params,
+#     #   verbose                = verbose
+#     # )
+#     # 
+#     # antigen_plate_list_res$antigen_plate_list_ids <-
+#     #   prepped_data_list_res$antigen_plate_name_list
+#     # 
+#     # batch_fit_res <- fit_experiment_plate_batch(
+#     #   prepped_data_list_res  = prepped_data_list_res,
+#     #   antigen_plate_list_res = antigen_plate_list_res,
+#     #   model_names            = model_names,
+#     #   study_params           = study_params,
+#     #   se_antigen_table       = se_antigen_table,
+#     #   verbose                = verbose
+#     # )
+#     # 
+#     # batch_outputs <- create_batch_fit_outputs(
+#     #   batch_fit_res          = batch_fit_res,
+#     #   antigen_plate_list_res = antigen_plate_list_res
+#     # )
+#     # 
+#     # batch_outputs_processed <- process_batch_outputs(
+#     #   batch_outputs = batch_outputs,
+#     #   response_var  = response_var,
+#     #   project_id    = userWorkSpaceID()
+#     # )
+#     # 
+#     # ## ── 2. Now loop over antigen_plate_list to run MCMC ──
+#     # mcmc_pred_list   <- list()
+#     # mcmc_sample_list <- list()
+#     # 
+#     # antigen_plate_list <- batch_outputs_processed$antigen_plate_list$antigen_plate_list
+#     # 
+#     # for (fit_name in names(antigen_plate_list)) {
+#     #   
+#     #   plate_entry <- antigen_plate_list[[fit_name]]
+#     # 
+#     #   # if (!fit_name %in% names(batch_fit_res)) {
+#     #   #   warning(paste("No batch_fit_res entry for:", fit_name))
+#     #   #   next
+#     #   # }
+#     #   
+#     #   fit_entry <- batch_fit_res[[fit_name]]
+#     #   
+#     #  # if (is.null(fit_entry$pred_se) || nrow(fit_entry$pred_se) == 0) {
+#     #  #    message("Skipping ", fit_name, " - pred_se is empty")
+#     #  #    next
+#     #  #  }
+#     #   showNotification(
+#     #     id = "mcmc_calc_notify",
+#     #     div(class = "big-notification", HTML(paste0(
+#     #       "Running MCMC:<br>", fit_name
+#     #     ))),
+#     #     duration = NULL, closeButton = TRUE
+#     #   )
+#     #   
+#     #   # Build the structure expected by run_jags_predicted_concentration_wrapper
+#     #   best_fit_out <<- list(
+#     #     # Raw plate data
+#     #     plate_standard   = plate_entry$plate_standard,
+#     #     plate_samples    = plate_entry$plate_samples,
+#     #     plate_blanks     = plate_entry$plate_blanks,
+#     #     antigen_settings = plate_entry$antigen_settings,
+#     #     fixed_a_result   = plate_entry$fixed_a_result,
+#     #     std_error_blank  = plate_entry$std_error_blank,
+#     #     
+#     #     # pred_se branch needs $fit (not $best_fit) [1]
+#     #     fit              = fit_entry$best_fit,
+#     #     best_model_name  = fit_entry$best_model_name,
+#     #     pred_se          = fit_entry$best_pred,
+#     #     
+#     #     # sample_se branch needs a nested $best_fit list [1]
+#     #     best_fit = list(
+#     #       best_model_name = fit_entry$best_model_name,
+#     #       best_fit        = fit_entry$best_fit,   
+#     #       best_data       = fit_entry$best_data
+#     #     ),
+#     #     sample_se  = fit_entry$sample_se,
+#     #     response_var = response_var
+#     #   )
+#     #  
+#     #   
+#     #   bayes_pred <- tryCatch(
+#     #     run_jags_predicted_concentration_wrapper(best_fit_out, input_df = "pred_se"),
+#     #     error = function(e) {
+#     #       warning(paste("MCMC pred failed for", fit_name, ":", e$message))
+#     #       NULL
+#     #     }
+#     #   )
+#     #   
+#     #   bayes_sample <- tryCatch(
+#     #     run_jags_predicted_concentration_wrapper(best_fit_out, input_df = "sample_se"),
+#     #     error = function(e) {
+#     #       warning(paste("MCMC sample failed for", fit_name, ":", e$message))
+#     #       NULL
+#     #     }
+#     #   )
+#     #   
+#     #   if (!is.null(bayes_pred))   mcmc_pred_list[[fit_name]]   <- bayes_pred
+#     #   if (!is.null(bayes_sample)) mcmc_sample_list[[fit_name]] <- bayes_sample
+#     # }
+#     # 
+#     # if (length(mcmc_pred_list) == 0) {
+#     #   warning("MCMC produced no results - check input data.")
+#     # }
+#     # 
+#     # ## ── 3. Bind results ──
+#     # mcmc_pred_all   <<- dplyr::bind_rows(mcmc_pred_list)
+#     # mcmc_sample_all <<- dplyr::bind_rows(mcmc_sample_list)
+# 
+#     # ## ── 4. Process pred output ──
+#     
+# 
+#     # ## ── 5. Process sample output ──
+#     # mcmc_sample_processed <- mcmc_sample_all %>%
+#     #   dplyr::rename(
+#     #     raw_robust_concentration   = predicted_concentration_median,
+#     #     final_robust_concentration = predicted_concentration_median,
+#     #     se_robust_concentration    = predicted_concentration_se,
+#     #     pcov_robust_concentration  = cv_concentration
+#     #   ) %>%
+#     #   dplyr::rename(assay_response = all_of(
+#     #     unique(mcmc_sample_all$assay_response_variable)
+#     #   )) %>%
+#     #   dplyr::select(
+#     #     study_accession,
+#     #     experiment_accession,
+#     #     patientid,
+#     #     timeperiod,
+#     #     sampleid,
+#     #     well,
+#     #     stype,
+#     #     agroup,
+#     #     dilution,
+#     #     antigen,
+#     #     source,
+#     #     plateid,
+#     #     plate,
+#     #     nominal_sample_dilution,
+#     #     assay_response,
+#     #     assay_response_variable,
+#     #     assay_independent_variable,
+#     #     raw_predicted_concentration,
+#     #     final_predicted_concentration,
+#     #     pcov,
+#     #     gate_class_loq,
+#     #     gate_class_lod,
+#     #     gate_class_pcov,
+#     #     feature,
+#     #     raw_robust_concentration,
+#     #     final_robust_concentration,
+#     #     se_robust_concentration,
+#     #     pcov_robust_concentration
+#     #   ) %>%
+#     #   dplyr::mutate(project_id = as.numeric(proj)) %>%
+#     #   dplyr::distinct()
+#     # 
+#     # ## ── 6. Join best_glance_all_id ──
+#     # glance_lookup <- DBI::dbGetQuery(conn, glue::glue("
+#     #   SELECT best_glance_all_id, study_accession, experiment_accession,
+#     #          plateid, plate, nominal_sample_dilution, source, antigen
+#     #   FROM madi_results.best_glance_all
+#     #   WHERE study_accession = '{study}';
+#     # "))
+#     # glance_lookup$best_glance_all_id <- as.integer(glance_lookup$best_glance_all_id)
+#     # 
+#     # keys <- c("study_accession", "experiment_accession", "plateid",
+#     #           "plate", "nominal_sample_dilution", "source", "antigen")
+#     # 
+#     # mcmc_pred_processed    <- dplyr::inner_join(mcmc_pred_processed,    glance_lookup, by = keys)
+#     # mcmc_sample_processed  <- dplyr::inner_join(mcmc_sample_processed,  glance_lookup, by = keys)
+#     # 
+#     ## ── 7. Save results ──
+#     # showNotification(
+#     #   id = "mcmc_calc_notify",
+#     #   div(class = "big-notification", "Saving MCMC pred results..."),
+#     #   duration = NULL, closeButton = TRUE
 #     # )
 #     # 
 #     # upsert_best_curve(
 #     #   conn   = conn,
-#     #   df     = mcmc_sample_all,
+#     #   df     = mcmc_pred_processed,
 #     #   schema = "madi_results",
-#     #   table  = "mcmc_sample_all",
+#     #   table  = "best_pred_all",
 #     #   notify = shiny_notify(session)
 #     # )
 #     # 
 #     # showNotification(
 #     #   id = "mcmc_calc_notify",
-#     #   div(class = "big-notification",
-#     #       paste0("Completed: MCMC Robust (", scope_label, ")")),
-#     #   duration = 5,
-#     #   closeButton = TRUE
+#     #   div(class = "big-notification", "Saving MCMC sample results..."),
+#     #   duration = NULL, closeButton = TRUE
 #     # )
-#     # removeNotification("mcmc_calc_notify")
 #     # 
-#     # showNotification("MCMC Robust calculation not yet implemented.",
-#     #                  type = "warning", duration = 5)
+#     # upsert_best_curve(
+#     #   conn   = conn,
+#     #   df     = mcmc_sample_processed,
+#     #   schema = "madi_results",
+#     #   table  = "best_sample_se_all",
+#     #   notify = shiny_notify(session)
+#     # )
+#     
+#     showNotification(
+#       id = "mcmc_calc_notify",
+#       div(class = "big-notification",
+#           paste0("Completed: MCMC Robust (", scope_label, ")")),
+#       duration = 5, closeButton = TRUE
+#     )
+#     
 #     removeNotification("mcmc_calc_notify")
 #     
 #   }, error = function(e) {
 #     showNotification(paste("Error during MCMC processing:", e$message),
 #                      type = "error", duration = NULL, closeButton = TRUE)
 #     removeNotification("mcmc_calc_notify")
+#     
 #   }, finally = {
 #     is_batch_processing(FALSE)
 #   })
 # })
-
-# =================================================================
-# OLDSERVER
-# =================================================================
-
-# is_batch_processing <- reactiveVal(FALSE)
+# # observeEvent(input$run_mcmc_calc, ignoreInit = TRUE, {
+# #   
+# #   scope <- input$save_scope
+# #   
+# #   if (is_batch_processing()) {
+# #     showNotification("Batch processing is already running. Please wait.",
+# #                      type = "warning", duration = 10, closeButton = TRUE)
+# #     return()
+# #   }
+# #   
+# #   req(input$qc_component == "Standard Curve",
+# #       input$readxMap_study_accession != "Click here",
+# #       input$readxMap_experiment_accession != "Click here")
+# #   
+# #   df <- concentration_calc_df()
+# #   interp_status <- get_status(df, scope, "interpolated")
+# #   
+# #   if (interp_status != "completed") {
+# #     showNotification(
+# #       "Interpolated concentrations must be completed before running MCMC Robust.",
+# #       type = "error", duration = 10, closeButton = TRUE
+# #     )
+# #     return()
+# #   }
+# #   
+# #   is_batch_processing(TRUE)
+# #   
+# #   tryCatch({
+# #     
+# #     scope_label <- switch(scope,
+# #                           "study"      = "all experiments",
+# #                           "experiment" = "current experiment",
+# #                           "plate"      = "current plate"
+# #     )
+# #     
+# #     showNotification(
+# #       id = "mcmc_calc_notify",
+# #       div(class = "big-notification",
+# #           paste0("Running MCMC Robust for ", scope_label, "...")),
+# #       duration = NULL, closeButton = TRUE
+# #     )
+# #     
+# #     study      <- input$readxMap_study_accession
+# #     experiment <- input$readxMap_experiment_accession
+# #     plate      <- input$sc_plate_select
+# #     proj       <- userWorkSpaceID()
+# #     
+# #     ## ── 1. Fetch glance at correct scope ──
+# #     best_glance_all <- switch(scope,
+# #                               "study"      = fetch_best_glance_all_study(study, proj, conn),
+# #                               "experiment" = fetch_best_glance_all_experiment(study, experiment, proj, conn),
+# #                               "plate"      = fetch_best_glance_all_plate(study, experiment, plate, proj, conn)
+# #     )
+# #     
+# #     ids_to_run <- as.integer(unique(best_glance_all$best_glance_all_id))
+# #     
+# #     if (length(ids_to_run) == 0) {
+# #       stop("No interpolated results found for selected scope.")
+# #     }
+# #     
+# #     cat("IDs to run:", ids_to_run, "\n")
+# #     
+# #     ## ── 2. Fetch child tables by IDs ──
+# #     best_pred_all   <- fetch_best_pred_all_by_ids(ids_to_run, proj, conn)
+# #     best_sample_all <- fetch_best_sample_se_all_by_ids(ids_to_run, proj, conn)
+# #     
+# #     ## ── 3. Loop per glance ID ──
+# #     mcmc_pred_list   <- list()
+# #     mcmc_sample_list <- list()
+# #     
+# #     for (pid in ids_to_run) {
+# #       
+# #       glance_row <- best_glance_all[best_glance_all$best_glance_all_id == pid, ]
+# #       pred_df    <- best_pred_all[best_pred_all$best_glance_all_id == pid, ]
+# #       sample_df  <- best_sample_all[best_sample_all$best_glance_all_id == pid, ]
+# #       
+# #       if (nrow(pred_df) == 0 || nrow(sample_df) == 0) {
+# #         warning(paste("Skipping pid", pid, "- empty pred or sample data"))
+# #         next
+# #       }
+# #       
+# #       model_name   <- trimws(as.character(glance_row$crit))
+# #       response_var <- unique(sample_df$assay_response_variable)
+# #       
+# #       if (length(response_var) == 0 || is.na(response_var)) {
+# #         warning(paste("Skipping pid", pid, "- missing response variable"))
+# #         next
+# #       }
+# #       
+# #       ## ── Build params from stored glance values — no refit ──
+# #       params_stored <- c(a = glance_row$a, b = glance_row$b,
+# #                          c = glance_row$c, d = glance_row$d)
+# #       if (model_name %in% c("Y5", "Yd5")) params_stored["g"] <- glance_row$g
+# #       params_stored <- params_stored[!is.na(params_stored)]
+# #       
+# #       if (length(params_stored) == 0) {
+# #         warning(paste("Skipping pid", pid, "- no valid parameters found"))
+# #         next
+# #       }
+# #       
+# #       ## ── Rename sample assay_response back to response_var ──
+# #       sample_df_jags <- sample_df
+# #       names(sample_df_jags)[names(sample_df_jags) == "assay_response"] <- response_var
+# #       
+# #       ## ── Build best_fit_out — no fit object ──
+# #       best_fit_out <- list(
+# #         best_model_name = model_name,
+# #         params          = params_stored,
+# #         resid_sigma     = glance_row$mse,
+# #         pred_se         = pred_df,
+# #         fixed_a_result  = if (!is.na(glance_row$a) && glance_row$bkg_method != "ignored") glance_row$a else NULL,
+# #         response_var    = response_var,
+# #         plate_samples   = sample_df_jags,
+# #         best_fit = list(
+# #           best_model_name = model_name,
+# #           params          = params_stored,
+# #           resid_sigma     = glance_row$mse,
+# #           best_data       = pred_df        # wrapper renames x/yhat internally
+# #         )
+# #       )
+# #       
+# #       showNotification(
+# #         id = "mcmc_calc_notify",
+# #         div(class = "big-notification", HTML(paste0(
+# #           "Running MCMC\n ",
+# #           "Antigen: ", glance_row$antigen, "\n",
+# #           "Plate: ",   glance_row$plate,   "\n",
+# #           "Source: ",  glance_row$source
+# #         ))),
+# #         duration = NULL, closeButton = TRUE
+# #       )
+# #       
+# #       bayes_pred <- tryCatch(
+# #         run_jags_predicted_concentration_wrapper(best_fit_out, input_df = "pred_se"),
+# #         error = function(e) {
+# #           warning(paste("MCMC pred failed for pid", pid, ":", e$message))
+# #           NULL
+# #         }
+# #       )
+# #       
+# #       bayes_sample <- tryCatch(
+# #         run_jags_predicted_concentration_wrapper(best_fit_out, input_df = "sample_se"),
+# #         error = function(e) {
+# #           warning(paste("MCMC sample failed for pid", pid, ":", e$message))
+# #           NULL
+# #         }
+# #       )
+# #       
+# #       if (!is.null(bayes_pred)) {
+# #         bayes_pred$best_glance_all_id <- pid
+# #         mcmc_pred_list[[as.character(pid)]] <- bayes_pred
+# #       }
+# #       
+# #       if (!is.null(bayes_sample)) {
+# #         bayes_sample$best_glance_all_id <- pid
+# #         mcmc_sample_list[[as.character(pid)]] <- bayes_sample
+# #       }
+# #     }
+# #     
+# #     if (length(mcmc_pred_list) == 0) {
+# #       stop("MCMC produced no results - check input data.")
+# #     }
+# #     
+# #     ## ── 4. Bind results ──
+# #     mcmc_pred_all   <<- dplyr::bind_rows(mcmc_pred_list)
+# #     mcmc_sample_all <<- dplyr::bind_rows(mcmc_sample_list)
+# #     
+# # 
+# #     
+# #     # ## ── 7. Save results ──
+# #     # showNotification(
+# #     #   id = "mcmc_calc_notify",
+# #     #   div(class = "big-notification", "Saving MCMC pred results..."),
+# #     #   duration = NULL, closeButton = TRUE
+# #     # )
+# #     # 
+# #     # upsert_best_curve(
+# #     #   conn   = conn,
+# #     #   df     = mcmc_pred_processed,
+# #     #   schema = "madi_results",
+# #     #   table  = "best_pred_all",
+# #     #   notify = shiny_notify(session)
+# #     # )
+# #     # 
+# #     # showNotification(
+# #     #   id = "mcmc_calc_notify",
+# #     #   div(class = "big-notification", "Saving MCMC sample results..."),
+# #     #   duration = NULL, closeButton = TRUE
+# #     # )
+# #     # 
+# #     # upsert_best_curve(
+# #     #   conn   = conn,
+# #     #   df     = mcmc_sample_processed,
+# #     #   schema = "madi_results",
+# #     #   table  = "best_sample_se_all",
+# #     #   notify = shiny_notify(session)
+# #     # )
+# #     # 
+# #     showNotification(
+# #       id = "mcmc_calc_notify",
+# #       div(class = "big-notification",
+# #           paste0("Completed: MCMC Robust (", scope_label, ")")),
+# #       duration = 5, closeButton = TRUE
+# #     )
+# #     
+# #     removeNotification("mcmc_calc_notify")
+# #     
+# #   }, error = function(e) {
+# #     showNotification(paste("Error during MCMC processing:", e$message),
+# #                      type = "error", duration = NULL, closeButton = TRUE)
+# #     removeNotification("mcmc_calc_notify")
+# #     
+# #   }, finally = {
+# #     is_batch_processing(FALSE)
+# #   })
+# # })
+# # observeEvent(input$run_mcmc_calc, ignoreInit = TRUE, {
+# #   
+# #   scope <- input$save_scope
+# #   
+# #   if (is_batch_processing()) {
+# #     showNotification("Batch processing is already running. Please wait.",
+# #                      type = "warning", duration = 10, closeButton = TRUE)
+# #     return()
+# #   }
+# #   
+# #   req(input$qc_component == "Standard Curve",
+# #       input$readxMap_study_accession != "Click here",
+# #       input$readxMap_experiment_accession != "Click here")
+# #   
+# #   ## Verify interpolated completed
+# #   df <- concentration_calc_df()
+# #   interp_status <- get_status(df, scope, "interpolated")
+# #   
+# #   if (interp_status != "completed") {
+# #     showNotification(
+# #       "Interpolated concentrations must be completed before running MCMC Robust.",
+# #       type = "error", duration = 10, closeButton = TRUE
+# #     )
+# #     return()
+# #   }
+# #   
+# #   is_batch_processing(TRUE)
+# #   
+# #   tryCatch({
+# #     
+# #     scope_label <- switch(scope,
+# #                           "study"      = "all experiments",
+# #                           "experiment" = "current experiment",
+# #                           "plate"      = "current plate")
+# #     
+# #     showNotification(
+# #       id = "mcmc_calc_notify",
+# #       div(class = "big-notification",
+# #           paste0("Running MCMC Robust for ", scope_label, "...")),
+# #       duration = NULL, closeButton = TRUE
+# #     )
+# #     
+# #     study      <- input$readxMap_study_accession
+# #     experiment <- input$readxMap_experiment_accession
+# #     plate      <- input$sc_plate_select
+# #     proj       <- userWorkSpaceID()
+# #     
+# #     ## ── 1. Fetch glance at correct scope (SQL handles filtering) ──
+# #     best_glance_all <- switch(scope,
+# #                               "study"      = fetch_best_glance_all_study(study, proj, conn),
+# #                               "experiment" = fetch_best_glance_all_experiment(study, experiment, proj, conn),
+# #                               "plate"      = fetch_best_glance_all_plate(study, experiment, plate, proj, conn)
+# #     )
+# #     
+# #     ids_to_run <- unique(best_glance_all$best_glance_all_id)
+# #     # 
+# #     # if (length(ids_to_run) == 0) {
+# #     #   stop("No interpolated results found for selected scope.")
+# #     # }
+# #     
+# #     ## ── 2. Fetch child tables by IDs ──
+# #     best_pred_all   <- fetch_best_pred_all_by_ids(ids_to_run, proj, conn)
+# #     best_sample_all <- fetch_best_sample_se_all_by_ids(ids_to_run, proj, conn)
+# #     
+# #     ## ── 3. Loop per glance ID ──
+# #     mcmc_pred_list   <- list()
+# #     mcmc_sample_list <- list()
+# #     
+# #     for (pid in ids_to_run) {
+# #       
+# #       glance_row <- best_glance_all[best_glance_all$best_glance_all_id == pid, ]
+# #       pred_df    <- best_pred_all[best_pred_all$best_glance_all_id == pid, ]
+# #       sample_df  <- best_sample_all[best_sample_all$best_glance_all_id == pid, ]
+# #       
+# #       ## Guard against empty subsets
+# #       if (nrow(pred_df) == 0 || nrow(sample_df) == 0) {
+# #         warning(paste("Skipping pid", pid, "- empty pred or sample data"))
+# #         next
+# #       }
+# #       
+# #       best_fit_out <- list(
+# #         best_model_name = glance_row$crit,        # formula stores the model
+# #         a               = glance_row$a,
+# #         b               = glance_row$b,
+# #         c               = glance_row$c,
+# #         d               = glance_row$d,
+# #         g               = glance_row$g,
+# #         is_log_response = glance_row$is_log_response,
+# #         is_log_x        = glance_row$is_log_x,
+# #         bkg_method      = glance_row$bkg_method,
+# #         pred_se         = pred_df,
+# #         sample_se       = sample_df
+# #       )
+# #       
+# #       bayes_pred <- run_jags_predicted_concentration_wrapper(
+# #         best_fit_out,
+# #         input_df = "pred_se"
+# #       )
+# #       
+# #       bayes_sample <- run_jags_predicted_concentration_wrapper(
+# #         best_fit_out,
+# #         input_df = "sample_se"
+# #       )
+# #       
+# #       bayes_pred$best_glance_all_id   <- pid
+# #       bayes_sample$best_glance_all_id <- pid
+# #       
+# #       mcmc_pred_list[[as.character(pid)]]   <- bayes_pred
+# #       mcmc_sample_list[[as.character(pid)]] <- bayes_sample
+# #     }
+# #     
+# #     if (length(mcmc_pred_list) == 0) {
+# #       stop("MCMC produced no results - check input data.")
+# #     }
+# #     
+# #     mcmc_pred_all   <<- dplyr::bind_rows(mcmc_pred_list)
+# #     mcmc_sample_all <<- dplyr::bind_rows(mcmc_sample_list)
+# #     
+# #     # ## ── 4. Save results ──
+# #     # upsert_best_curve(conn = conn, df = mcmc_pred_all,
+# #     #                   schema = "madi_results", table = "mcmc_pred_all",
+# #     #                   notify = shiny_notify(session))
+# #     # 
+# #     # upsert_best_curve(conn = conn, df = mcmc_sample_all,
+# #     #                   schema = "madi_results", table = "mcmc_sample_all",
+# #     #                   notify = shiny_notify(session))
+# #     # 
+# #     showNotification(
+# #       id = "mcmc_calc_notify",
+# #       div(class = "big-notification",
+# #           paste0("Completed: MCMC Robust (", scope_label, ")")),
+# #       duration = 5, closeButton = TRUE
+# #     )
+# #     removeNotification("mcmc_calc_notify")
+# #     
+# #   }, error = function(e) {
+# #     showNotification(paste("Error during MCMC processing:", e$message),
+# #                      type = "error", duration = NULL, closeButton = TRUE)
+# #     removeNotification("mcmc_calc_notify")
+# #   }, finally = {
+# #     is_batch_processing(FALSE)
+# #   })
+# # })
+# # observeEvent(input$run_mcmc_calc, ignoreInit = TRUE, {
+# # 
+# #   scope <- input$save_scope
+# # 
+# #   if (is_batch_processing()) {
+# #     showNotification("Batch processing is already running. Please wait.",
+# #                      type = "warning", duration = 10, closeButton = TRUE)
+# #     return()
+# #   }
+# # 
+# #   req(input$qc_component == "Standard Curve",
+# #       input$readxMap_study_accession != "Click here",
+# #       input$readxMap_experiment_accession != "Click here")
+# # 
+# #   ## Verify interpolated completed
+# #   df <- concentration_calc_df()
+# #   interp_status <- get_status(df, scope, "interpolated")
+# # 
+# #   if (interp_status != "completed") {
+# #     showNotification(
+# #       "Interpolated concentrations must be completed before running MCMC Robust.",
+# #       type = "error", duration = 10, closeButton = TRUE
+# #     )
+# #     return()
+# #   }
+# # 
+# #   is_batch_processing(TRUE)
+# # 
+# #   tryCatch({
+# # 
+# #     scope_label <- switch(scope,
+# #                           "study"      = "all experiments",
+# #                           "experiment" = "current experiment",
+# #                           "plate"      = "current plate")
+# # 
+# #     showNotification(
+# #       id = "mcmc_calc_notify",
+# #       div(class = "big-notification",
+# #           paste0("Running MCMC Robust for ", scope_label, "...")),
+# #       duration = NULL, closeButton = TRUE
+# #     )
+# # 
+# #     study      <- input$readxMap_study_accession
+# #     experiment <- input$readxMap_experiment_accession
+# #     plate     <- input$sc_plate_select
+# #     proj       <- userWorkSpaceID()
+# # 
+# #     ## ─────────────────────────────
+# #     ## 1️⃣ Pull study-level data
+# #     ## ─────────────────────────────
+# # 
+# #     best_glance_all <- switch(scope,
+# #                               "study"      = fetch_best_glance_all_study(study, proj, conn),
+# #                               "experiment" = fetch_best_glance_all_experiment(study, experiment, proj, conn),
+# #                               "plate"      = fetch_best_glance_all_plate(study, experiment, plate, proj, conn)
+# #     )
+# #     
+# #     ids_to_run <- unique(best_glance_all$best_glance_all_id)
+# #     
+# #     best_pred_all   <- fetch_best_pred_all_by_ids(ids_to_run, proj, conn)
+# #     best_sample_all <- fetch_best_sample_se_all_by_ids(ids_to_run, proj, conn)
+# # 
+# #     ## ─────────────────────────────
+# #     ## 2️⃣ Apply scope filtering
+# #     ## ─────────────────────────────
+# # 
+# #     if (scope == "experiment") {
+# #       best_glance_all <- best_glance_all[
+# #         best_glance_all$experiment_accession == experiment_id, ]
+# #     }
+# # 
+# #     if (scope == "plate") {
+# #       best_glance_all <- best_glance_all[
+# #         best_glance_all$experiment_accession == experiment_id &
+# #           best_glance_all$plate == plate_id, ]
+# #     }
+# # 
+# #     ids_to_run <- unique(best_glance_all$best_glance_all_id)
+# # 
+# #     if (length(ids_to_run) == 0) {
+# #       stop("No interpolated results found for selected scope.")
+# #     }
+# # 
+# #     ## ─────────────────────────────
+# #     ## 3️⃣ Restrict child tables by IDs
+# #     ## ─────────────────────────────
+# # 
+# #     best_pred_all <- best_pred_all[
+# #       best_pred_all$best_glance_all_id %in% ids_to_run, ]
+# # 
+# #     best_sample_all <- best_sample_all[
+# #       best_sample_all$best_glance_all_id %in% ids_to_run, ]
+# # 
+# #     ## ─────────────────────────────
+# #     ## 4️⃣ Loop per plate-model
+# #     ## ─────────────────────────────
+# # 
+# #     mcmc_pred_list   <- list()
+# #     mcmc_sample_list <- list()
+# # 
+# #     for (pid in ids_to_run) {
+# # 
+# #       glance_row <- best_glance_all[
+# #         best_glance_all$best_glance_all_id == pid, ]
+# # 
+# #       pred_df <- best_pred_all[
+# #         best_pred_all$best_glance_all_id == pid, ]
+# # 
+# #       sample_df <- best_sample_all[
+# #         best_sample_all$best_glance_all_id == pid, ]
+# # 
+# #       best_fit_out <- list(
+# #         best_model_name = glance_row$model_name,
+# #         fit             = unserialize(glance_row$fit_object[[1]]),
+# #         pred_se         = pred_df,
+# #         plate_samples   = sample_df,
+# #         best_fit        = list(
+# #           best_model_name = glance_row$model_name,
+# #           best_fit        = unserialize(glance_row$fit_object[[1]]),
+# #           best_data       = pred_df
+# #         ),
+# #         fixed_a_result  = glance_row$fixed_a_result,
+# #         response_var    = glance_row$response_variable
+# #       )
+# # 
+# #       ## Run JAGS
+# # 
+# #       bayes_pred <- run_jags_predicted_concentration_wrapper(
+# #         best_fit_out,
+# #         input_df = "pred_se"
+# #       )
+# # 
+# #       bayes_sample <- run_jags_predicted_concentration_wrapper(
+# #         best_fit_out,
+# #         input_df = "sample_se"
+# #       )
+# # 
+# #       bayes_pred$best_glance_all_id   <- pid
+# #       bayes_sample$best_glance_all_id <- pid
+# # 
+# #       mcmc_pred_list[[as.character(pid)]]   <- bayes_pred
+# #       mcmc_sample_list[[as.character(pid)]] <- bayes_sample
+# #     }
+# # 
+# #     mcmc_pred_all   <<- dplyr::bind_rows(mcmc_pred_list)
+# #     mcmc_sample_all <<- dplyr::bind_rows(mcmc_sample_list)
 # 
-# # -----------------------------------------------------------------
-# # A. Track active scope — clear other panels when one is clicked
-# # -----------------------------------------------------------------
-# observeEvent(input$concentrationMethodStudy, {
-#   updateTextInput(session, "activeScope", value = "study")
-#   shinyjs::runjs("
-#     $('input[name=\"concentrationMethodExperiment\"]').prop('checked', false);
-#     $('input[name=\"concentrationMethodPlate\"]').prop('checked', false);
-#     Shiny.setInputValue('concentrationMethodExperiment', null);
-#     Shiny.setInputValue('concentrationMethodPlate', null);
-#   ")
-# })
+#     ## ─────────────────────────────
+#     ## 5️⃣ Save results
+#     ## ─────────────────────────────
+#     #
+#     # upsert_best_curve(
+#     #   conn   = conn,
+#     #   df     = mcmc_pred_all,
+#     #   schema = "madi_results",
+#     #   table  = "mcmc_pred_all",
+#     #   notify = shiny_notify(session)
+#     # )
+#     #
+#     # upsert_best_curve(
+#     #   conn   = conn,
+#     #   df     = mcmc_sample_all,
+#     #   schema = "madi_results",
+#     #   table  = "mcmc_sample_all",
+#     #   notify = shiny_notify(session)
+#     # )
+#     #
+#     # showNotification(
+#     #   id = "mcmc_calc_notify",
+#     #   div(class = "big-notification",
+#     #       paste0("Completed: MCMC Robust (", scope_label, ")")),
+#     #   duration = 5, closeButton = TRUE
+#     # )
 # 
-# observeEvent(input$concentrationMethodExperiment, {
-#   updateTextInput(session, "activeScope", value = "experiment")
-#   shinyjs::runjs("
-#     $('input[name=\"concentrationMethodStudy\"]').prop('checked', false);
-#     $('input[name=\"concentrationMethodPlate\"]').prop('checked', false);
-#     Shiny.setInputValue('concentrationMethodStudy', null);
-#     Shiny.setInputValue('concentrationMethodPlate', null);
-#   ")
-# })
+# #     removeNotification("mcmc_calc_notify")
+# # 
+# #   }, error = function(e) {
+# # 
+# #     showNotification(
+# #       paste("Error during MCMC processing:", e$message),
+# #       type = "error",
+# #       duration = NULL,
+# #       closeButton = TRUE
+# #     )
+# # 
+# #     removeNotification("mcmc_calc_notify")
+# # 
+# #   }, finally = {
+# # 
+# #     is_batch_processing(FALSE)
+# # 
+# #   })
+# # })
 # 
-# observeEvent(input$concentrationMethodPlate, {
-#   updateTextInput(session, "activeScope", value = "plate")
-#   shinyjs::runjs("
-#     $('input[name=\"concentrationMethodStudy\"]').prop('checked', false);
-#     $('input[name=\"concentrationMethodExperiment\"]').prop('checked', false);
-#     Shiny.setInputValue('concentrationMethodStudy', null);
-#     Shiny.setInputValue('concentrationMethodExperiment', null);
-#   ")
-# })
+# # observeEvent(input$run_mcmc_calc, ignoreInit = TRUE, {
+# #   
+# #   scope <- input$save_scope
+# #   
+# #   if (is_batch_processing()) {
+# #     showNotification("Batch processing is already running. Please wait.",
+# #                      type = "warning", duration = 10, closeButton = TRUE)
+# #     return()
+# #   }
+# #   
+# #   req(input$qc_component == "Standard Curve",
+# #       input$readxMap_study_accession != "Click here",
+# #       input$readxMap_experiment_accession != "Click here")
+# #   
+# #   ## Verify interpolated is completed for this scope
+# #   df <- concentration_calc_df()
+# #   interp_status <- get_status(df, scope, "interpolated")
+# #   
+# #   if (interp_status != "completed") {
+# #     showNotification(
+# #       "Interpolated concentrations must be completed before running MCMC Robust.",
+# #       type = "error", duration = 10, closeButton = TRUE
+# #     )
+# #     return()
+# #   }
+# #   
+# #   is_batch_processing(TRUE)
+# #   
+# #   tryCatch({
+# #     
+# #     scope_label <- switch(scope,
+# #                           "study"      = "all experiments",
+# #                           "experiment" = "current experiment",
+# #                           "plate"      = "current plate"
+# #     )
+# #     
+# #     showNotification(
+# #       id = "mcmc_calc_notify",
+# #       div(class = "big-notification",
+# #           paste0("Running MCMC Robust for ", scope_label, "...")),
+# #       duration = NULL, closeButton = TRUE
+# #     )
+# #     
+# #     ## ──────────────────────────────────────────────
+# #     ## Add your MCMC Robust calculation logic here
+# #     ## ──────────────────────────────────────────────
+# #     ## ──────────────────────────────────────────────
+# #     ## Pull best interpolated results
+# #     ## ──────────────────────────────────────────────
+# #     
+# #     study_id      <- input$readxMap_study_accession
+# #     experiment_id <- input$readxMap_experiment_accession
+# #     plate_id      <- if (scope == "plate") input$sc_plate_select else NULL
+# #     
+# #     best_glance <- fetch_best_glance_all(
+# #       conn              = conn,
+# #       study_accession   = study_id,
+# #       experiment_accession = if (scope == "study") NULL else experiment_id,
+# #       plate             = plate_id
+# #     )
+# #     
+# #     best_pred <- fetch_best_pred_all(
+# #       conn              = conn,
+# #       study_accession   = study_id,
+# #       experiment_accession = if (scope == "study") NULL else experiment_id,
+# #       plate             = plate_id
+# #     )
+# #     
+# #     best_sample_se <- fetch_best_sample_se_all(
+# #       conn              = conn,
+# #       study_accession   = study_id,
+# #       experiment_accession = if (scope == "study") NULL else experiment_id,
+# #       plate             = plate_id
+# #     )
+# #     
+# #     ## ──────────────────────────────────────────────
+# #     ## Split by best_glance_all_id (one plate-model per row)
+# #     ## ──────────────────────────────────────────────
+# #     
+# #     plate_ids <- unique(best_glance$best_glance_all_id)
+# #     
+# #     mcmc_pred_all   <- list()
+# #     mcmc_sample_all <- list()
+# #     
+# #     for (pid in plate_ids) {
+# #       
+# #       glance_row <- best_glance[best_glance$best_glance_all_id == pid, ]
+# #       pred_df    <- best_pred[best_pred$best_glance_all_id == pid, ]
+# #       sample_df  <- best_sample_se[best_sample_se$best_glance_all_id == pid, ]
+# #       
+# #       ## Rebuild best_fit_out structure
+# #       best_fit_out <- list(
+# #         best_model_name = glance_row$model_name,
+# #         fit             = unserialize(glance_row$fit_object),
+# #         pred_se         = pred_df,
+# #         plate_samples   = sample_df,
+# #         best_fit        = list(
+# #           best_model_name = glance_row$model_name,
+# #           best_fit        = unserialize(glance_row$fit_object),
+# #           best_data       = pred_df
+# #         ),
+# #         fixed_a_result  = glance_row$fixed_a_result,
+# #         response_var    = glance_row$response_variable
+# #       )
+# #       
+# #       ## ── Run JAGS for pred_se
+# #       bayes_pred <- run_jags_predicted_concentration_wrapper(
+# #         best_fit_out,
+# #         input_df = "pred_se"
+# #       )
+# #       
+# #       ## ── Run JAGS for sample_se
+# #       bayes_sample <- run_jags_predicted_concentration_wrapper(
+# #         best_fit_out,
+# #         input_df = "sample_se"
+# #       )
+# #       
+# #       bayes_pred$best_glance_all_id   <- pid
+# #       bayes_sample$best_glance_all_id <- pid
+# #       
+# #       mcmc_pred_all[[as.character(pid)]]   <- bayes_pred
+# #       mcmc_sample_all[[as.character(pid)]] <- bayes_sample
+# #     }
+# #     
+# #     mcmc_pred_all   <<- dplyr::bind_rows(mcmc_pred_all)
+# #     mcmc_sample_all <<- dplyr::bind_rows(mcmc_sample_all)
+# #     
+# #     ## ──────────────────────────────────────────────
+# #     ## Save results
+# #     ## ──────────────────────────────────────────────
+# #     # upsert_best_curve(
+# #     #   conn   = conn,
+# #     #   df     = mcmc_pred_all,
+# #     #   schema = "madi_results",
+# #     #   table  = "mcmc_pred_all",
+# #     #   notify = shiny_notify(session)
+# #     # )
+# #     # 
+# #     # upsert_best_curve(
+# #     #   conn   = conn,
+# #     #   df     = mcmc_sample_all,
+# #     #   schema = "madi_results",
+# #     #   table  = "mcmc_sample_all",
+# #     #   notify = shiny_notify(session)
+# #     # )
+# #     # 
+# #     # showNotification(
+# #     #   id = "mcmc_calc_notify",
+# #     #   div(class = "big-notification",
+# #     #       paste0("Completed: MCMC Robust (", scope_label, ")")),
+# #     #   duration = 5,
+# #     #   closeButton = TRUE
+# #     # )
+# #     # removeNotification("mcmc_calc_notify")
+# #     # 
+# #     # showNotification("MCMC Robust calculation not yet implemented.",
+# #     #                  type = "warning", duration = 5)
+# #     removeNotification("mcmc_calc_notify")
+# #     
+# #   }, error = function(e) {
+# #     showNotification(paste("Error during MCMC processing:", e$message),
+# #                      type = "error", duration = NULL, closeButton = TRUE)
+# #     removeNotification("mcmc_calc_notify")
+# #   }, finally = {
+# #     is_batch_processing(FALSE)
+# #   })
+# # })
 # 
-# # -----------------------------------------------------------------
-# # B. Highlight active panel + dim inactive ones
-# # -----------------------------------------------------------------
-# observeEvent(input$activeScope, {
-#   scopes <- c("study", "experiment", "plate")
-#   active <- input$activeScope
-#   
-#   for (s in scopes) {
-#     if (s == active) {
-#       shinyjs::runjs(sprintf(
-#         "$('#panel_%s').addClass('scope-panel-active').removeClass('scope-panel-inactive');", s
-#       ))
-#     } else {
-#       shinyjs::runjs(sprintf(
-#         "$('#panel_%s').removeClass('scope-panel-active').addClass('scope-panel-inactive');", s
-#       ))
-#     }
-#   }
-# })
+# # =================================================================
+# # OLDSERVER
+# # =================================================================
 # 
-# # -----------------------------------------------------------------
-# # C. Render the button with HTML multi-line label
-# # -----------------------------------------------------------------
-# output$run_batch_fit_ui <- renderUI({
-#   scope  <- input$activeScope
-#   method <- switch(scope,
-#                    "study"      = input$concentrationMethodStudy,
-#                    "experiment" = input$concentrationMethodExperiment,
-#                    "plate"      = input$concentrationMethodPlate,
-#                    NULL
-#   )
-#   
-#   if (!is.null(scope) && nzchar(scope) && !is.null(method)) {
-#     
-#     method_label <- switch(method,
-#                            "interpolated" = "interpolated",
-#                            "mcmc_robust"  = "MCMC Robust",
-#                            method
-#     )
-#     
-#     scope_label <- switch(scope,
-#                           "study"      = "(All Experiments)",
-#                           "experiment" = "(Current Experiment)",
-#                           "plate"      = "(Current Plate)"
-#     )
-#     
-#     btn_label <- HTML(paste0(
-#       "Calculate Standard Curves<br>",
-#       "with <strong>", method_label, "</strong> concentrations<br>",
-#       scope_label
-#     ))
-#     
-#     btn_style <- "background-color: #7DAF4C; border-color: #91CF60; color: white;
-#                    padding: 12px 40px; font-size: 15px; line-height: 1.5;
-#                    white-space: normal;"
-#   } else {
-#     btn_label <- "Select a scope and method above"
-#     btn_style <- "background-color: #cccccc; border-color: #bbbbbb; color: #666666;
-#                    padding: 12px 40px; font-size: 15px; line-height: 1.5;
-#                    white-space: normal; cursor: not-allowed;"
-#   }
-#   
-#   actionButton(
-#     inputId = "run_batch_fit",
-#     label   = btn_label,
-#     icon    = icon("play"),
-#     style   = btn_style
-#   )
-# })
-# 
-# # -----------------------------------------------------------------
-# # D. Single button handler — runs calculation for selected scope+method
-# # -----------------------------------------------------------------
-# observeEvent(input$run_batch_fit, ignoreInit = TRUE, {
-#   
-#   ## 1. Determine scope + method
-#   scope  <- input$activeScope
-#   method <- switch(scope,
-#                    "study"      = input$concentrationMethodStudy,
-#                    "experiment" = input$concentrationMethodExperiment,
-#                    "plate"      = input$concentrationMethodPlate,
-#                    NULL
-#   )
-#   
-#   ## 2. Validate selection
-#   if (is.null(scope) || !nzchar(scope) || is.null(method)) {
-#     showNotification("Please select a scope and method first.",
-#                      type = "warning", duration = 5)
-#     return()
-#   }
-#   
-#   ## 3. Check if already running
-#   if (is_batch_processing()) {
-#     showNotification("Batch processing is already running. Please wait.",
-#                      type = "warning", duration = 10, closeButton = TRUE)
-#     return()
-#   }
-#   
-#   ## 4. Prereqs
-#   req(input$qc_component == "Standard Curve",
-#       input$readxMap_study_accession != "Click here",
-#       input$readxMap_experiment_accession != "Click here",
-#       input$study_level_tabs == "Experiments",
-#       input$main_tabs == "view_files_tab")
-#   
-#   if (is.null(input$readxMap_study_accession) ||
-#       input$readxMap_study_accession == "") {
-#     showNotification("Please select a study before running batch processing.",
-#                      type = "error", duration = 10, closeButton = TRUE)
-#     return()
-#   }
-#   
-#   ## 5. Start processing
-#   is_batch_processing(TRUE)
-#   
-#   tryCatch({
-#     
-#     scope_label <- switch(scope,
-#                           "study"      = "all experiments",
-#                           "experiment" = "current experiment",
-#                           "plate"      = "current plate"
-#     )
-#     
-#     method_label <- switch(method,
-#                            "interpolated" = "interpolated",
-#                            "mcmc_robust"  = "MCMC Robust",
-#                            method
-#     )
-#     
-#     showNotification(
-#       id = "batch_sc_fit_notify",
-#       div(class = "big-notification",
-#           paste0("Running ", method_label, " for ", scope_label, "...")),
-#       duration = NULL, closeButton = TRUE
-#     )
-#     
-#     ## ── Build experiment list based on scope ──
-#     headers <- fetch_db_header_experiments(
-#       study_accession = input$readxMap_study_accession,
-#       conn = conn
-#     )
-#     
-#     exp_list <- switch(scope,
-#                        "study"      = unique(headers$experiment_accession),
-#                        "experiment" = input$readxMap_experiment_accession,
-#                        "plate"      = input$readxMap_experiment_accession
-#     )
-#     
-#     ## ── Pull data ──
-#     loaded_data_list <- list()
-#     for (exp in exp_list) {
-#       loaded_data_list[[exp]] <- pull_data(
-#         study_accession      = input$readxMap_study_accession,
-#         experiment_accession = exp,
-#         project_id           = userWorkSpaceID(),
-#         conn                 = conn
-#       )
-#     }
-#     
-#     ## ── Filter to plate if scope = "plate" ──
-#     if (scope == "plate") {
-#       plate <- input$sc_plate_select
-#       loaded_data_list <- lapply(loaded_data_list, function(x) {
-#         for (tbl in c("plates", "standards", "samples", "blanks")) {
-#           if (!is.null(x[[tbl]]) && nrow(x[[tbl]]) > 0) {
-#             x[[tbl]] <- x[[tbl]][x[[tbl]]$plate_nom == plate, , drop = FALSE]
-#           }
-#         }
-#         x
-#       })
-#     }
-#     
-#     ## ── Branch on method ──
-#     if (method == "interpolated") {
-#       
-#       ## ── Get response variable ──
-#       response_var <- loaded_data_list[[exp_list[1]]]$response_var
-#       
-#       ## ── Compute SE table ──
-#       all_standards <- do.call(rbind, lapply(loaded_data_list, function(x) x$standards))
-#       se_antigen_table <- compute_antigen_se_table(
-#         standards_data = all_standards,
-#         response_col   = response_var,
-#         dilution_col   = "dilution",
-#         plate_col      = "plate",
-#         grouping_cols  = c("study_accession", "experiment_accession", "source", "antigen"),
-#         method         = "pooled_within",
-#         verbose        = TRUE
-#       )
-#       
-#       ## ── Study parameters ──
-#       verbose     <- FALSE
-#       model_names <- c("Y5", "Yd5", "Y4", "Yd4", "Ygomp4")
-#       param_group <- "standard_curve_options"
-#       
-#       study_params <- fetch_study_parameters(
-#         study_accession = input$readxMap_study_accession,
-#         param_user      = currentuser(),
-#         param_group     = param_group,
-#         project_id      = userWorkSpaceID(),
-#         conn            = conn
-#       )
-#       
-#       ## ── Build antigen lists ──
-#       antigen_list_res <- build_antigen_list(
-#         exp_list         = exp_list,
-#         loaded_data_list = loaded_data_list,
-#         study_accession  = input$readxMap_study_accession
-#       )
-#       
-#       antigen_plate_list_res <- build_antigen_plate_list(
-#         antigen_list_result = antigen_list_res,
-#         loaded_data_list    = loaded_data_list
-#       )
-#       
-#       ## ── Prep data ──
-#       prepped_data_list_res <- prep_plate_data_batch(
-#         antigen_plate_list_res = antigen_plate_list_res,
-#         study_params           = study_params,
-#         verbose                = verbose
-#       )
-#       
-#       antigen_plate_list_res$antigen_plate_list_ids <-
-#         prepped_data_list_res$antigen_plate_name_list
-#       
-#       ## ── Fit curves ──
-#       batch_fit_res <- fit_experiment_plate_batch(
-#         prepped_data_list_res  = prepped_data_list_res,
-#         antigen_plate_list_res = antigen_plate_list_res,
-#         model_names            = model_names,
-#         study_params           = study_params,
-#         se_antigen_table       = se_antigen_table,
-#         verbose                = verbose
-#       )
-#       
-#       ## ── Create outputs ──
-#       batch_outputs <- create_batch_fit_outputs(
-#         batch_fit_res          = batch_fit_res,
-#         antigen_plate_list_res = antigen_plate_list_res
-#       )
-#       
-#       batch_outputs_processed <- process_batch_outputs(
-#         batch_outputs = batch_outputs,
-#         response_var  = response_var,
-#         project_id    = userWorkSpaceID()
-#       )
-#       
-#       ## ── Save: best_glance_all ──
-#       upsert_best_curve(
-#         conn = conn, df = batch_outputs_processed$best_glance_all,
-#         schema = "madi_results", table = "best_glance_all",
-#         notify = shiny_notify(session)
-#       )
-#       showNotification(id = "batch_sc_fit_notify",
-#                        div(class = "big-notification", "Best Fit Statistics saved"),
-#                        duration = NULL, closeButton = TRUE)
-#       
-#       ## ── Retrieve lookup IDs ──
-#       study_to_save <- unique(batch_outputs_processed$best_glance_all$study_accession)
-#       glance_lookup <- DBI::dbGetQuery(conn, glue::glue("
-#         SELECT best_glance_all_id, study_accession, experiment_accession,
-#                plateid, plate, nominal_sample_dilution, source, antigen
-#         FROM madi_results.best_glance_all
-#         WHERE study_accession = '{study_to_save}';
-#       "))
-#       glance_lookup$best_glance_all_id <- as.integer(glance_lookup$best_glance_all_id)
-#       
-#       keys <- c("study_accession", "experiment_accession", "plateid",
-#                 "plate", "nominal_sample_dilution", "source", "antigen")
-#       
-#       ## ── Join lookup IDs ──
-#       batch_outputs_processed$best_pred_all <-
-#         dplyr::inner_join(batch_outputs_processed$best_pred_all,
-#                           glance_lookup, by = keys)
-#       batch_outputs_processed$best_sample_se_all <-
-#         dplyr::inner_join(batch_outputs_processed$best_sample_se_all,
-#                           glance_lookup, by = keys)
-#       batch_outputs_processed$best_standard_all <-
-#         dplyr::inner_join(batch_outputs_processed$best_standard_all,
-#                           glance_lookup, by = keys)
-#       
-#       ## ── Save: best_plate_all ──
-#       upsert_best_curve(
-#         conn = conn, df = batch_outputs_processed$best_plate_all,
-#         schema = "madi_results", table = "best_plate_all",
-#         notify = shiny_notify(session)
-#       )
-#       showNotification(id = "batch_sc_fit_notify",
-#                        div(class = "big-notification", "Best Plates saved"),
-#                        duration = NULL, closeButton = TRUE)
-#       
-#       ## ── Save: best_tidy_all ──
-#       upsert_best_curve(
-#         conn = conn, df = batch_outputs_processed$best_tidy_all,
-#         schema = "madi_results", table = "best_tidy_all",
-#         notify = shiny_notify(session)
-#       )
-#       showNotification(id = "batch_sc_fit_notify",
-#                        div(class = "big-notification", "Best parameter estimates saved"),
-#                        duration = NULL, closeButton = TRUE)
-#       
-#       ## ── Save: best_pred_all ──
-#       upsert_best_curve(
-#         conn = conn, df = batch_outputs_processed$best_pred_all,
-#         schema = "madi_results", table = "best_pred_all",
-#         notify = shiny_notify(session)
-#       )
-#       showNotification(id = "batch_sc_fit_notify",
-#                        div(class = "big-notification", "Best Predicted standards saved"),
-#                        duration = NULL, closeButton = TRUE)
-#       
-#       ## ── Save: best_sample_se_all ──
-#       upsert_best_curve(
-#         conn = conn, df = batch_outputs_processed$best_sample_se_all,
-#         schema = "madi_results", table = "best_sample_se_all",
-#         notify = shiny_notify(session)
-#       )
-#       showNotification(id = "batch_sc_fit_notify",
-#                        div(class = "big-notification", "Best Predicted Samples saved"),
-#                        duration = NULL, closeButton = TRUE)
-#       
-#       ## ── Save: best_standard_all ──
-#       upsert_best_curve(
-#         conn = conn, df = batch_outputs_processed$best_standard_all,
-#         schema = "madi_results", table = "best_standard_all",
-#         notify = shiny_notify(session)
-#       )
-#       showNotification(id = "batch_sc_fit_notify",
-#                        div(class = "big-notification", "Best Standards saved"),
-#                        duration = NULL, closeButton = TRUE)
-#       
-#     } else if (method == "mcmc_robust") {
-#       
-#       ## ── Future: MCMC Robust logic ──
-#       showNotification("MCMC Robust not yet implemented",
-#                        type = "warning", duration = 5)
-#       
-#     }
-#     
-#     ## ── Done ──
-#     showNotification(
-#       id = "batch_sc_fit_notify",
-#       div(class = "big-notification",
-#           paste0("Completed: ", method_label, " (", scope_label, ")")),
-#       duration = 5, closeButton = TRUE
-#     )
-#     removeNotification("batch_sc_fit_notify")
-#     
-#   }, error = function(e) {
-#     showNotification(
-#       paste("Error during batch processing:", e$message),
-#       type = "error", duration = NULL, closeButton = TRUE
-#     )
-#     removeNotification("batch_sc_fit_notify")
-#   }, finally = {
-#     is_batch_processing(FALSE)
-#   })
-# })
+# # is_batch_processing <- reactiveVal(FALSE)
+# # 
+# # # -----------------------------------------------------------------
+# # # A. Track active scope — clear other panels when one is clicked
+# # # -----------------------------------------------------------------
+# # observeEvent(input$concentrationMethodStudy, {
+# #   updateTextInput(session, "activeScope", value = "study")
+# #   shinyjs::runjs("
+# #     $('input[name=\"concentrationMethodExperiment\"]').prop('checked', false);
+# #     $('input[name=\"concentrationMethodPlate\"]').prop('checked', false);
+# #     Shiny.setInputValue('concentrationMethodExperiment', null);
+# #     Shiny.setInputValue('concentrationMethodPlate', null);
+# #   ")
+# # })
+# # 
+# # observeEvent(input$concentrationMethodExperiment, {
+# #   updateTextInput(session, "activeScope", value = "experiment")
+# #   shinyjs::runjs("
+# #     $('input[name=\"concentrationMethodStudy\"]').prop('checked', false);
+# #     $('input[name=\"concentrationMethodPlate\"]').prop('checked', false);
+# #     Shiny.setInputValue('concentrationMethodStudy', null);
+# #     Shiny.setInputValue('concentrationMethodPlate', null);
+# #   ")
+# # })
+# # 
+# # observeEvent(input$concentrationMethodPlate, {
+# #   updateTextInput(session, "activeScope", value = "plate")
+# #   shinyjs::runjs("
+# #     $('input[name=\"concentrationMethodStudy\"]').prop('checked', false);
+# #     $('input[name=\"concentrationMethodExperiment\"]').prop('checked', false);
+# #     Shiny.setInputValue('concentrationMethodStudy', null);
+# #     Shiny.setInputValue('concentrationMethodExperiment', null);
+# #   ")
+# # })
+# # 
+# # # -----------------------------------------------------------------
+# # # B. Highlight active panel + dim inactive ones
+# # # -----------------------------------------------------------------
+# # observeEvent(input$activeScope, {
+# #   scopes <- c("study", "experiment", "plate")
+# #   active <- input$activeScope
+# #   
+# #   for (s in scopes) {
+# #     if (s == active) {
+# #       shinyjs::runjs(sprintf(
+# #         "$('#panel_%s').addClass('scope-panel-active').removeClass('scope-panel-inactive');", s
+# #       ))
+# #     } else {
+# #       shinyjs::runjs(sprintf(
+# #         "$('#panel_%s').removeClass('scope-panel-active').addClass('scope-panel-inactive');", s
+# #       ))
+# #     }
+# #   }
+# # })
+# # 
+# # # -----------------------------------------------------------------
+# # # C. Render the button with HTML multi-line label
+# # # -----------------------------------------------------------------
+# # output$run_batch_fit_ui <- renderUI({
+# #   scope  <- input$activeScope
+# #   method <- switch(scope,
+# #                    "study"      = input$concentrationMethodStudy,
+# #                    "experiment" = input$concentrationMethodExperiment,
+# #                    "plate"      = input$concentrationMethodPlate,
+# #                    NULL
+# #   )
+# #   
+# #   if (!is.null(scope) && nzchar(scope) && !is.null(method)) {
+# #     
+# #     method_label <- switch(method,
+# #                            "interpolated" = "interpolated",
+# #                            "mcmc_robust"  = "MCMC Robust",
+# #                            method
+# #     )
+# #     
+# #     scope_label <- switch(scope,
+# #                           "study"      = "(All Experiments)",
+# #                           "experiment" = "(Current Experiment)",
+# #                           "plate"      = "(Current Plate)"
+# #     )
+# #     
+# #     btn_label <- HTML(paste0(
+# #       "Calculate Standard Curves<br>",
+# #       "with <strong>", method_label, "</strong> concentrations<br>",
+# #       scope_label
+# #     ))
+# #     
+# #     btn_style <- "background-color: #7DAF4C; border-color: #91CF60; color: white;
+# #                    padding: 12px 40px; font-size: 15px; line-height: 1.5;
+# #                    white-space: normal;"
+# #   } else {
+# #     btn_label <- "Select a scope and method above"
+# #     btn_style <- "background-color: #cccccc; border-color: #bbbbbb; color: #666666;
+# #                    padding: 12px 40px; font-size: 15px; line-height: 1.5;
+# #                    white-space: normal; cursor: not-allowed;"
+# #   }
+# #   
+# #   actionButton(
+# #     inputId = "run_batch_fit",
+# #     label   = btn_label,
+# #     icon    = icon("play"),
+# #     style   = btn_style
+# #   )
+# # })
+# # 
+# # # -----------------------------------------------------------------
+# # # D. Single button handler — runs calculation for selected scope+method
+# # # -----------------------------------------------------------------
+# # observeEvent(input$run_batch_fit, ignoreInit = TRUE, {
+# #   
+# #   ## 1. Determine scope + method
+# #   scope  <- input$activeScope
+# #   method <- switch(scope,
+# #                    "study"      = input$concentrationMethodStudy,
+# #                    "experiment" = input$concentrationMethodExperiment,
+# #                    "plate"      = input$concentrationMethodPlate,
+# #                    NULL
+# #   )
+# #   
+# #   ## 2. Validate selection
+# #   if (is.null(scope) || !nzchar(scope) || is.null(method)) {
+# #     showNotification("Please select a scope and method first.",
+# #                      type = "warning", duration = 5)
+# #     return()
+# #   }
+# #   
+# #   ## 3. Check if already running
+# #   if (is_batch_processing()) {
+# #     showNotification("Batch processing is already running. Please wait.",
+# #                      type = "warning", duration = 10, closeButton = TRUE)
+# #     return()
+# #   }
+# #   
+# #   ## 4. Prereqs
+# #   req(input$qc_component == "Standard Curve",
+# #       input$readxMap_study_accession != "Click here",
+# #       input$readxMap_experiment_accession != "Click here",
+# #       input$study_level_tabs == "Experiments",
+# #       input$main_tabs == "view_files_tab")
+# #   
+# #   if (is.null(input$readxMap_study_accession) ||
+# #       input$readxMap_study_accession == "") {
+# #     showNotification("Please select a study before running batch processing.",
+# #                      type = "error", duration = 10, closeButton = TRUE)
+# #     return()
+# #   }
+# #   
+# #   ## 5. Start processing
+# #   is_batch_processing(TRUE)
+# #   
+# #   tryCatch({
+# #     
+# #     scope_label <- switch(scope,
+# #                           "study"      = "all experiments",
+# #                           "experiment" = "current experiment",
+# #                           "plate"      = "current plate"
+# #     )
+# #     
+# #     method_label <- switch(method,
+# #                            "interpolated" = "interpolated",
+# #                            "mcmc_robust"  = "MCMC Robust",
+# #                            method
+# #     )
+# #     
+# #     showNotification(
+# #       id = "batch_sc_fit_notify",
+# #       div(class = "big-notification",
+# #           paste0("Running ", method_label, " for ", scope_label, "...")),
+# #       duration = NULL, closeButton = TRUE
+# #     )
+# #     
+# #     ## ── Build experiment list based on scope ──
+# #     headers <- fetch_db_header_experiments(
+# #       study_accession = input$readxMap_study_accession,
+# #       conn = conn
+# #     )
+# #     
+# #     exp_list <- switch(scope,
+# #                        "study"      = unique(headers$experiment_accession),
+# #                        "experiment" = input$readxMap_experiment_accession,
+# #                        "plate"      = input$readxMap_experiment_accession
+# #     )
+# #     
+# #     ## ── Pull data ──
+# #     loaded_data_list <- list()
+# #     for (exp in exp_list) {
+# #       loaded_data_list[[exp]] <- pull_data(
+# #         study_accession      = input$readxMap_study_accession,
+# #         experiment_accession = exp,
+# #         project_id           = userWorkSpaceID(),
+# #         conn                 = conn
+# #       )
+# #     }
+# #     
+# #     ## ── Filter to plate if scope = "plate" ──
+# #     if (scope == "plate") {
+# #       plate <- input$sc_plate_select
+# #       loaded_data_list <- lapply(loaded_data_list, function(x) {
+# #         for (tbl in c("plates", "standards", "samples", "blanks")) {
+# #           if (!is.null(x[[tbl]]) && nrow(x[[tbl]]) > 0) {
+# #             x[[tbl]] <- x[[tbl]][x[[tbl]]$plate_nom == plate, , drop = FALSE]
+# #           }
+# #         }
+# #         x
+# #       })
+# #     }
+# #     
+# #     ## ── Branch on method ──
+# #     if (method == "interpolated") {
+# #       
+# #       ## ── Get response variable ──
+# #       response_var <- loaded_data_list[[exp_list[1]]]$response_var
+# #       
+# #       ## ── Compute SE table ──
+# #       all_standards <- do.call(rbind, lapply(loaded_data_list, function(x) x$standards))
+# #       se_antigen_table <- compute_antigen_se_table(
+# #         standards_data = all_standards,
+# #         response_col   = response_var,
+# #         dilution_col   = "dilution",
+# #         plate_col      = "plate",
+# #         grouping_cols  = c("study_accession", "experiment_accession", "source", "antigen"),
+# #         method         = "pooled_within",
+# #         verbose        = TRUE
+# #       )
+# #       
+# #       ## ── Study parameters ──
+# #       verbose     <- FALSE
+# #       model_names <- c("Y5", "Yd5", "Y4", "Yd4", "Ygomp4")
+# #       param_group <- "standard_curve_options"
+# #       
+# #       study_params <- fetch_study_parameters(
+# #         study_accession = input$readxMap_study_accession,
+# #         param_user      = currentuser(),
+# #         param_group     = param_group,
+# #         project_id      = userWorkSpaceID(),
+# #         conn            = conn
+# #       )
+# #       
+# #       ## ── Build antigen lists ──
+# #       antigen_list_res <- build_antigen_list(
+# #         exp_list         = exp_list,
+# #         loaded_data_list = loaded_data_list,
+# #         study_accession  = input$readxMap_study_accession
+# #       )
+# #       
+# #       antigen_plate_list_res <- build_antigen_plate_list(
+# #         antigen_list_result = antigen_list_res,
+# #         loaded_data_list    = loaded_data_list
+# #       )
+# #       
+# #       ## ── Prep data ──
+# #       prepped_data_list_res <- prep_plate_data_batch(
+# #         antigen_plate_list_res = antigen_plate_list_res,
+# #         study_params           = study_params,
+# #         verbose                = verbose
+# #       )
+# #       
+# #       antigen_plate_list_res$antigen_plate_list_ids <-
+# #         prepped_data_list_res$antigen_plate_name_list
+# #       
+# #       ## ── Fit curves ──
+# #       batch_fit_res <- fit_experiment_plate_batch(
+# #         prepped_data_list_res  = prepped_data_list_res,
+# #         antigen_plate_list_res = antigen_plate_list_res,
+# #         model_names            = model_names,
+# #         study_params           = study_params,
+# #         se_antigen_table       = se_antigen_table,
+# #         verbose                = verbose
+# #       )
+# #       
+# #       ## ── Create outputs ──
+# #       batch_outputs <- create_batch_fit_outputs(
+# #         batch_fit_res          = batch_fit_res,
+# #         antigen_plate_list_res = antigen_plate_list_res
+# #       )
+# #       
+# #       batch_outputs_processed <- process_batch_outputs(
+# #         batch_outputs = batch_outputs,
+# #         response_var  = response_var,
+# #         project_id    = userWorkSpaceID()
+# #       )
+# #       
+# #       ## ── Save: best_glance_all ──
+# #       upsert_best_curve(
+# #         conn = conn, df = batch_outputs_processed$best_glance_all,
+# #         schema = "madi_results", table = "best_glance_all",
+# #         notify = shiny_notify(session)
+# #       )
+# #       showNotification(id = "batch_sc_fit_notify",
+# #                        div(class = "big-notification", "Best Fit Statistics saved"),
+# #                        duration = NULL, closeButton = TRUE)
+# #       
+# #       ## ── Retrieve lookup IDs ──
+# #       study_to_save <- unique(batch_outputs_processed$best_glance_all$study_accession)
+# #       glance_lookup <- DBI::dbGetQuery(conn, glue::glue("
+# #         SELECT best_glance_all_id, study_accession, experiment_accession,
+# #                plateid, plate, nominal_sample_dilution, source, antigen
+# #         FROM madi_results.best_glance_all
+# #         WHERE study_accession = '{study_to_save}';
+# #       "))
+# #       glance_lookup$best_glance_all_id <- as.integer(glance_lookup$best_glance_all_id)
+# #       
+# #       keys <- c("study_accession", "experiment_accession", "plateid",
+# #                 "plate", "nominal_sample_dilution", "source", "antigen")
+# #       
+# #       ## ── Join lookup IDs ──
+# #       batch_outputs_processed$best_pred_all <-
+# #         dplyr::inner_join(batch_outputs_processed$best_pred_all,
+# #                           glance_lookup, by = keys)
+# #       batch_outputs_processed$best_sample_se_all <-
+# #         dplyr::inner_join(batch_outputs_processed$best_sample_se_all,
+# #                           glance_lookup, by = keys)
+# #       batch_outputs_processed$best_standard_all <-
+# #         dplyr::inner_join(batch_outputs_processed$best_standard_all,
+# #                           glance_lookup, by = keys)
+# #       
+# #       ## ── Save: best_plate_all ──
+# #       upsert_best_curve(
+# #         conn = conn, df = batch_outputs_processed$best_plate_all,
+# #         schema = "madi_results", table = "best_plate_all",
+# #         notify = shiny_notify(session)
+# #       )
+# #       showNotification(id = "batch_sc_fit_notify",
+# #                        div(class = "big-notification", "Best Plates saved"),
+# #                        duration = NULL, closeButton = TRUE)
+# #       
+# #       ## ── Save: best_tidy_all ──
+# #       upsert_best_curve(
+# #         conn = conn, df = batch_outputs_processed$best_tidy_all,
+# #         schema = "madi_results", table = "best_tidy_all",
+# #         notify = shiny_notify(session)
+# #       )
+# #       showNotification(id = "batch_sc_fit_notify",
+# #                        div(class = "big-notification", "Best parameter estimates saved"),
+# #                        duration = NULL, closeButton = TRUE)
+# #       
+# #       ## ── Save: best_pred_all ──
+# #       upsert_best_curve(
+# #         conn = conn, df = batch_outputs_processed$best_pred_all,
+# #         schema = "madi_results", table = "best_pred_all",
+# #         notify = shiny_notify(session)
+# #       )
+# #       showNotification(id = "batch_sc_fit_notify",
+# #                        div(class = "big-notification", "Best Predicted standards saved"),
+# #                        duration = NULL, closeButton = TRUE)
+# #       
+# #       ## ── Save: best_sample_se_all ──
+# #       upsert_best_curve(
+# #         conn = conn, df = batch_outputs_processed$best_sample_se_all,
+# #         schema = "madi_results", table = "best_sample_se_all",
+# #         notify = shiny_notify(session)
+# #       )
+# #       showNotification(id = "batch_sc_fit_notify",
+# #                        div(class = "big-notification", "Best Predicted Samples saved"),
+# #                        duration = NULL, closeButton = TRUE)
+# #       
+# #       ## ── Save: best_standard_all ──
+# #       upsert_best_curve(
+# #         conn = conn, df = batch_outputs_processed$best_standard_all,
+# #         schema = "madi_results", table = "best_standard_all",
+# #         notify = shiny_notify(session)
+# #       )
+# #       showNotification(id = "batch_sc_fit_notify",
+# #                        div(class = "big-notification", "Best Standards saved"),
+# #                        duration = NULL, closeButton = TRUE)
+# #       
+# #     } else if (method == "mcmc_robust") {
+# #       
+# #       ## ── Future: MCMC Robust logic ──
+# #       showNotification("MCMC Robust not yet implemented",
+# #                        type = "warning", duration = 5)
+# #       
+# #     }
+# #     
+# #     ## ── Done ──
+# #     showNotification(
+# #       id = "batch_sc_fit_notify",
+# #       div(class = "big-notification",
+# #           paste0("Completed: ", method_label, " (", scope_label, ")")),
+# #       duration = 5, closeButton = TRUE
+# #     )
+# #     removeNotification("batch_sc_fit_notify")
+# #     
+# #   }, error = function(e) {
+# #     showNotification(
+# #       paste("Error during batch processing:", e$message),
+# #       type = "error", duration = NULL, closeButton = TRUE
+# #     )
+# #     removeNotification("batch_sc_fit_notify")
+# #   }, finally = {
+# #     is_batch_processing(FALSE)
+# #   })
+# # })

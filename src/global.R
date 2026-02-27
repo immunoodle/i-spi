@@ -55,6 +55,7 @@ library(tmvtnorm)
 library(patchwork)
 library(rlang)
 library(rjags)
+library(bit64)
 
 # For standard curve Summary
 library(fracture)
