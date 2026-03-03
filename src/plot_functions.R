@@ -460,8 +460,8 @@ plot_standard_curve <- function(best_fit,
   ##     common axis range.
 
   print(names(best_fit$best_pred))
-  se_model   <- best_fit$best_pred$se_concentration
-  se_samples <- samples_predicted_conc$se_concentration
+  se_model   <- best_fit$best_pred$pcov
+  se_samples <- samples_predicted_conc$pcov
   se_all <- c(best_fit$best_pred$pcov,  samples_predicted_conc$pcov)
   se_range      <- range(se_all, na.rm = TRUE)
 
@@ -473,11 +473,14 @@ plot_standard_curve <- function(best_fit,
   # se_axis_limits <- c(1 - se_margin, se_max + se_margin)
   # # se_axis_limits <- c(se_range[1] - se_margin, 100 + se_margin)
 
-  se_max <- min(ceiling(quantile(se_samples ^ 2, probs = 0.95, na.rm = TRUE) * 1000), 100)
-  se_min <- max(min(se_all, na.rm = TRUE), 0.1)  # Ensure positive minimum for log scale
+  # se_max <- min(ceiling(quantile(se_samples ^ 2, probs = 0.95, na.rm = TRUE) * 1000), 100)
+  # se_min <- max(min(se_all, na.rm = TRUE), 0.1)  # Ensure positive minimum for log scale
+
+  se_max <- 125
+  se_min <- 0.1
 
   # For log scale, work with the actual values (Plotly will handle the log transform)
-  se_axis_limits <- c(se_min * 0.8, se_max * 1.2)  # Add some padding
+  se_axis_limits <- c(se_min * 0.9, se_max * 1.1)  # Add some padding
   dtick <- ifelse(se_max > 19, ifelse(se_max > 35,10, 5), 1)
   # dtick <- 0.301
 

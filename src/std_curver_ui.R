@@ -685,6 +685,8 @@ observeEvent(list(
         verbose = verbose
       )
 
+      best_fit_v <<- best_fit
+
       best_fit <- gate_samples(best_fit = best_fit,
                                response_variable = response_var,
                                pcov_threshold = antigen_plate()$antigen_settings$pcov_threshold,

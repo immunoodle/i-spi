@@ -333,6 +333,24 @@ create_batch_fit_outputs <- function(batch_fit_res, antigen_plate_list_res) {
 # as well as project_id
 process_batch_outputs <- function(batch_outputs, response_var, project_id) {
 
+  # Guard: ensure cv_x is present; fill NA if somehow missing
+  ensure_cv_x <- function(df, context = "") {
+    if (!"cv_x" %in% names(df)) {
+      message(sprintf("[process_batch_outputs] cv_x missing from %s — filling NA.", context))
+      df$cv_x <- NA_real_
+    }
+    # Clamp extreme values for database storage sanity
+    df$cv_x <- ifelse(is.finite(df$cv_x) & df$cv_x > 500, NA_real_, df$cv_x)
+    df
+  }
+
+
+  batch_outputs$best_pred_all       <- ensure_cv_x(batch_outputs$best_pred_all,
+                                                   "best_pred_all")
+  batch_outputs$best_sample_se_all  <- ensure_cv_x(batch_outputs$best_sample_se_all,
+                                                   "best_sample_se_all")
+
+
   #batch_outputs <<- batch_outputs
 
   # ensure those out of range are null not inf for database storing.
@@ -392,6 +410,7 @@ process_batch_outputs <- function(batch_outputs, response_var, project_id) {
   batch_outputs$best_sample_se_all$project_id <- as.numeric(project_id)
   batch_outputs$best_standard_all$project_id <- as.numeric(project_id)
   batch_outputs$best_plate_all$project_id <- as.numeric(project_id)
+
 
   batch_outputs <- lapply(batch_outputs, function(x) {
     if (is.data.frame(x)) {
