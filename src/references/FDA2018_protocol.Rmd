@@ -1,0 +1,68 @@
+---
+title: "FDA2018_protocol"
+author: "Scot Zens"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+------------------------------------------------------------------------
+
+## Question 5: Implementation of Regulatory (%CV ≤ 20%, ≥ 80% Accuracy) LOQ Using Multi-Plate Experiments
+
+### Answer
+
+The regulatory framework—primarily ICH Q2(R1) and the FDA Bioanalytical Method Validation guidance (2018), supplemented by the AAPS consensus (DeSilva et al., 2003)—defines LOQ through empirical performance criteria: the lowest concentration at which precision (%CV) is ≤ 20% (or ≤ 25% at LLOQ) and accuracy (% recovery or % relative error) is within 80–120% of nominal. Implementing these criteria with the experimental design described (5 plates, 2–3 blanks, 9–12 standard wells in serial dilution, remainder as test samples, single laboratory) is feasible but requires careful attention to the following.
+
+**Experimental design considerations:**
+
+The DeSilva et al. (2003) consensus paper recommends a minimum of **six independent runs** (plates) for a full validation but acknowledges that **five runs** can be adequate for pre-study validation. With five plates, each containing 9–12 standard dilution wells (which in a typical bead-array setup yield duplicate or triplicate measurements at each of 3–6 standard concentrations), the available data are:
+
+-   **Precision (%CV):** At each standard concentration, compute the mean back-calculated concentration from the fitted standard curve across all plates. The inter-plate (intermediate precision) %CV is calculated as:
+
+    %CV = (SD of back-calculated concentrations across plates / mean back-calculated concentration) × 100
+
+    With 5 plates, you have 5 independent measurements at each standard concentration level. While this is a small sample for estimating variance, it is within the range accepted by regulatory guidance.
+
+-   **Accuracy (% RE or % recovery):** For each standard point on each plate, accuracy is:
+
+    \% RE = ((back-calculated concentration − nominal concentration) / nominal concentration) × 100
+
+    \% Recovery = (back-calculated concentration / nominal concentration) × 100
+
+    The acceptance criterion is typically that the mean accuracy at each level must be within ±20% RE (i.e., 80–120% recovery), with ±25% allowed at LLOQ.
+
+**Procedure for determining LLOQ and ULOQ:**
+
+1.  **Fit standard curves** independently on each of the 5 plates using the chosen model (e.g., 4PL or 5PL with appropriate weighting).
+
+2.  **Back-calculate** the concentration for each standard well using the plate's own fitted curve (this tests the internal consistency of each plate's calibration).
+
+3.  **At each nominal standard concentration**, compute:
+
+    -   Mean back-calculated concentration across all wells on all plates
+    -   Inter-plate %CV
+    -   Mean % RE (accuracy)
+
+4.  **The LLOQ** is the lowest standard concentration at which both %CV ≤ 20% (or ≤ 25%) and mean accuracy is within 80–120%. The ULOQ is the highest standard concentration meeting these criteria.
+
+5.  **Blank characterization:** The 2–3 blank (PBS) wells per plate provide estimates of background signal. The mean blank response ± SD across all plates can be used to verify that the LLOQ response is sufficiently above background (the FDA guidance requires that the LLOQ response be at least 5× the response of the blank).
+
+**Limitations of this design:**
+
+-   **Five plates from one laboratory** provide an estimate of **intermediate precision** (within-lab, between-run variability) but not **reproducibility** (between-lab variability). This is acceptable for a single-laboratory validation but would need supplementation for multi-site studies.
+
+-   **The number of replicates per concentration per plate** (typically 2–3) limits the within-plate precision estimate. Inter-plate pooling provides more robust statistics.
+
+-   **Quality control (QC) samples at known concentrations** within the standard range are recommended by FDA (2018) but may not be present in the described design. The standards themselves can serve as surrogate QC samples for the purpose of establishing LOQ, but independent QC samples (spiked matrix samples at low, medium, and high concentrations) are preferred for formal validation.
+
+**Practical implementation:**
+
+With 5 plates × 2 replicates at each of 6 standard concentrations = 10 measurements per concentration level. This is sufficient to compute meaningful %CV and accuracy statistics, though the confidence intervals around the %CV estimate itself will be wide (the uncertainty of a variance estimate from n = 10 is substantial). Regulatory practice accepts this sample size; the DeSilva et al. (2003) guidance and the FDA (2018) guidance do not specify a minimum sample size per concentration beyond "at least six runs" (or similar wording) with duplicate or triplicate standards.
+
+Yes, it is feasible to produce %CV and accuracy statistics with this design. The results should be presented as a table of nominal concentration, mean back-calculated concentration, %CV, and mean % RE, with the LLOQ and ULOQ identified as the boundary concentrations meeting the acceptance criteria.
+
+------------------------------------------------------------------------

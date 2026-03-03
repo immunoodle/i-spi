@@ -2984,7 +2984,7 @@ predict_and_propagate_error <- function(best_fit,
       }
 
       # Convert SE from raw MFI units to log10 units
-      overall_se_value <- sqrt(se_std_response / (ref_mfi * log(10) * 2))
+      overall_se_value <- sqrt(se_std_response / (ref_mfi * log(10) * 10))
 
       if (verbose) {
         message(sprintf(
@@ -2995,7 +2995,7 @@ predict_and_propagate_error <- function(best_fit,
 
     } else {
       # Response is NOT log-transformed — use se_std_response directly
-      overall_se_value <- sqrt(se_std_response / 2)
+      overall_se_value <- sqrt(se_std_response / 10)
     }
 
   } else {
