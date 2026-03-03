@@ -196,7 +196,7 @@ dilutionalLinearityServer <- function(id, selected_study, selected_experiment, c
       selectInput(
         inputId = ns("dil_lin_response"),
         label = "Response type",
-        choices = c("Arbritary Units" = "au",
+        choices = c("Concentration" = "au",
                     "Raw Assay Response" = "raw_assay_response")
       )
     })
