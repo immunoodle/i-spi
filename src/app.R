@@ -870,6 +870,7 @@ server <- function(input, output, session) {
       split_by_nominal_dilution <- reactiveVal(FALSE)
 
       plate_data <- reactiveVal()
+      sc_feature_select <- reactiveVal()
       header_info <- reactiveVal()
       current_type_p_tab <- reactiveVal()
       unique_plate_types <- reactiveVal()

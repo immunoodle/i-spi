@@ -41,9 +41,13 @@ observeEvent(list(
         standards_data = loaded_data$standards,
         response_col = response_var,
         dilution_col = "dilution",
-        plate_col = "plate",
-        grouping_cols = c("study_accession", "experiment_accession", "source", "antigen"),
-        method = "pooled_within",
+        plate_col = "plate_nom",
+        grouping_cols = c("study_accession", 
+                          "experiment_accession", 
+                          "source", 
+                          "antigen",
+                          "feature"),
+        min_reps = 2,
         verbose = TRUE
       )
 
@@ -378,7 +382,9 @@ observeEvent(list(
 
       dat_antigen <- dat_antigen[!is.na(dat_antigen$mfi),]
       req(nrow(dat_antigen) > 0)
-
+      
+      ### eventually this will be replaced by a combined antigen|feature selector value.
+      sc_feature_select(dat_antigen$feature)
 
       selectInput("sc_antigen_select",
                   label = "Antigen",
@@ -393,6 +399,7 @@ observeEvent(list(
           loaded_data$standards$experiment_accession %in% selected_experiment &
           loaded_data$standards$plate_nom %in% input$sc_plate_select &
           loaded_data$standards$antigen %in% input$sc_antigen_select, ]
+
 
       req(nrow(dat_source) > 0)
 
@@ -652,7 +659,8 @@ observeEvent(list(
         study_accession = selected_study,
         experiment_accession = selected_experiment,
         source = input$sc_source_select,
-        antigen = input$sc_antigen_select
+        antigen = input$sc_antigen_select,
+        feature = sc_feature_select()
       )
 
       best_fit <- select_model_fit_AIC(fit_summary = fit_summary(),
@@ -895,9 +903,9 @@ observeEvent(input$run_batch_fit, ignoreInit = TRUE, {
       standards_data = all_standards,
       response_col = response_var,
       dilution_col = "dilution",
-      plate_col = "plate",
+      plate_col = "plate_nom",
       grouping_cols = c("study_accession", "experiment_accession", "source", "antigen"),
-      method = "pooled_within",
+      min_reps = 2,
       verbose = TRUE
     )
 

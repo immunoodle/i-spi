@@ -253,7 +253,8 @@ fit_experiment_plate_batch <- function(prepped_data_list_res,
         study_accession = unique(current_plate$plate_standard$study_accession),
         experiment_accession = unique(current_plate$plate_standard$experiment_accession),
         source = unique(current_plate$plate_standard$source),
-        antigen = unique(current_plate$plate_standard$antigen)
+        antigen = unique(current_plate$plate_standard$antigen),
+        feature = unique(current_plate$plate_standard$feature)
       )
     } else {
       NA_real_

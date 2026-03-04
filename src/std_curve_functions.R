@@ -2603,302 +2603,347 @@ diagnose_cv_x <- function(df, label = "pred_se",
 #' print(se_result$pooling_strategy)
 #'
 #' @export
-assay_se <- function(data,
-                     dilution_col = "dilution",
-                     response_col = "mfi",
-                     plate_col    = "plate",
-                     method       = c("pooled_within", "median_se", "mean_se"),
-                     min_reps     = 2,
-                     na.rm        = TRUE) {
+# assay_se <- function(data,
+#                      dilution_col = "dilution",
+#                      response_col = "mfi",
+#                      plate_col    = "plate",
+#                      method       = c("pooled_within", "median_se", "mean_se"),
+#                      min_reps     = 2,
+#                      na.rm        = TRUE) {
+# 
+#   ## 0. Input validation
+#   method <- match.arg(method)
+#   data <- dplyr::as_tibble(data)
+# 
+#   required_cols <- c(dilution_col, response_col)
+#   missing_cols <- setdiff(required_cols, colnames(data))
+#   if (length(missing_cols) > 0) {
+#     stop("Missing required columns: ", paste(missing_cols, collapse = ", "))
+#   }
+# 
+#   # Check if plate column exists
+# 
+#   has_plate_col <- !is.null(plate_col) && plate_col %in% colnames(data)
+# 
+#   ## 1. Remove NA responses
+#   if (na.rm) {
+#     data <- data[!is.na(data[[response_col]]), ]
+#   }
+# 
+#   if (nrow(data) == 0) {
+#     warning("No valid response data after removing NAs")
+#     return(list(
+#       overall_se       = NA_real_,
+#       by_dilution      = NULL,
+#       pooling_method   = method,
+#       pooling_strategy = NA_character_,
+#       total_df         = 0,
+#       n_dilutions_used = 0,
+#       n_plates         = 0
+#     ))
+#   }
+# 
+#   ## 2. Determine pooling strategy
+#   #    Check if we have within-plate replicates or need to pool across plates
+# 
+#   if (has_plate_col) {
+#     # Count replicates per plate-dilution combination
+#     rep_counts <- data %>%
+#       dplyr::group_by(
+#         !!rlang::sym(plate_col),
+#         !!rlang::sym(dilution_col)
+#       ) %>%
+#       dplyr::summarise(n = dplyr::n(), .groups = "drop")
+# 
+#     # Determine if we have within-plate replicates
+#     # If median reps per plate-dilution is > 1, use within-plate strategy
+#     median_reps_per_plate_dilution <- stats::median(rep_counts$n)
+#     has_within_plate_reps <- median_reps_per_plate_dilution >= min_reps
+# 
+#     n_plates <- length(unique(data[[plate_col]]))
+#   } else {
+#     has_within_plate_reps <- TRUE  # No plate info, treat all as one group
+#     n_plates <- 1
+#   }
+# 
+#   ## 3. Compute within-dilution statistics based on strategy
+# 
+#   if (has_within_plate_reps || !has_plate_col) {
+#     # STRATEGY A: Within-plate replicates exist
+#     # Pool variance within each dilution level (original approach)
+#     pooling_strategy <- "within_plate"
+# 
+#     by_dilution <- data %>%
+#       dplyr::group_by(!!rlang::sym(dilution_col)) %>%
+#       dplyr::summarise(
+#         n        = dplyr::n(),
+#         mean     = mean(!!rlang::sym(response_col), na.rm = TRUE),
+#         sd       = stats::sd(!!rlang::sym(response_col), na.rm = TRUE),
+#         variance = stats::var(!!rlang::sym(response_col), na.rm = TRUE),
+#         se       = sd / sqrt(n),
+#         df       = n - 1,
+#         .groups  = "drop"
+#       ) %>%
+#       dplyr::arrange(!!rlang::sym(dilution_col))
+# 
+#   } else {
+#     # STRATEGY B: Single replicate per plate per dilution
+#     # Pool ACROSS plates at each dilution level
+#     pooling_strategy <- "across_plates"
+# 
+#     # Each plate provides one measurement per dilution
+#     # Treat different plates as replicates at each dilution level
+#     by_dilution <- data %>%
+#       dplyr::group_by(!!rlang::sym(dilution_col)) %>%
+#       dplyr::summarise(
+#         n        = dplyr::n(),  # Number of plates with this dilution
+#         n_plates_at_dilution = dplyr::n_distinct(!!rlang::sym(plate_col)),
+#         mean     = mean(!!rlang::sym(response_col), na.rm = TRUE),
+#         sd       = stats::sd(!!rlang::sym(response_col), na.rm = TRUE),
+#         variance = stats::var(!!rlang::sym(response_col), na.rm = TRUE),
+#         se       = sd / sqrt(n),
+#         df       = n - 1,
+#         .groups  = "drop"
+#       ) %>%
+#       dplyr::arrange(!!rlang::sym(dilution_col))
+#   }
+# 
+#   ## 4. Filter to dilutions with sufficient replicates
+#   by_dilution_valid <- by_dilution %>%
+#     dplyr::filter(n >= min_reps, !is.na(variance), variance > 0)
+# 
+#   n_dilutions_used <- nrow(by_dilution_valid)
+# 
+#   if (n_dilutions_used == 0) {
+#     # Provide more informative warning
+#     if (pooling_strategy == "across_plates") {
+#       warning(
+#         "No dilution levels with sufficient replicates (min_reps = ", min_reps, "). ",
+#         "You have ", n_plates, " plates. Need at least ", min_reps,
+#         " plates with measurements at the same dilution to estimate SE."
+#       )
+#     } else {
+#       warning("No dilution levels with sufficient replicates (min_reps = ", min_reps, ")")
+#     }
+# 
+#     return(list(
+#       overall_se       = NA_real_,
+#       by_dilution      = by_dilution,
+#       pooling_method   = method,
+#       pooling_strategy = pooling_strategy,
+#       total_df         = 0,
+#       n_dilutions_used = 0,
+#       n_plates         = n_plates
+#     ))
+#   }
+# 
+#   ## 5. Compute pooled SE estimate based on method
+#   overall_se <- switch(method,
+# 
+#                        # Method 1: Pooled within-group variance (recommended)
+#                        "pooled_within" = {
+#                          total_df <- sum(by_dilution_valid$df)
+#                          pooled_var <- sum(by_dilution_valid$df * by_dilution_valid$variance) / total_df
+#                          pooled_sd <- sqrt(pooled_var)
+# 
+#                          # SE for a single observation
+#                          # Use harmonic mean of n for typical replicate count
+#                          n_harmonic <- n_dilutions_used / sum(1 / by_dilution_valid$n)
+#                          pooled_sd / sqrt(n_harmonic)
+#                        },
+# 
+#                        # Method 2: Median of per-dilution SEs (robust to outliers)
+#                        "median_se" = {
+#                          stats::median(by_dilution_valid$se, na.rm = TRUE)
+#                        },
+# 
+#                        # Method 3: Mean of per-dilution SEs
+#                        "mean_se" = {
+#                          mean(by_dilution_valid$se, na.rm = TRUE)
+#                        }
+#   )
+# 
+#   ## 6. Compute total degrees of freedom
+#   total_df <- sum(by_dilution_valid$df)
+# 
+#   ## 7. Return results
+#   list(
+#     overall_se       = overall_se,
+#     by_dilution      = by_dilution,
+#     pooling_method   = method,
+#     pooling_strategy = pooling_strategy,
+#     total_df         = total_df,
+#     n_dilutions_used = n_dilutions_used,
+#     n_plates         = n_plates
+#   )
+# }
 
-  ## 0. Input validation
-  method <- match.arg(method)
-  data <- dplyr::as_tibble(data)
-
-  required_cols <- c(dilution_col, response_col)
-  missing_cols <- setdiff(required_cols, colnames(data))
-  if (length(missing_cols) > 0) {
-    stop("Missing required columns: ", paste(missing_cols, collapse = ", "))
-  }
-
-  # Check if plate column exists
-
-  has_plate_col <- !is.null(plate_col) && plate_col %in% colnames(data)
-
-  ## 1. Remove NA responses
-  if (na.rm) {
-    data <- data[!is.na(data[[response_col]]), ]
-  }
-
-  if (nrow(data) == 0) {
-    warning("No valid response data after removing NAs")
-    return(list(
-      overall_se       = NA_real_,
-      by_dilution      = NULL,
-      pooling_method   = method,
-      pooling_strategy = NA_character_,
-      total_df         = 0,
-      n_dilutions_used = 0,
-      n_plates         = 0
-    ))
-  }
-
-  ## 2. Determine pooling strategy
-  #    Check if we have within-plate replicates or need to pool across plates
-
-  if (has_plate_col) {
-    # Count replicates per plate-dilution combination
-    rep_counts <- data %>%
-      dplyr::group_by(
-        !!rlang::sym(plate_col),
-        !!rlang::sym(dilution_col)
-      ) %>%
-      dplyr::summarise(n = dplyr::n(), .groups = "drop")
-
-    # Determine if we have within-plate replicates
-    # If median reps per plate-dilution is > 1, use within-plate strategy
-    median_reps_per_plate_dilution <- stats::median(rep_counts$n)
-    has_within_plate_reps <- median_reps_per_plate_dilution >= min_reps
-
-    n_plates <- length(unique(data[[plate_col]]))
-  } else {
-    has_within_plate_reps <- TRUE  # No plate info, treat all as one group
-    n_plates <- 1
-  }
-
-  ## 3. Compute within-dilution statistics based on strategy
-
-  if (has_within_plate_reps || !has_plate_col) {
-    # STRATEGY A: Within-plate replicates exist
-    # Pool variance within each dilution level (original approach)
-    pooling_strategy <- "within_plate"
-
-    by_dilution <- data %>%
-      dplyr::group_by(!!rlang::sym(dilution_col)) %>%
-      dplyr::summarise(
-        n        = dplyr::n(),
-        mean     = mean(!!rlang::sym(response_col), na.rm = TRUE),
-        sd       = stats::sd(!!rlang::sym(response_col), na.rm = TRUE),
-        variance = stats::var(!!rlang::sym(response_col), na.rm = TRUE),
-        se       = sd / sqrt(n),
-        df       = n - 1,
-        .groups  = "drop"
-      ) %>%
-      dplyr::arrange(!!rlang::sym(dilution_col))
-
-  } else {
-    # STRATEGY B: Single replicate per plate per dilution
-    # Pool ACROSS plates at each dilution level
-    pooling_strategy <- "across_plates"
-
-    # Each plate provides one measurement per dilution
-    # Treat different plates as replicates at each dilution level
-    by_dilution <- data %>%
-      dplyr::group_by(!!rlang::sym(dilution_col)) %>%
-      dplyr::summarise(
-        n        = dplyr::n(),  # Number of plates with this dilution
-        n_plates_at_dilution = dplyr::n_distinct(!!rlang::sym(plate_col)),
-        mean     = mean(!!rlang::sym(response_col), na.rm = TRUE),
-        sd       = stats::sd(!!rlang::sym(response_col), na.rm = TRUE),
-        variance = stats::var(!!rlang::sym(response_col), na.rm = TRUE),
-        se       = sd / sqrt(n),
-        df       = n - 1,
-        .groups  = "drop"
-      ) %>%
-      dplyr::arrange(!!rlang::sym(dilution_col))
-  }
-
-  ## 4. Filter to dilutions with sufficient replicates
-  by_dilution_valid <- by_dilution %>%
-    dplyr::filter(n >= min_reps, !is.na(variance), variance > 0)
-
-  n_dilutions_used <- nrow(by_dilution_valid)
-
-  if (n_dilutions_used == 0) {
-    # Provide more informative warning
-    if (pooling_strategy == "across_plates") {
-      warning(
-        "No dilution levels with sufficient replicates (min_reps = ", min_reps, "). ",
-        "You have ", n_plates, " plates. Need at least ", min_reps,
-        " plates with measurements at the same dilution to estimate SE."
-      )
-    } else {
-      warning("No dilution levels with sufficient replicates (min_reps = ", min_reps, ")")
-    }
-
-    return(list(
-      overall_se       = NA_real_,
-      by_dilution      = by_dilution,
-      pooling_method   = method,
-      pooling_strategy = pooling_strategy,
-      total_df         = 0,
-      n_dilutions_used = 0,
-      n_plates         = n_plates
-    ))
-  }
-
-  ## 5. Compute pooled SE estimate based on method
-  overall_se <- switch(method,
-
-                       # Method 1: Pooled within-group variance (recommended)
-                       "pooled_within" = {
-                         total_df <- sum(by_dilution_valid$df)
-                         pooled_var <- sum(by_dilution_valid$df * by_dilution_valid$variance) / total_df
-                         pooled_sd <- sqrt(pooled_var)
-
-                         # SE for a single observation
-                         # Use harmonic mean of n for typical replicate count
-                         n_harmonic <- n_dilutions_used / sum(1 / by_dilution_valid$n)
-                         pooled_sd / sqrt(n_harmonic)
-                       },
-
-                       # Method 2: Median of per-dilution SEs (robust to outliers)
-                       "median_se" = {
-                         stats::median(by_dilution_valid$se, na.rm = TRUE)
-                       },
-
-                       # Method 3: Mean of per-dilution SEs
-                       "mean_se" = {
-                         mean(by_dilution_valid$se, na.rm = TRUE)
-                       }
-  )
-
-  ## 6. Compute total degrees of freedom
-  total_df <- sum(by_dilution_valid$df)
-
-  ## 7. Return results
-  list(
-    overall_se       = overall_se,
-    by_dilution      = by_dilution,
-    pooling_method   = method,
-    pooling_strategy = pooling_strategy,
-    total_df         = total_df,
-    n_dilutions_used = n_dilutions_used,
-    n_plates         = n_plates
-  )
-}
-
-#' Compute Assay SE for Each Antigen Across All Plates
+#' Compute Median Assay SE for Each Antigen/Feature Across All Plates
 #'
-#' Computes the standard error of assay response for each unique combination
-#' of study_accession, experiment_accession, source, and antigen by pooling
-#' standard curve data across all plates. This SE can then be reused for
-#' error propagation on each individual plate.
+#' For each unique combination of study_accession, experiment_accession,
+#' source, antigen, and feature, computes the standard error of assay response
+#' at every dilution level across all plates, then returns the median of those
+#' per-dilution SEs. This pooled median SE can be reused for error propagation
+#' on each individual plate.
 #'
 #' @param standards_data data.frame containing all standard curve data
 #' @param response_col name of the response column (e.g., "mfi")
 #' @param dilution_col name of the dilution column (default = "dilution")
-#' @param plate_col name of the plate column (default = "plate")
+#' @param plate_col name of the plate identifier column (default = "plate_nom")
 #' @param grouping_cols character vector of columns defining the grouping
-#'        (default = c("study_accession", "experiment_accession", "source", "antigen"))
-#' @param method pooling method for assay_se (default = "pooled_within")
-#' @param min_reps minimum replicates required (default = 2)
+#'        (default = c("study_accession", "experiment_accession",
+#'                     "source", "antigen", "feature"))
+#' @param min_reps minimum number of non-missing plate replicates required at a
+#'        dilution level for that dilution's SE to be included (default = 2)
+#' @param verbose logical; if TRUE emit progress messages (default = FALSE)
 #'
-#' @return A data.frame with one row per antigen grouping containing:
-#'   - grouping columns (study_accession, experiment_accession, source, antigen)
-#'   - overall_se: the pooled SE for that antigen
-#'   - pooling_strategy: "within_plate" or "across_plates"
-#'   - n_plates: number of plates contributing
-#'   - n_dilutions_used: number of dilution levels used
-#'   - total_df: total degrees of freedom
+#' @return A data.frame with one row per unique grouping containing:
+#'   \item{grouping_cols}{the grouping columns}
+#'   \item{median_se}{median SE across all qualifying dilution levels}
+#'   \item{n_dilutions_used}{number of dilution levels with >= min_reps
+#'         non-missing observations that contributed to the median}
+#'   \item{n_plates}{number of distinct plates in the group}
+#'   \item{total_obs}{total number of non-missing response observations used}
 #'
 #' @export
-compute_antigen_se_table <- function(standards_data,
-                                     response_col = "mfi",
-                                     dilution_col = "dilution",
-                                     plate_col = "plate",
-                                     grouping_cols = c("study_accession",
-                                                       "experiment_accession",
-                                                       "source",
-                                                       "antigen"),
-                                     method = "pooled_within",
-                                     min_reps = 2,
-                                     verbose = FALSE) {
-
-
-  # Validate inputs
-  required_cols <- c(grouping_cols, response_col, dilution_col, plate_col)
-  missing_cols <- setdiff(required_cols, colnames(standards_data))
+compute_antigen_se_table <- function(
+    standards_data,
+    response_col  = "mfi",
+    dilution_col  = "dilution",
+    plate_col     = "plate_nom",
+    grouping_cols = c("study_accession",
+                      "experiment_accession",
+                      "source",
+                      "antigen",
+                      "feature"),
+    min_reps = 2,
+    verbose  = FALSE) {
+  
+  # ------------------------------------------------------------------
+  # 1. Input validation
+  # ------------------------------------------------------------------
+  required_cols <- unique(c(grouping_cols, response_col, dilution_col, plate_col))
+  missing_cols  <- setdiff(required_cols, colnames(standards_data))
   if (length(missing_cols) > 0) {
     stop("Missing required columns: ", paste(missing_cols, collapse = ", "))
   }
-
-  # Get unique antigen groupings
-  unique_groupings <- unique(standards_data[, grouping_cols, drop = FALSE])
-
-  if (verbose) {
-    message(sprintf("Computing SE for %d antigen groupings", nrow(unique_groupings)))
+  
+  if (!is.numeric(standards_data[[response_col]])) {
+    stop("response_col '", response_col, "' must be numeric.")
   }
-
-  # Compute SE for each grouping
+  
+  # ------------------------------------------------------------------
+  # 2. Identify unique groupings
+  # ------------------------------------------------------------------
+  unique_groupings <- unique(standards_data[, grouping_cols, drop = FALSE])
+  unique_groupings <- unique_groupings[do.call(order, unique_groupings), , drop = FALSE]
+  rownames(unique_groupings) <- NULL
+  
+  if (verbose) {
+    message(sprintf("Computing median SE for %d unique groupings ...",
+                    nrow(unique_groupings)))
+  }
+  
+  # ------------------------------------------------------------------
+  # 3. Compute median SE for each grouping
+  # ------------------------------------------------------------------
   se_results <- lapply(seq_len(nrow(unique_groupings)), function(i) {
+    
     grouping <- unique_groupings[i, , drop = FALSE]
-
-    # Filter standards to this grouping (across all plates)
-    filter_expr <- rep(TRUE, nrow(standards_data))
+    
+    # --- 3a. Subset to this grouping across ALL plates ----------------
+    mask <- rep(TRUE, nrow(standards_data))
     for (col in grouping_cols) {
-      filter_expr <- filter_expr & (standards_data[[col]] == grouping[[col]])
+      val  <- grouping[[col]]
+      mask <- mask & (!is.na(standards_data[[col]]) &
+                        standards_data[[col]] == val)
     }
-    grouped_standards <- standards_data[filter_expr, ]
-
-    if (nrow(grouped_standards) == 0) {
-      return(data.frame(
-        grouping,
-        overall_se = NA_real_,
-        pooling_strategy = NA_character_,
-        n_plates = 0L,
-        n_dilutions_used = 0L,
-        total_df = 0L,
-        stringsAsFactors = FALSE
-      ))
+    grp_data <- standards_data[mask, , drop = FALSE]
+    
+    # --- 3b. Early exit if no data ------------------------------------
+    if (nrow(grp_data) == 0L) {
+      return(.empty_se_row(grouping, grouping_cols))
     }
-
-    # Compute SE using all plates for this antigen
-    se_result <- tryCatch({
-      assay_se(
-        data = grouped_standards,
-        dilution_col = dilution_col,
-        response_col = response_col,
-        plate_col = plate_col,
-        method = method,
-        min_reps = min_reps
-      )
-    }, error = function(e) {
-      if (verbose) {
-        warning(sprintf("SE calculation failed for %s: %s",
-                        paste(grouping, collapse = "/"), e$message))
-      }
-      list(
-        overall_se = NA_real_,
-        pooling_strategy = NA_character_,
-        n_plates = 0L,
-        n_dilutions_used = 0L,
-        total_df = 0L
-      )
-    })
-
+    
+    # --- 3c. Pull relevant vectors (drop rows where key cols are NA) --
+    keep <- !is.na(grp_data[[dilution_col]]) &
+      !is.na(grp_data[[plate_col]])
+    grp_data <- grp_data[keep, , drop = FALSE]
+    
+    if (nrow(grp_data) == 0L) {
+      return(.empty_se_row(grouping, grouping_cols))
+    }
+    
+    dilutions  <- grp_data[[dilution_col]]
+    responses  <- grp_data[[response_col]]   # may contain NA
+    plates     <- grp_data[[plate_col]]
+    
+    unique_dilutions <- sort(unique(dilutions))
+    n_plates         <- length(unique(plates))
+    
+    # --- 3d. SE per dilution level ------------------------------------
+    # SE = sd(response across plates) / sqrt(n_non_missing)
+    per_dil_se <- vapply(unique_dilutions, function(dil) {
+      idx    <- dilutions == dil          # rows for this dilution
+      vals   <- responses[idx]            # may include NA
+      vals   <- vals[!is.na(vals)]        # drop NA responses
+      n      <- length(vals)
+      if (n < min_reps) return(NA_real_)  # insufficient replicates
+      if (n == 1L)      return(NA_real_)  # sd undefined
+      sd(vals) / sqrt(n)
+    }, numeric(1L))
+    
+    # --- 3e. Median SE across dilutions (ignore NA) -------------------
+    valid_se       <- per_dil_se[!is.na(per_dil_se)]
+    n_dil_used     <- length(valid_se)
+    total_obs      <- sum(!is.na(responses))
+    
+    median_se <- if (n_dil_used == 0L) NA_real_ else median(valid_se)
+    
     data.frame(
       grouping,
-      overall_se = se_result$overall_se,
-      pooling_strategy = se_result$pooling_strategy,
-      n_plates = se_result$n_plates,
-      n_dilutions_used = se_result$n_dilutions_used,
-      total_df = se_result$total_df,
-      stringsAsFactors = FALSE
+      median_se       = median_se,
+      n_dilutions_used = n_dil_used,
+      n_plates        = n_plates,
+      total_obs       = total_obs,
+      stringsAsFactors = FALSE,
+      row.names        = NULL
     )
   })
-
-  # Combine results
+  
+  # ------------------------------------------------------------------
+  # 4. Combine and return
+  # ------------------------------------------------------------------
   se_table <- do.call(rbind, se_results)
   rownames(se_table) <- NULL
-
+  
   if (verbose) {
-    message(sprintf("SE table computed: %d groupings, %d with valid SE",
-                    nrow(se_table), sum(!is.na(se_table$overall_se))))
+    n_valid <- sum(!is.na(se_table$median_se))
+    message(sprintf(
+      "Done. %d / %d groupings have a valid median SE.",
+      n_valid, nrow(se_table)
+    ))
   }
-
+  
   return(se_table)
 }
+
+
+# ----------------------------------------------------------------------
+# Internal helper: return an all-NA row for a grouping
+# ----------------------------------------------------------------------
+.empty_se_row <- function(grouping, grouping_cols) {
+  data.frame(
+    grouping,
+    median_se        = NA_real_,
+    n_dilutions_used = 0L,
+    n_plates         = 0L,
+    total_obs        = 0L,
+    stringsAsFactors = FALSE,
+    row.names        = NULL
+  )
+}
+
 
 
 #' Look Up SE for a Specific Antigen from the SE Table
@@ -2915,7 +2960,7 @@ lookup_antigen_se <- function(se_table,
                               study_accession,
                               experiment_accession,
                               source,
-                              antigen) {
+                              antigen, feature) {
 
   if (is.null(se_table) || nrow(se_table) == 0) {
     return(NA_real_)
@@ -2925,14 +2970,16 @@ lookup_antigen_se <- function(se_table,
     se_table$study_accession == study_accession &
       se_table$experiment_accession == experiment_accession &
       se_table$source == source &
-      se_table$antigen == antigen
+      se_table$antigen == antigen & 
+      se_table$feature == feature
   )
 
   if (length(idx) == 0) {
     return(NA_real_)
   }
 
-  return(se_table$overall_se[idx[1]])
+  # return(se_table$overall_se[idx[1]])
+  return(se_table$median_se[idx[1]])
 }
 
 
@@ -2984,7 +3031,7 @@ predict_and_propagate_error <- function(best_fit,
       }
 
       # Convert SE from raw MFI units to log10 units
-      overall_se_value <- sqrt(se_std_response / (ref_mfi * log(10) * 10))
+      overall_se_value <- sqrt(se_std_response / (ref_mfi * log(10) * 100))
 
       if (verbose) {
         message(sprintf(
@@ -2995,7 +3042,7 @@ predict_and_propagate_error <- function(best_fit,
 
     } else {
       # Response is NOT log-transformed — use se_std_response directly
-      overall_se_value <- sqrt(se_std_response / 10)
+      overall_se_value <- sqrt(se_std_response / 100)
     }
 
   } else {
