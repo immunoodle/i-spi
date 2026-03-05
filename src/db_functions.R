@@ -1018,7 +1018,8 @@ fetch_best_glance_mcmc <- function(study_accession, project_id, conn) {
 fetch_best_pred_mcmc <- function(study_accession, project_id, best_glance_ids, conn) {
   ids_collapsed <- paste(best_glance_ids, collapse = ", ")
   query <- glue("
-    SELECT best_pred_all_id, x, yhat, best_glance_all_id
+    SELECT best_pred_all_id, x as concentration,  1 as dilution, yhat as assay_response, best_glance_all_id,
+    'pred_se' as mcmc_set
     FROM madi_results.best_pred_all
     WHERE project_id = {project_id}
       AND study_accession = '{study_accession}'
@@ -1032,7 +1033,8 @@ fetch_best_sample_se_mcmc <- function(study_accession, project_id, best_glance_i
   ids_collapsed <- paste(best_glance_ids, collapse = ", ")
   query <- glue("
     SELECT best_sample_se_all_id, assay_response_variable,
-           dilution, assay_response, best_glance_all_id
+           dilution, assay_response, best_glance_all_id,
+           'sample_se' as mcmc_set
     FROM madi_results.best_sample_se_all
     WHERE project_id = {project_id}
       AND study_accession = '{study_accession}'
@@ -1041,6 +1043,40 @@ fetch_best_sample_se_mcmc <- function(study_accession, project_id, best_glance_i
   dbGetQuery(conn, query)
 }
 
+fetch_combined_mcmc <- function(study_accession, project_id, best_glance_ids, conn) {
+  
+  ids <- paste(best_glance_ids, collapse = ", ")
+  
+  query <- glue::glue("
+    SELECT 
+      best_pred_all_id  AS row_id,
+      x                 AS concentration,
+      1                 AS dilution,
+      yhat              AS assay_response,
+      best_glance_all_id,
+      'pred_se'         AS mcmc_set
+    FROM madi_results.best_pred_all
+    WHERE project_id = {project_id}
+      AND study_accession = '{study_accession}'
+      AND best_glance_all_id IN ({ids})
+
+    UNION ALL
+
+    SELECT 
+      best_sample_se_all_id AS row_id,
+      NULL                  AS concentration,
+      dilution,
+      assay_response,
+      best_glance_all_id,
+      'sample_se'           AS mcmc_set
+    FROM madi_results.best_sample_se_all
+    WHERE project_id = {project_id}
+      AND study_accession = '{study_accession}'
+      AND best_glance_all_id IN ({ids})
+  ")
+  
+  DBI::dbGetQuery(conn, query)
+}
 #' Fetch best_glance_all filtered by user's current study parameters
 #' This ensures consistency with fetch_best_pred_all_summary and other summary functions
 #' @param study_accession Study accession ID

@@ -414,68 +414,90 @@
 # ============================================================
 # Model string factory
 # ============================================================
-get_jags_calibration_model <- function(model_name) {
-  switch(
-    trimws(model_name),
-    "Y5" = "
-    model {
-      for (i in 1:N) {
-        y[i] ~ dt(mu[i], tau, nu)
-        mu[i] <- d + (a - d) * pow(1 + exp((x[i] - c) / b), -g)
-        x[i] ~ dnorm(x_prior[i], tau_x[i]) T(x_min, x_max)
-      }
-      sigma ~ dunif(0, sigma_upper)
-      tau   <- pow(sigma, -2)
-      nu    ~ dunif(2, 30)
-    }",
-    "Y4" = "
-    model {
-      for (i in 1:N) {
-        y[i] ~ dt(mu[i], tau, nu)
-        mu[i] <- d + (a - d) / (1 + exp((x[i] - c) / b))
-        x[i] ~ dnorm(x_prior[i], tau_x[i]) T(x_min, x_max)
-      }
-      sigma ~ dunif(0, sigma_upper)
-      tau   <- pow(sigma, -2)
-      nu    ~ dunif(2, 30)
-    }",
-    "Yd5" = "
-    model {
-      for (i in 1:N) {
-        y[i] ~ dt(mu[i], tau, nu)
-        mu[i] <- a + (d - a) * pow(1 + g * exp(-b * (x[i] - c)), -1/g)
-        x[i] ~ dnorm(x_prior[i], tau_x[i]) T(x_min, x_max)
-      }
-      sigma ~ dunif(0, sigma_upper)
-      tau   <- pow(sigma, -2)
-      nu    ~ dunif(2, 30)
-    }",
-    "Yd4" = "
-    model {
-      for (i in 1:N) {
-        y[i] ~ dt(mu[i], tau, nu)
-        mu[i] <- a + (d - a) / (1 + exp(-b * (x[i] - c)))
-        x[i] ~ dnorm(x_prior[i], tau_x[i]) T(x_min, x_max)
-      }
-      sigma ~ dunif(0, sigma_upper)
-      tau   <- pow(sigma, -2)
-      nu    ~ dunif(2, 30)
-    }",
-    "Ygomp4" = "
-    model {
-      for (i in 1:N) {
-        y[i] ~ dt(mu[i], tau, nu)
-        mu[i] <- a + (d - a) * exp(-exp(-b * (x[i] - c)))
-        x[i] ~ dnorm(x_prior[i], tau_x[i]) T(x_min, x_max)
-      }
-      sigma ~ dunif(0, sigma_upper)
-      tau   <- pow(sigma, -2)
-      nu    ~ dunif(2, 30)
-    }",
-    stop("Unsupported model_name: ", model_name)
-  )
-}
+# get_jags_calibration_model <- function(model_name) {
+#   switch(
+#     trimws(model_name),
+#     "Y5" = "
+#     model {
+#       for (i in 1:N) {
+#         y[i] ~ dt(mu[i], tau, nu)
+#         mu[i] <- d + (a - d) * pow(1 + exp((x[i] - c) / b), -g)
+#         x[i] ~ dnorm(x_prior[i], tau_x[i]) T(x_min, x_max)
+#       }
+#       sigma ~ dunif(0, sigma_upper)
+#       tau   <- pow(sigma, -2)
+#       nu    ~ dunif(2, 30)
+#     }",
+#     "Y4" = "
+#     model {
+#       for (i in 1:N) {
+#         y[i] ~ dt(mu[i], tau, nu)
+#         mu[i] <- d + (a - d) / (1 + exp((x[i] - c) / b))
+#         x[i] ~ dnorm(x_prior[i], tau_x[i]) T(x_min, x_max)
+#       }
+#       sigma ~ dunif(0, sigma_upper)
+#       tau   <- pow(sigma, -2)
+#       nu    ~ dunif(2, 30)
+#     }",
+#     "Yd5" = "
+#     model {
+#       for (i in 1:N) {
+#         y[i] ~ dt(mu[i], tau, nu)
+#         mu[i] <- a + (d - a) * pow(1 + g * exp(-b * (x[i] - c)), -1/g)
+#         x[i] ~ dnorm(x_prior[i], tau_x[i]) T(x_min, x_max)
+#       }
+#       sigma ~ dunif(0, sigma_upper)
+#       tau   <- pow(sigma, -2)
+#       nu    ~ dunif(2, 30)
+#     }",
+#     "Yd4" = "
+#     model {
+#       for (i in 1:N) {
+#         y[i] ~ dt(mu[i], tau, nu)
+#         mu[i] <- a + (d - a) / (1 + exp(-b * (x[i] - c)))
+#         x[i] ~ dnorm(x_prior[i], tau_x[i]) T(x_min, x_max)
+#       }
+#       sigma ~ dunif(0, sigma_upper)
+#       tau   <- pow(sigma, -2)
+#       nu    ~ dunif(2, 30)
+#     }",
+#     "Ygomp4" = "
+#     model {
+#       for (i in 1:N) {
+#         y[i] ~ dt(mu[i], tau, nu)
+#         mu[i] <- a + (d - a) * exp(-exp(-b * (x[i] - c)))
+#         x[i] ~ dnorm(x_prior[i], tau_x[i]) T(x_min, x_max)
+#       }
+#       sigma ~ dunif(0, sigma_upper)
+#       tau   <- pow(sigma, -2)
+#       nu    ~ dunif(2, 30)
+#     }",
+#     stop("Unsupported model_name: ", model_name)
+#   )
+# }
+get_jags_calibration_model <- function(){
+  
+  "
+model{
 
+  for(i in 1:N){
+
+    y[i] ~ dt(mu[i], tau, nu)
+
+    mu[i] <- y_hat[i]
+
+  }
+
+  sigma ~ dunif(0, sigma_upper)
+
+  tau <- pow(sigma,-2)
+
+  nu ~ dunif(2,30)
+
+}
+"
+
+}
 # ============================================================
 # Forward function factory
 # ============================================================
@@ -500,71 +522,190 @@ extract_params <- function(glance_row) {
          b = glance_row$b,
          c = glance_row$c,
          d = glance_row$d)
-  
+
   if (trimws(glance_row$model_name) %in% c("Y5", "Yd5")) {
     p["g"] <- glance_row$g
   }
-  
+
   return(p)
 }
 
+
+
+invert_response_fast <- function(y_obs, params, model_name, x_min, x_max){
+  
+  fwd <- get_forward_function(model_name)
+  
+  x_grid <- seq(x_min, x_max, length.out = 3000)
+  
+  y_grid <- fwd(x_grid, params)
+  
+  keep <- is.finite(y_grid)
+  
+  x_grid <- x_grid[keep]
+  y_grid <- y_grid[keep]
+  
+  # ensure monotonic order
+  if(y_grid[1] > y_grid[length(y_grid)]){
+    y_grid <- rev(y_grid)
+    x_grid <- rev(x_grid)
+  }
+  
+  # remove duplicate y values (prevents approx warning)
+  dup <- !duplicated(y_grid)
+  y_grid <- y_grid[dup]
+  x_grid <- x_grid[dup]
+  
+  approx(
+    x = y_grid,
+    y = x_grid,
+    xout = y_obs,
+    rule = 2
+  )$y
+}
 # ============================================================
 # Numerical inversion + adaptive prior variance
 # ============================================================
-compute_x_init <- function(model_name, params, resid_var, y_obs,
-                           x_min, x_max, conc_range) {
-  fwd <- get_forward_function(model_name)
-  
-  # Invert curve at each y
-  x_init <- vapply(y_obs, function(yi) {
-    tryCatch(
-      uniroot(function(x) fwd(x, params) - yi,
-              interval = c(x_min, x_max), tol = 1e-8)$root,
-      error = function(e) NA_real_
-    )
-  }, numeric(1))
-  
-  x_init[is.na(x_init)] <- (x_min + x_max) / 2
-  margin <- (x_max - x_min) * 0.001
-  x_init <- pmin(pmax(x_init, x_min + margin), x_max - margin)
-  
-  # Slope at each x_init
-  slope <- vapply(x_init, function(xi) {
-    h <- 1e-5
-    (fwd(xi + h, params) - fwd(xi - h, params)) / (2 * h)
-  }, numeric(1))
-  
-  # Max slope across curve
-  x_grid <- seq(x_min, x_max, length.out = 500)
-  max_slope <- max(vapply(x_grid, function(xi) {
-    h <- 1e-5
-    abs((fwd(xi + h, params) - fwd(xi - h, params)) / (2 * h))
-  }, numeric(1)), na.rm = TRUE)
-  
-  slope_ratio <- pmin(abs(slope) / max_slope, 1.0)
-  
-  # Delta-method variance
-  delta_var <- (resid_var / slope)^2
-  min_var <- (conc_range * 0.001)^2
-  max_var <- (conc_range * 2)^2
-  delta_var <- pmin(pmax(delta_var, min_var), max_var)
-  delta_var[is.na(delta_var)] <- max_var
-  
-  wide_var <- (conc_range * 1.0)^2
-  
-  # Sigmoidal blend
-  weight <- 1 / (1 + exp(-20 * (slope_ratio - 0.15)))
-  per_sample_variance <- weight * delta_var + (1 - weight) * wide_var
-  
-  list(
-    x_init              = x_init,
-    per_sample_variance = per_sample_variance,
-    slope_ratio         = slope_ratio,
-    weight_informative  = weight,
-    prior_type          = ifelse(weight > 0.5, "delta_method", "wide_prior")
-  )
-}
 
+# compute_x_init <- function(model_name, params, resid_var, y_obs,
+#                            x_min, x_max, conc_range) {
+#   fwd <- get_forward_function(model_name)
+# 
+#   
+#   # Invert curve at each y
+#   x_init <- vapply(y_obs, function(yi) {
+#     tryCatch(
+#       uniroot(function(x) fwd(x, params) - yi,
+#               interval = c(x_min, x_max), tol = 1e-8)$root,
+#       error = function(e) NA_real_
+#     )
+#   }, numeric(1))
+# 
+#   x_init[is.na(x_init)] <- (x_min + x_max) / 2
+#   margin <- (x_max - x_min) * 0.001
+#   x_init <- pmin(pmax(x_init, x_min + margin), x_max - margin)
+# 
+#   # Slope at each x_init
+#   slope <- vapply(x_init, function(xi) {
+#     h <- 1e-5
+#     (fwd(xi + h, params) - fwd(xi - h, params)) / (2 * h)
+#   }, numeric(1))
+# 
+#   # Max slope across curve
+#   x_grid <- seq(x_min, x_max, length.out = 500)
+#   max_slope <- max(vapply(x_grid, function(xi) {
+#     h <- 1e-5
+#     abs((fwd(xi + h, params) - fwd(xi - h, params)) / (2 * h))
+#   }, numeric(1)), na.rm = TRUE)
+# 
+#   slope_ratio <- pmin(abs(slope) / max_slope, 1.0)
+# 
+#   # Delta-method variance
+#   delta_var <- (resid_var / slope)^2
+#   min_var <- (conc_range * 0.001)^2
+#   max_var <- (conc_range * 2)^2
+#   delta_var <- pmin(pmax(delta_var, min_var), max_var)
+#   delta_var[is.na(delta_var)] <- max_var
+# 
+#   wide_var <- (conc_range * 1.0)^2
+# 
+#   # Sigmoidal blend
+#   weight <- 1 / (1 + exp(-20 * (slope_ratio - 0.15)))
+#   per_sample_variance <- weight * delta_var + (1 - weight) * wide_var
+# 
+#   list(
+#     x_init              = x_init,
+#     per_sample_variance = per_sample_variance,
+#     slope_ratio         = slope_ratio,
+#     weight_informative  = weight,
+#     prior_type          = ifelse(weight > 0.5, "delta_method", "wide_prior")
+#   )
+# }
+# compute_x_init <- function(model_name, params, resid_var, y_obs,
+#                            x_min, x_max, conc_range,
+#                            sc_x_min = NULL, sc_x_max = NULL) {
+#   fwd <- get_forward_function(model_name)
+#   
+#   # Default SC bounds if not supplied
+#   if (is.null(sc_x_min)) sc_x_min <- x_min + conc_range
+#   if (is.null(sc_x_max)) sc_x_max <- x_max - conc_range
+#   sc_mid <- (sc_x_min + sc_x_max) / 2
+#   
+#   # SC endpoint responses for directional fallback
+#   y_at_sc_min  <- fwd(sc_x_min, params)
+#   y_at_sc_max  <- fwd(sc_x_max, params)
+#   y_lower_asym <- min(y_at_sc_min, y_at_sc_max)
+#   y_upper_asym <- max(y_at_sc_min, y_at_sc_max)
+#   x_for_low_y  <- if (y_at_sc_min < y_at_sc_max) sc_x_min else sc_x_max
+#   x_for_high_y <- if (y_at_sc_min < y_at_sc_max) sc_x_max else sc_x_min
+#   
+#   # Invert curve at each y
+#   x_init <- vapply(y_obs, function(yi) {
+#     tryCatch(
+#       uniroot(function(x) fwd(x, params) - yi,
+#               interval = c(x_min, x_max), tol = 1e-8)$root,
+#       error = function(e) NA_real_
+#     )
+#   }, numeric(1))
+#   
+#   # OLD — replaced:
+#   # x_init[is.na(x_init)] <- (x_min + x_max) / 2
+#   
+#   # NEW — goes here, directly after the vapply block:
+#   na_idx <- which(is.na(x_init))
+#   for (i in na_idx) {
+#     yi <- y_obs[i]
+#     x_init[i] <- if (is.na(yi) || !is.finite(yi)) {
+#       sc_mid
+#     } else if (yi <= y_lower_asym) {
+#       x_for_low_y - conc_range * 0.1
+#     } else if (yi >= y_upper_asym) {
+#       x_for_high_y + conc_range * 0.1
+#     } else {
+#       sc_mid
+#     }
+#   }
+#   
+#   # rest unchanged from your file [1]
+#   margin <- (x_max - x_min) * 0.001
+#   x_init <- pmin(pmax(x_init, x_min + margin), x_max - margin)
+#   
+#   # Slope at each x_init
+#   slope <- vapply(x_init, function(xi) {
+#     h <- 1e-5
+#     (fwd(xi + h, params) - fwd(xi - h, params)) / (2 * h)
+#   }, numeric(1))
+#   
+#   # Max slope across curve
+#   x_grid <- seq(x_min, x_max, length.out = 500)
+#   max_slope <- max(vapply(x_grid, function(xi) {
+#     h <- 1e-5
+#     abs((fwd(xi + h, params) - fwd(xi - h, params)) / (2 * h))
+#   }, numeric(1)), na.rm = TRUE)
+#   
+#   slope_ratio <- pmin(abs(slope) / max_slope, 1.0)
+#   
+#   # Delta-method variance
+#   delta_var <- (resid_var / slope)^2
+#   min_var <- (conc_range * 0.001)^2
+#   max_var <- (conc_range * 2)^2
+#   delta_var <- pmin(pmax(delta_var, min_var), max_var)
+#   delta_var[is.na(delta_var)] <- max_var
+#   
+#   wide_var <- (conc_range * 1.0)^2
+#   
+#   # Sigmoidal blend
+#   weight <- 1 / (1 + exp(-20 * (slope_ratio - 0.15)))
+#   per_sample_variance <- weight * delta_var + (1 - weight) * wide_var
+#   
+#   list(
+#     x_init              = x_init,
+#     per_sample_variance = per_sample_variance,
+#     slope_ratio         = slope_ratio,
+#     weight_informative  = weight,
+#     prior_type          = ifelse(weight > 0.5, "delta_method", "wide_prior")
+#   )
+# }
 # ============================================================
 # Main function
 #
@@ -581,121 +722,298 @@ run_jags_predicted_concentration <- function(
     best_pred_df,
     sample_df,
     response_col,
-    adapt_steps     = 500,
-    burn_in_steps   = 5000,
-    num_saved_steps = 20000,
-    thin_steps      = 2,
-    n_chains        = 3,
-    verbose         = TRUE
-) {
-  model_name <- trimws(as.character(glance_row$model_name))
-  params     <- extract_params(glance_row)
-  resid_var  <- glance_row$resid_sample_variance
+    adapt_steps = 500,
+    burn_in_steps = 2000,
+    num_saved_steps = 10000,
+    thin_steps = 2,
+    n_chains = 3,
+    verbose = TRUE
+){
   
-  if (verbose) {
-    cat("Model:", model_name, "\n")
-    cat("Parameters:\n"); print(params)
-    cat("Residual variance:", resid_var, "\n")
-  }
+  model_name <- trimws(glance_row$model_name)
   
-  # --- Concentration bounds from best_pred$x ---
-  conc_range <- max(best_pred_df$x) - min(best_pred_df$x)
-  x_min <- min(best_pred_df$x) - conc_range * 10.0
-  x_max <- max(best_pred_df$x) + conc_range * 10.0
+  params <- extract_params(glance_row)
   
-  # --- Initial x + adaptive prior ---
+  fwd <- get_forward_function(model_name)
+  
   y_obs <- sample_df[[response_col]]
   
-  xinit <- compute_x_init(model_name, params, resid_var, y_obs,
-                          x_min, x_max, conc_range)
+  conc_range <- diff(range(best_pred_df$concentration))
   
-  if (verbose) {
-    cat("Slope ratio range:", round(range(xinit$slope_ratio), 4), "\n")
-    cat("Prior type counts:\n"); print(table(xinit$prior_type))
-    cat("Initial x range:", round(range(xinit$x_init), 4), "\n")
-    cat("Bounds: [", round(x_min, 4), ",", round(x_max, 4), "]\n")
-  }
+  x_min <- min(best_pred_df$concentration) - conc_range*2
+  x_max <- max(best_pred_df$concentration) + conc_range*2
   
-  # --- Clamp variance ---
-  max_var <- (conc_range * 10)^2
-  min_var <- (conc_range * 0.001)^2
-  psv <- pmin(pmax(xinit$per_sample_variance, min_var), max_var)
-  psv[is.na(psv)] <- max_var
-  tau_x <- 1 / psv
+  # Posterior inversion
+  x_est <- invert_response_fast(
+    y_obs,
+    params,
+    model_name,
+    x_min,
+    x_max
+  )
   
-  # --- JAGS data ---
-  resid_sigma <- sqrt(resid_var)
+  y_hat <- fwd(x_est, params)
+  
+  resid_sigma <- sqrt(glance_row$resid_sample_variance)
   
   data_list <- list(
-    y           = y_obs,
-    N           = length(y_obs),
-    a           = unname(params["a"]),
-    b           = unname(params["b"]),
-    c           = unname(params["c"]),
-    d           = unname(params["d"]),
-    x_min       = x_min,
-    x_max       = x_max,
-    sigma_upper = resid_sigma * 5,
-    x_prior     = xinit$x_init,
-    tau_x       = tau_x
+    y = y_obs,
+    y_hat = y_hat,
+    N = length(y_obs),
+    sigma_upper = resid_sigma * 5
   )
   
-  if (model_name %in% c("Y5", "Yd5")) {
-    data_list$g <- unname(params["g"])
-  }
+  model_string <- get_jags_calibration_model()
   
-  # --- MCMC ---
-  model_string <- get_jags_calibration_model(model_name)
-  
-  init_list <- lapply(seq_len(n_chains), function(i) {
+  init_list <- lapply(seq_len(n_chains), function(i){
+    
     list(
-      x     = xinit$x_init + rnorm(length(xinit$x_init), 0, 0.05),
-      sigma = resid_sigma * runif(1, 0.8, 1.2),
-      nu    = runif(1, 3, 15)
+      sigma = resid_sigma * runif(1,0.8,1.2),
+      nu = runif(1,3,15)
     )
+    
   })
   
-  n_iter <- ceiling((num_saved_steps * thin_steps) / n_chains)
-  
-  if (verbose) {
-    cat("MCMC: chains=", n_chains, " adapt=", adapt_steps,
-        " burn=", burn_in_steps, " iter/chain=", n_iter,
-        " thin=", thin_steps, "\n")
-  }
-  
-  jm <- jags.model(
+  jm <- rjags::jags.model(
     textConnection(model_string),
-    data     = data_list,
-    inits    = init_list,
+    data = data_list,
+    inits = init_list,
     n.chains = n_chains,
-    n.adapt  = adapt_steps,
-    quiet    = !verbose
+    n.adapt = adapt_steps,
+    quiet = !verbose
   )
+  
   update(jm, burn_in_steps)
   
-  samps <- coda.samples(jm, variable.names = "x",
-                        n.iter = n_iter, thin = thin_steps)
+  samps <- rjags::coda.samples(
+    jm,
+    variable.names = c("sigma","nu"),
+    n.iter = num_saved_steps,
+    thin = thin_steps
+  )
   
-  # --- Summarise ---
   chain <- as.matrix(samps)
   
-  sample_df$se_robust_concentration  <- apply(chain, 2, sd)
-  sample_df$raw_robust_concentration <- apply(chain, 2, quantile, 0.50)
+  n_draws <- nrow(chain)
   
-  chain_original <- 10^chain
-  sample_df$pcov_robust_concentration <- apply(chain_original, 2, function(x) {
-    pmin(sd(x) / abs(mean(x)) * 100, 125)
-  })
+  conc_draws <- matrix(
+    NA,
+    nrow = n_draws,
+    ncol = length(x_est)
+  )
   
-  if (verbose) {
-    cat("\nStandard curve x range:", round(range(best_pred_df$x), 4), "\n")
-    cat("Predicted median range:", round(range(sample_df$raw_robust_concentration), 4), "\n")
-    cat("CV range:              ", round(range(sample_df$pcov_robust_concentration), 4), "\n")
+  for(i in seq_len(n_draws)){
+    
+    y_sim <- rnorm(
+      length(y_hat),
+      mean = y_hat,
+      sd = chain[i,"sigma"]
+    )
+    
+    conc_draws[i,] <- invert_response_fast(
+      y_sim,
+      params,
+      model_name,
+      x_min,
+      x_max
+    )
+    
   }
   
-  return(sample_df)
+  sample_df$raw_robust_concentration <- apply(conc_draws,2,median)
+  
+  sample_df$se_robust_concentration <- apply(conc_draws,2,sd)
+  
+  chain_original <- 10^conc_draws
+  
+  sample_df$pcov_robust_concentration <- apply(chain_original,2,function(x){
+    
+    pmin(sd(x)/abs(mean(x))*100,125)
+    
+  })
+  
+  sample_df
+  
 }
-### Shiny Side 
+
+# run_jags_predicted_concentration <- function(
+#     glance_row,
+#     best_pred_df,
+#     sample_df,
+#     response_col,
+#     adapt_steps     = 500,
+#     burn_in_steps   = 5000,
+#     num_saved_steps = 20000,
+#     thin_steps      = 2,
+#     n_chains        = 3,
+#     verbose         = TRUE
+# ) {
+#   model_name <- trimws(as.character(glance_row$model_name))
+#   params     <- extract_params(glance_row)
+#   resid_var  <- glance_row$resid_sample_variance
+# 
+#   if (verbose) {
+#     cat("Model:", model_name, "\n")
+#     cat("Parameters:\n"); print(params)
+#     cat("Residual variance:", resid_var, "\n")
+#   }
+# 
+#   # --- Concentration bounds from best_pred$x ---
+#   sc_x_min   <- min(best_pred_df$concentration)    # store FIRST
+#   sc_x_max   <- max(best_pred_df$concentration)
+#   
+#   conc_range <- max(best_pred_df$concentration) - min(best_pred_df$concentration)
+#   x_min <- min(best_pred_df$concentration) - conc_range * 2
+#   x_max <- max(best_pred_df$concentration) + conc_range * 2
+# 
+#   # --- Initial x + adaptive prior ---
+#   y_obs <- sample_df[[response_col]]
+# 
+#   xinit <- compute_x_init(model_name, params, resid_var, y_obs,
+#                           x_min, x_max, conc_range)
+# 
+#   if (verbose) {
+#     cat("Slope ratio range:", round(range(xinit$slope_ratio), 4), "\n")
+#     cat("Prior type counts:\n"); print(table(xinit$prior_type))
+#     cat("Initial x range:", round(range(xinit$x_init), 4), "\n")
+#     cat("Bounds: [", round(x_min, 4), ",", round(x_max, 4), "]\n")
+#   }
+# 
+#   # --- Clamp variance ---
+#   max_var <- (conc_range * 10)^2
+#   min_var <- (conc_range * 0.001)^2
+#   psv <- pmin(pmax(xinit$per_sample_variance, min_var), max_var)
+#   psv[is.na(psv)] <- max_var
+#   tau_x <- 1 / psv
+# 
+#   # --- JAGS data ---
+#   resid_sigma <- sqrt(resid_var)
+# 
+#   data_list <- list(
+#     y           = y_obs,
+#     N           = length(y_obs),
+#     a           = unname(params["a"]),
+#     b           = unname(params["b"]),
+#     c           = unname(params["c"]),
+#     d           = unname(params["d"]),
+#     x_min       = x_min,
+#     x_max       = x_max,
+#     sigma_upper = resid_sigma * 5,
+#     x_prior     = xinit$x_init,
+#     tau_x       = tau_x
+#   )
+# 
+#   if (model_name %in% c("Y5", "Yd5")) {
+#     data_list$g <- unname(params["g"])
+#   }
+# 
+#   # --- MCMC ---
+#   model_string <- get_jags_calibration_model(model_name)
+# 
+#   init_list <- lapply(seq_len(n_chains), function(i) {
+#     list(
+#       x     = xinit$x_init + rnorm(length(xinit$x_init), 0, 0.05),
+#       sigma = resid_sigma * runif(1, 0.8, 1.2),
+#       nu    = runif(1, 3, 15)
+#     )
+#   })
+# 
+#   n_iter <- ceiling((num_saved_steps * thin_steps) / n_chains)
+# 
+#   if (verbose) {
+#     cat("MCMC: chains=", n_chains, " adapt=", adapt_steps,
+#         " burn=", burn_in_steps, " iter/chain=", n_iter,
+#         " thin=", thin_steps, "\n")
+#   }
+# 
+#   jm <- jags.model(
+#     textConnection(model_string),
+#     data     = data_list,
+#     inits    = init_list,
+#     n.chains = n_chains,
+#     n.adapt  = adapt_steps,
+#     quiet    = !verbose
+#   )
+#   update(jm, burn_in_steps)
+# 
+#   samps <- coda.samples(jm, variable.names = "x",
+#                         n.iter = n_iter, thin = thin_steps)
+# 
+#   # --- Summarise ---
+#   chain <- as.matrix(samps)
+# 
+#   sample_df$se_robust_concentration  <- apply(chain, 2, sd)
+#   sample_df$raw_robust_concentration <- apply(chain, 2, quantile, 0.50)
+# 
+#   chain_original <- 10^chain
+#   sample_df$pcov_robust_concentration <- apply(chain_original, 2, function(x) {
+#     pmin(sd(x) / abs(mean(x)) * 100, 125)
+#   })
+# 
+#   if (verbose) {
+#     cat("\nStandard curve x range:", round(range(best_pred_df$concentration), 4), "\n")
+#     cat("Predicted median range:", round(range(sample_df$raw_robust_concentration), 4), "\n")
+#     cat("CV range:              ", round(range(sample_df$pcov_robust_concentration), 4), "\n")
+#   }
+# 
+#   return(sample_df)
+# }
+
+###### Shiny Side 
+process_jag_result <- function(df, df_name = c("pred_se", "sample_se")) {
+  
+  df_name <- match.arg(df_name)
+  
+  if (df_name == "pred_se") {
+    names(df)[names(df) == "row_id"] <- "best_pred_all_id"
+    names(df)[names(df) == "assay_response"] <- "yhat"
+    names(df)[names(df) == "concentration"] <- "x"
+    df <- df[, !names(df) %in% c("dilution", "mcmc_set")]
+    
+    
+  } else if (df_name == "sample_se") {
+    names(df)[names(df) == "row_id"] <- "best_sample_se_all_id"
+    df <- df[, !names(df) %in% c("concentration", "mcmc_set")]
+  }
+  
+  return(df)
+}
+
+filter_glance_scope <- function(df, scope, experiment, plate) {
+  
+  switch(
+    scope,
+    plate      = df[df$experiment_accession == experiment &
+                      df$plate_nom == plate, ],
+    
+    experiment = df[df$experiment_accession == experiment, ],
+    
+    study      = df
+  )
+}
+
+update_mcmc_progress <- function(i, total, row) {
+  
+  msg <- paste0(
+    "MCMC Robust: ", i, " / ", total, "\n",
+    "Study: ",      row$study_accession, "\n",
+    "Experiment: ", row$experiment_accession, "\n",
+    "Plate: ",      row$plate_nom, "\n",
+    "Antigen: ",    row$antigen, "\n",
+    "Model: ",      row$model_name
+  )
+  
+  showNotification(
+    id = "mcmc_calc_notify",
+    div(class = "big-notification",
+        style = "white-space: pre-line;",
+        msg),
+    duration = NULL
+  )
+}
+
+
+
 
 # -----------------------------------------------------------------
 # 1. Fetch the job-status table + fill missing combos
