@@ -320,7 +320,11 @@ output$readxMapData <- renderUI({
           h3(import_plate_data_title),
           bsCollapsePanel(
             "Instructions for Importing and Uploading batches of plate files.",
-            p("This is where we can load plate data from either Raw excel files, the xPONENT format or batches of raw files."),
+            p("This is where you can import plate data into I-SPI. Select an assay type above, then choose from the available file formats:"),
+            tags$ul(
+              tags$li(tags$strong("Bead Array: Raw File"), " — Upload batch .xlsx raw data files, generate a layout template, and upload."),
+              tags$li(tags$strong("Bead Array: xPONENT"), " — Upload batch xPONENT .csv files, generate a layout template, and upload.")
+            ),
             # Section A: Before uploading
             h4("A. Before Uploading Batch Plate Files"),
             p("Ensure you have completed the following:"),
@@ -329,7 +333,7 @@ output$readxMapData <- renderUI({
               tags$li("Created or selected a Study - Type a new study name (up to 15 characters) or select an existing one."),
               tags$li("Selected the sidebar option to Import Plate Data."),
               tags$li("Created or selected an Experiment - Each experiment represents a specific assay run or feature (e.g., \"IgG_total\", \"FcgR2a\")."),
-              tags$li("Selected Layout Template as the file format.")
+              tags$li("Selected an assay type and file format (e.g. Raw File or xPONENT).")
             ),
 
             # Section B: Upload Experiment Files
@@ -486,6 +490,62 @@ output$readxMapData <- renderUI({
         ),
         br()
         ,
+        # ============================================================
+        # ASSAY TYPE SELECTOR
+        # ============================================================
+        fluidRow(
+          column(9,
+                 shinyWidgets::radioGroupButtons(
+                   inputId = "assay_type_selector",
+                   label = "Select Assay Type",
+                   choices = c("Bead Array", "ELISA", "Post-gating Flow Cytometry"),
+                   selected = "Bead Array",
+                   justified = TRUE,
+                   checkIcon = list(
+                     yes = icon("check", lib = "font-awesome")
+                   )
+                 )
+          )
+        ),
+        # ============================================================
+        # ELISA PLACEHOLDER
+        # ============================================================
+        conditionalPanel(
+          condition = "input.assay_type_selector == 'ELISA'",
+          fluidRow(
+            column(12,
+                   div(
+                     style = "text-align: center; padding: 80px 40px; color: #777; background-color: #f9f9fa; border: 2px dashed #ccc; border-radius: 10px; margin: 20px 0;",
+                     icon("flask", style = "font-size: 64px; margin-bottom: 20px; color: #aaa;"),
+                     h3("ELISA Data Import", style = "color: #555;"),
+                     p("ELISA data import is currently under development.", style = "font-size: 16px;"),
+                     p("This feature will be available in a future release.", style = "font-size: 14px; color: #999;")
+                   )
+            )
+          )
+        ),
+        # ============================================================
+        # POST-GATING FLOW CYTOMETRY PLACEHOLDER
+        # ============================================================
+        conditionalPanel(
+          condition = "input.assay_type_selector == 'Post-gating Flow Cytometry'",
+          fluidRow(
+            column(12,
+                   div(
+                     style = "text-align: center; padding: 80px 40px; color: #777; background-color: #f9f9fa; border: 2px dashed #ccc; border-radius: 10px; margin: 20px 0;",
+                     icon("filter", style = "font-size: 64px; margin-bottom: 20px; color: #aaa;"),
+                     h3("Post-gating Flow Cytometry Data Import", style = "color: #555;"),
+                     p("Post-gating Flow Cytometry data import is currently under development.", style = "font-size: 16px;"),
+                     p("This feature will be available in a future release.", style = "font-size: 14px; color: #999;")
+                   )
+            )
+          )
+        ),
+        # ============================================================
+        # BEAD ARRAY CONTENT (existing workflow, refactored)
+        # ============================================================
+        conditionalPanel(
+          condition = "input.assay_type_selector == 'Bead Array'",
         fluidRow(
           column(5,
                  tagList(
@@ -542,8 +602,8 @@ output$readxMapData <- renderUI({
                    shinyWidgets::radioGroupButtons(
                      inputId = "xPonentFile",
                      label = "File Format",
-                     choices = c("xPONENT", "RAW", "Layout Template"),
-                     selected = "Layout Template",
+                     choices = c("Raw File", "xPONENT"),
+                     selected = "Raw File",
                      justified = TRUE,
                      checkIcon = list(
                        yes = icon("check", lib = "font-awesome")
@@ -551,21 +611,88 @@ output$readxMapData <- renderUI({
                    ),
                    conditionalPanel(
                      condition = "input.xPonentFile == 'xPONENT'",
-                     uiOutput("xPonentReader_fileinput_ui")
+                     # ============================================================
+                     # xPONENT BATCH UPLOAD (NEW - mirrors Raw File workflow)
+                     # ============================================================
+                     tags$div(
+                       style = "display: flex; flex-wrap: wrap; align-items: center; gap: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;",
+                       tags$div(
+                         class = "element-controls",
+                         fileInput("upload_xponent_experiment_files",
+                                   label = "Select all xPONENT data files (.csv)",
+                                   accept = c(".csv"),
+                                   multiple = TRUE),
+                         tags$span(style = "font-weight: 600; align-self: center;", "Feature:"),
+                         textInput("xponent_feature_value", "e.g. Total_IgG; FcgR2a; multiple", "Up to 15 chars")
+                       )
+                     ),
+                     conditionalPanel(
+                       condition = "output.hasXponentExperimentPath",
+                       tags$div(
+                         style = "display: flex; flex-wrap: wrap; align-items: center; gap: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;",
+                         tags$div(
+                           class = "element-controls",
+                           tags$span(style = "font-weight: 600; align-self: center;", "Wells:"),
+                           radioGroupButtons(
+                             inputId = "xponent_n_wells_on_plate",
+                             label = NULL,
+                             choices = c("96" = 96, "6" = 6, "12" = 12, "24" = 24, "48" = 48, "384" = 384, "1536" = 1536),
+                             selected = 96,
+                             size = "sm",
+                             status = "outline-primary"
+                           )
+                         ),
+                         conditionalPanel(
+                           condition = "output.xponentDescriptionHasContent",
+                           tags$div(
+                             class = "element-controls",
+                             tags$span(style = "font-weight: 600; align-self: center;", "Description Delimiter:"),
+                             radioGroupButtons(
+                               inputId = "xponent_description_delimiter",
+                               label = NULL,
+                               choices = setNames(c("_", "|", ":", "-"), c("_", "|", ":", "-")),
+                               selected = "_",
+                               size = "sm",
+                               status = "outline-primary"
+                             )
+                           )
+                         ),
+                         conditionalPanel(
+                           condition = "output.xponentDescriptionHasSufficientElements",
+                           tags$div(
+                             class = "element-controls",
+                             tags$span(style = "font-weight: 600; align-self: center;", "Include Optional Elements:"),
+                             checkboxGroupButtons(
+                               inputId = "xponent_optional_elements",
+                               label = NULL,
+                               choices = c("SampleGroupA", "SampleGroupB"),
+                               selected = c("SampleGroupA", "SampleGroupB"),
+                               status = "outline-primary",
+                               checkIcon = list(
+                                 yes = icon("check"),
+                                 no = icon("times")
+                               )
+                             )
+                           )
+                         ),
+                         conditionalPanel(
+                           condition = "output.xponentDescriptionHasSufficientElements",
+                           uiOutput("xponent_order_input_ui")
+                         ),
+                         conditionalPanel(
+                           condition = "output.xponentDescriptionHasContent",
+                           uiOutput("xponent_bcsorder_input_ui")
+                         ),
+                         downloadButton("xponent_blank_layout_file", "Generate a Layout file")
+                       ),
+                       fileInput("upload_xponent_layout_file",
+                                 label = "Upload a completed layout file (only accepts xlsx, xls)",
+                                 accept = c(".xlsx", ".xls"),
+                                 multiple = FALSE)
+                     )
                    ),
                    conditionalPanel(
-                     condition = "input.xPonentFile == 'RAW'",
-                     fileInput("upload_to_shiny"
-                               , label="Upload a plate/batch file (only accepts xlsx, xls)"
-                               , accept=c(".xlsx",".xls")
-                               , multiple=FALSE)
-                     ,uiOutput("sheet_ui")
-                   ), conditionalPanel(
-                     condition = "input.uploaded_sheet != ''",
-                     uiOutput("raw_ui")
-                   ),
-                   conditionalPanel(
-                     condition = "input.xPonentFile == 'Layout Template'",
+                     condition = "input.xPonentFile == 'Raw File'",
                      tags$div(
                        style = "display: flex; flex-wrap: wrap; align-items: center; gap: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;",
                        tags$div(
@@ -673,16 +800,11 @@ output$readxMapData <- renderUI({
                  )
           ),
           column(9,
-                 conditionalPanel(
-                   condition = "input.xPonentFile == 'xPONENT'",
-                   uiOutput("xPonent_fileparse_ui")
-                 ),
-                 conditionalPanel(
-                   condition = "input.xPonentFile == 'RAW'",
-                   uiOutput("segment_selector")
-                 )
+                 # Removed: old xPONENT single-file parse UI and RAW segment selector
+                 # Both pathways now use the shared layout template workflow below
           )
         )
+        ) # end conditionalPanel for Bead Array
     #   )
     # )
   } else {
@@ -747,10 +869,36 @@ output$description_warning_ui <- renderUI({
 
 output$hasExperimentPath <- reactive({
   path_df <- input$upload_experiment_files   # fileInput returns a data frame
-  !is.null(path_df) && nrow(path_df) > 0
+  xponent_df <- input$upload_xponent_experiment_files
+  raw_has_files <- !is.null(path_df) && nrow(path_df) > 0
+  xponent_has_files <- !is.null(xponent_df) && nrow(xponent_df) > 0
+  raw_has_files || xponent_has_files
 })
 
 outputOptions(output, "hasExperimentPath", suspendWhenHidden = FALSE)
+
+# Reactive for xPONENT experiment files (used in xPONENT-specific conditionalPanels)
+output$hasXponentExperimentPath <- reactive({
+  path_df <- input$upload_xponent_experiment_files
+  !is.null(path_df) && nrow(path_df) > 0
+})
+outputOptions(output, "hasXponentExperimentPath", suspendWhenHidden = FALSE)
+
+# Description status reactives for xPONENT (mirror the Raw File ones)
+output$xponentDescriptionHasContent <- reactive({
+  status <- description_status()
+  # Only show when xPONENT is selected and files are uploaded
+  if (is.null(input$upload_xponent_experiment_files)) return(FALSE)
+  return(isTRUE(status$has_content))
+})
+outputOptions(output, "xponentDescriptionHasContent", suspendWhenHidden = FALSE)
+
+output$xponentDescriptionHasSufficientElements <- reactive({
+  status <- description_status()
+  if (is.null(input$upload_xponent_experiment_files)) return(FALSE)
+  return(isTRUE(status$has_sufficient_elements))
+})
+outputOptions(output, "xponentDescriptionHasSufficientElements", suspendWhenHidden = FALSE)
 
 # hasLayoutTemplateSheets
 # This reactive is used by the conditionalPanel to control visibility of
@@ -829,7 +977,8 @@ output$blank_layout_file <- downloadHandler(
       description_status = desc_status,
       delimiter = if (desc_status$has_content) input$description_delimiter else "_",
       element_order = if (desc_status$has_sufficient_elements) input$XElementOrder else c("PatientID", "TimePeriod", "DilutionFactor"),
-      bcs_element_order = if (desc_status$has_content) input$BCSElementOrder else c("Source", "DilutionFactor")
+      bcs_element_order = if (desc_status$has_content) input$BCSElementOrder else c("Source", "DilutionFactor"),
+      feature_value = input$feature_value
     )
 
     # Show notification if defaults were applied
@@ -1391,6 +1540,13 @@ observeEvent(input$readxMap_experiment_accession_import, {
 
 ### read template and create the preview template tab
 ### Clicks browse to load a plate/batch
+## ==========================================================================
+## DEPRECATED: Single-file RAW upload observers (removed from UI in refactor)
+## These observers supported the old single-file RAW upload workflow.
+## They are retained as dead code for reference but will not be triggered
+## since the RAW file format option was removed from the UI.
+## ==========================================================================
+
 observeEvent(input$upload_to_shiny,{
 
   req(input$readxMap_study_accession)
@@ -2415,31 +2571,24 @@ observeEvent(input$view_layout_antigen_list_sheet,{
 
 })
 
-## Clear old data from layout when navigate back to layout template
+## Clear old data from layout when navigating between file formats
 observeEvent(input$xPonentFile, {
-  if (input$xPonentFile == "Layout Template") {
-    cat("Switched to Layout Template tab — clearing layout data\n")
+  cat("Switched to", input$xPonentFile, "tab — clearing layout data\n")
 
-    # Clear all layout-related reactive values
-    inLayoutFile(NULL)
-    avaliableLayoutSheets(NULL)
-    layout_template_sheets(list())
+  # Clear all layout-related reactive values
+  inLayoutFile(NULL)
+  avaliableLayoutSheets(NULL)
+  layout_template_sheets(list())
 
-    # Reset validation state
-    batch_validation_state(list(
-      is_validated = FALSE,
-      is_uploaded = FALSE,
-      validation_time = NULL,
-      upload_time = NULL,
-      metadata_result = NULL,
-      bead_array_result = NULL
-    ))
-
-    # NOTE: view_layout_file_ui will return NULL automatically
-    # because layout_template_sheets() was set to list() above.
-    # DO NOT re-assign the output here as it breaks the reactive chain.
-
-  }
+  # Reset validation state
+  batch_validation_state(list(
+    is_validated = FALSE,
+    is_uploaded = FALSE,
+    validation_time = NULL,
+    upload_time = NULL,
+    metadata_result = NULL,
+    bead_array_result = NULL
+  ))
 })
 
 observeEvent(input$upload_batch_button, {
@@ -2563,6 +2712,40 @@ observeEvent(input$upload_batch_button, {
   # Natural key for joining plates_map to assay_response
   natural_key <- c("study_name", "experiment_name", "plateid", "well")
 
+  # Helper: fill missing sampleid values that would cause NOT NULL violations.
+  # biosample_id_barcode is derived from Type (e.g. "X145" → "145") but xPONENT
+  # Types often lack numeric suffixes ("X", "S1", "B"), so the barcode may be
+
+  # empty after the Excel round-trip.
+  fill_missing_sampleid <- function(df, specimen_type = c("X", "S", "C")) {
+    specimen_type <- match.arg(specimen_type)
+    if (!"sampleid" %in% names(df)) df$sampleid <- NA_character_
+
+    needs_fill <- is.na(df$sampleid) | trimws(df$sampleid) == ""
+
+    if (!any(needs_fill)) return(df)
+
+    if (specimen_type == "X") {
+      # Samples: use patientid (subject_id) — preserves replicate semantics
+      if ("patientid" %in% names(df)) {
+        df$sampleid[needs_fill] <- df$patientid[needs_fill]
+      }
+    } else {
+      # Standards / Controls: use dilution factor as identifier
+      if ("dilution" %in% names(df)) {
+        df$sampleid[needs_fill] <- as.character(df$dilution[needs_fill])
+      }
+    }
+
+    # Final fallback: use well position (always present, always non-null)
+    still_empty <- is.na(df$sampleid) | trimws(df$sampleid) == ""
+    if (any(still_empty) && "well" %in% names(df)) {
+      df$sampleid[still_empty] <- df$well[still_empty]
+    }
+
+    return(df)
+  }
+
 
   # PREPARE HEADER DATA
 
@@ -2648,6 +2831,9 @@ observeEvent(input$upload_batch_button, {
     # Apply column mapping
     samples_to_upload <- apply_column_mapping(samples_to_upload, col_mapping)
 
+    # Fill missing sampleid (xPONENT Types lack numeric suffixes)
+    samples_to_upload <- fill_missing_sampleid(samples_to_upload, "X")
+
     # Select required columns
     sample_cols <- c(
       "project_id", "study_accession", "experiment_accession", "timeperiod",
@@ -2696,6 +2882,9 @@ observeEvent(input$upload_batch_button, {
 
     # Apply column mapping
     standards_to_upload <- apply_column_mapping(standards_to_upload, col_mapping)
+
+    # Fill missing sampleid (xPONENT Types lack numeric suffixes)
+    standards_to_upload <- fill_missing_sampleid(standards_to_upload, "S")
 
     # Select required columns
     standard_cols <- c(
@@ -2791,6 +2980,9 @@ observeEvent(input$upload_batch_button, {
     }
 
     controls_to_upload <- apply_column_mapping(controls_to_upload, col_mapping)
+
+    # Fill missing sampleid (xPONENT Types lack numeric suffixes)
+    controls_to_upload <- fill_missing_sampleid(controls_to_upload, "C")
 
     control_cols <- c(
       "study_accession", "experiment_accession", "plate_id", "well",

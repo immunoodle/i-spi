@@ -757,8 +757,9 @@ observeEvent(
         se_table             = se_antigen_table,
         study_accession      = selected_study,
         experiment_accession = selected_experiment,
-        source               = input$sc_source_select,
-        antigen              = input$sc_antigen_select
+        source = input$sc_source_select,
+        antigen = input$sc_antigen_select,
+        feature = sc_feature_select()
       )
       
       bf <- select_model_fit_AIC(

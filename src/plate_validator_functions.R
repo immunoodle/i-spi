@@ -25,6 +25,135 @@ capitalize_am_pm <- function(text) {
   return(text)
 }
 
+#' Normalize acquisition date strings to the database format DD-MMM-YYYY, HH:MM AM/PM
+#'
+#' Accepts a wide range of date/time formats from North American and European
+#' instruments. Handles non-English month abbreviations (Dutch, German, French,
+#' Spanish, Italian, Portuguese) by mapping them to English before parsing.
+#'
+#' @param x Character vector of date strings
+#' @return Character vector in the format "DD-MMM-YYYY, HH:MM AM/PM",
+#'         or the original value if parsing fails (so validation can flag it)
+normalize_acquisition_date <- function(x) {
+  vapply(x, function(val) {
+    if (is.na(val) || !nzchar(trimws(val))) return(NA_character_)
+
+    original <- val
+    val <- trimws(val)
+
+    # Already in target format? Return as-is.
+    val_check <- capitalize_am_pm(val)
+    if (grepl("^\\d{2}-[A-Za-z]{3}-\\d{4}, \\d{2}:\\d{2} (AM|PM)$", val_check)) {
+      return(val_check)
+    }
+
+    # ------------------------------------------------------------------
+    # Map non-English month abbreviations to English
+    # ------------------------------------------------------------------
+    month_map <- c(
+      # Dutch
+      "jan" = "Jan", "feb" = "Feb", "mrt" = "Mar", "apr" = "Apr",
+      "mei" = "May", "jun" = "Jun", "jul" = "Jul", "aug" = "Aug",
+      "sep" = "Sep", "okt" = "Oct", "nov" = "Nov", "dec" = "Dec",
+      # German
+      "m\u00e4r" = "Mar", "mae" = "Mar", "mai" = "May",
+      "dez" = "Dec",
+      # French
+      "f\u00e9v" = "Feb", "fev" = "Feb", "mar" = "Mar", "avr" = "Apr",
+      "jui" = "Jun", "juil" = "Jul", "ao\u00fb" = "Aug", "aou" = "Aug",
+      # Spanish
+      "ene" = "Jan", "abr" = "Apr", "ago" = "Aug", "dic" = "Dec",
+      # Italian
+      "gen" = "Jan", "mag" = "May", "giu" = "Jun", "lug" = "Jul",
+      "set" = "Sep", "ott" = "Oct",
+      # Portuguese
+      "fev" = "Feb", "mar" = "Mar", "abr" = "Apr", "mai" = "May",
+      "ago" = "Aug", "out" = "Oct", "dez" = "Dec"
+    )
+
+    val_lower <- val
+    for (foreign in names(month_map)) {
+      pattern <- paste0("(?i)\\b", foreign, "\\b")
+      if (grepl(pattern, val_lower, perl = TRUE)) {
+        val_lower <- sub(pattern, month_map[[foreign]], val_lower, perl = TRUE)
+        break
+      }
+    }
+    val <- val_lower
+
+    # ------------------------------------------------------------------
+    # Try parsing with many common format strings
+    # Order matters: more specific formats first
+    # ------------------------------------------------------------------
+    formats <- c(
+      # Target format (with comma)
+      "%d-%b-%Y, %I:%M %p",
+      "%d-%b-%Y, %H:%M",
+      # Variations without comma
+      "%d-%b-%Y %I:%M %p",
+      "%d-%b-%Y %H:%M",
+      "%d-%b-%Y %H:%M:%S",
+      # US: M/D/YYYY with 12-hour
+      "%m/%d/%Y %I:%M %p",
+      "%m/%d/%Y %I:%M:%S %p",
+      # US: M/D/YYYY with 24-hour
+      "%m/%d/%Y %H:%M",
+      "%m/%d/%Y %H:%M:%S",
+      # European: D/M/YYYY
+      "%d/%m/%Y %H:%M",
+      "%d/%m/%Y %H:%M:%S",
+      "%d/%m/%Y %I:%M %p",
+      # Dot-separated (common in Germany, Netherlands)
+      "%d.%m.%Y %H:%M",
+      "%d.%m.%Y %H:%M:%S",
+      "%d.%m.%Y %I:%M %p",
+      # Dash-separated numeric
+      "%d-%m-%Y %H:%M",
+      "%d-%m-%Y %H:%M:%S",
+      "%d-%m-%Y %I:%M %p",
+      "%m-%d-%Y %I:%M %p",
+      "%m-%d-%Y %H:%M",
+      "%m-%d-%Y %H:%M:%S",
+      # ISO
+      "%Y-%m-%d %H:%M:%S",
+      "%Y-%m-%d %H:%M",
+      "%Y-%m-%dT%H:%M:%S",
+      "%Y-%m-%dT%H:%M",
+      # Date-only (assume midnight)
+      "%d-%b-%Y",
+      "%m/%d/%Y",
+      "%d/%m/%Y",
+      "%Y-%m-%d",
+      "%d.%m.%Y"
+    )
+
+    parsed <- NA
+    for (fmt in formats) {
+      attempt <- tryCatch(
+        as.POSIXct(val, format = fmt, tz = "UTC"),
+        error = function(e) NA
+      )
+      if (!is.na(attempt)) {
+        # Sanity check: year should be between 1990 and 2100
+        yr <- as.integer(format(attempt, "%Y"))
+        if (!is.na(yr) && yr >= 1990 && yr <= 2100) {
+          parsed <- attempt
+          break
+        }
+      }
+    }
+
+    # For ambiguous M/D vs D/M: if the first US parse gave a future year
+    # or implausible month, try European interpretation
+    if (is.na(parsed)) {
+      return(original)
+    }
+
+    # Format to target: DD-MMM-YYYY, HH:MM AM/PM
+    format(parsed, "%d-%b-%Y, %I:%M %p")
+  }, character(1), USE.NAMES = FALSE)
+}
+
 # Type column must be in correct format
 check_type_column <- function(df) {
 bad_rows <- df[!grepl("^[BXCS][0-9]*$", df$Type), ]
@@ -173,18 +302,21 @@ validate_batch_plate_metadata <- function(plate_metadata, plate_id_data) {
     ))
   }
 
-  # Check acquisition date format
-  pass_time_format <- all(check_time_format(capitalize_am_pm(plate_metadata$acquisition_date)))
+  # Check acquisition date format — normalize first, then validate
+  plate_metadata$acquisition_date <- normalize_acquisition_date(plate_metadata$acquisition_date)
   is_time_format <- check_time_format(capitalize_am_pm(plate_metadata$acquisition_date))
+  pass_time_format <- all(is_time_format)
   if (!pass_time_format) {
     invalid_time_format <- plate_metadata[!is_time_format, c("plateid", "acquisition_date")]
     message_list <- c(message_list, paste0(
-      "INVALID ACQUISITION DATE FORMAT: The following plates have incorrectly formatted dates:\n",
+      "INVALID ACQUISITION DATE FORMAT: The following plates have dates that could not be parsed:\n",
       paste(sprintf("  - Plate '%s': Value '%s'",
                     invalid_time_format$plateid,
                     invalid_time_format$acquisition_date),
             collapse = "\n"),
-      "\n\nRequired format: DD-MMM-YYYY, HH:MM AM/PM\nExample: 01-Oct-2025, 12:12 PM"
+      "\n\nAccepted formats include: DD-MMM-YYYY HH:MM AM/PM, M/D/YYYY H:MM AM/PM, ",
+      "DD/MM/YYYY HH:MM, YYYY-MM-DD HH:MM:SS, DD.MM.YYYY HH:MM, and most common ",
+      "European and North American date/time formats."
     ))
   }
 
@@ -194,7 +326,8 @@ validate_batch_plate_metadata <- function(plate_metadata, plate_id_data) {
 
   return(list(
     is_valid = is_valid,
-    messages = message_list
+    messages = message_list,
+    normalized_metadata = plate_metadata
   ))
 }
 
@@ -1183,9 +1316,10 @@ plate_validation <- function(plate_metadata, plate_data, blank_keyword) {
     message_list <- c(message_list, paste("Ensure that the RP1 Target is numeric and if it is a decimal only one period is present. Value:", plate_metadata$rp1_target, sep = " "))
   }
 
+  plate_metadata$acquisition_date <- normalize_acquisition_date(plate_metadata$acquisition_date)
   pass_time_format <- check_time_format(capitalize_am_pm(plate_metadata$acquisition_date))
   if (!pass_time_format) {
-    message_list <- c(message_list, paste("Ensure the acquisition date is in the following date time format: DD-MMM-YYYY, HH:MM AM/PM Example: 01-Oct-2025, 12:12 PM  |Current Value:",
+    message_list <- c(message_list, paste("Could not parse the acquisition date. Please check the value:",
                                           plate_metadata$acquisition_date, sep = " "))
   }
 

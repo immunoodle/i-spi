@@ -848,120 +848,351 @@ dispatch_dydx <- function(model_name, x, theta) {
   do.call(fn, args)
 }
 
+# .compute_fda2018_scalars()
+#
+# Internal helper – all FDA-2018 LOQ arithmetic lives here.
+# Returns a plain named list of exactly 6 scalars (NA_real_ on failure).
+#
+# Arguments mirror the relevant subset of fit_fda2018_loq(); see that
+# function's header for full protocol description.
+.compute_fda2018_scalars <- function(fit,
+                                     best_data,
+                                     model_name,
+                                     plate_blanks,
+                                     response_variable,
+                                     independent_variable,
+                                     fixed_a_result    = NULL,
+                                     is_log_response   = FALSE,
+                                     cv_threshold      = 20,
+                                     lloq_cv_threshold = 25,
+                                     accuracy_lo       = 80,
+                                     accuracy_hi       = 120,
+                                     verbose           = TRUE) {
+
+  # ------------------------------------------------------------------
+  # 1. Blank statistics (raw linear-scale MFI from plate_blanks)
+  # ------------------------------------------------------------------
+  if (!is.null(plate_blanks) && nrow(plate_blanks) > 0) {
+    blank_vals <- plate_blanks$mfi
+    Blank_mean <- mean(blank_vals, na.rm = TRUE)
+    Blank_SD   <- sd(blank_vals,   na.rm = TRUE)
+    if (is.na(Blank_SD)) Blank_SD <- 0
+  } else {
+    Blank_mean <- NA_real_
+    Blank_SD   <- NA_real_
+  }
+
+  # Convenience: the six-scalar NA result used for early returns
+  na_scalars <- list(
+    LLOQ_FDA2018_response      = NA_real_,
+    LLOQ_FDA2018_concentration = NA_real_,
+    ULOQ_FDA2018_response      = NA_real_,
+    ULOQ_FDA2018_concentration = NA_real_,
+    Blank_mean                 = Blank_mean,
+    Blank_SD                   = Blank_SD
+  )
+
+  # ------------------------------------------------------------------
+  # 2. Strip the geometric-mean blank row (stype == "B")
+  # ------------------------------------------------------------------
+  if ("stype" %in% names(best_data)) {
+    std_data <- best_data[is.na(best_data$stype) | best_data$stype != "B", ]
+  } else {
+    std_data <- best_data
+  }
+
+  if (nrow(std_data) == 0) return(na_scalars)
+
+  # ------------------------------------------------------------------
+  # 3. Back-calculate concentration for every standard well
+  # ------------------------------------------------------------------
+  std_data_bc <- tryCatch(
+    calculate_predicted_concentration(
+      model_name        = model_name,
+      fit               = fit,
+      plate_samples     = std_data,
+      fixed_constraint  = fixed_a_result,
+      response_variable = response_variable,
+      is_log_response   = is_log_response,
+      verbose           = verbose
+    ),
+    error = function(e) {
+      if (verbose) message("[FDA2018] back-calculation failed: ", conditionMessage(e))
+      NULL
+    }
+  )
+
+  if (is.null(std_data_bc)) return(na_scalars)
+
+  # ------------------------------------------------------------------
+  # 4. Per-level %CV and % recovery
+  # ------------------------------------------------------------------
+  nominal_concs <- sort(unique(std_data_bc[[independent_variable]]))
+
+  loq_rows <- lapply(nominal_concs, function(nom_x) {
+    rows <- std_data_bc[std_data_bc[[independent_variable]] == nom_x, ]
+    bc   <- rows$predicted_concentration          # log10-scale
+    bc   <- bc[!is.na(bc)]
+    n    <- length(bc)
+    if (n < 1) return(NULL)
+
+    mean_bc      <- mean(bc)
+    sd_bc        <- if (n > 1) sd(bc) else NA_real_
+    cv_pct       <- if (!is.na(sd_bc) && mean_bc != 0)
+      (sd_bc / abs(mean_bc)) * 100
+    else NA_real_
+    pct_recovery <- (10^mean_bc / 10^nom_x) * 100  # both on linear scale
+
+    data.frame(
+      nominal_log_x = nom_x,
+      nominal_conc  = 10^nom_x,
+      n_reps        = n,
+      mean_log_bc   = mean_bc,
+      sd_log_bc     = sd_bc,
+      cv_pct        = cv_pct,
+      pct_recovery  = pct_recovery,
+      stringsAsFactors = FALSE
+    )
+  })
+
+  loq_table <- do.call(rbind, Filter(Negate(is.null), loq_rows))
+  if (is.null(loq_table) || nrow(loq_table) == 0) return(na_scalars)
+
+  # ------------------------------------------------------------------
+  # 5. Flag passing levels
+  # ------------------------------------------------------------------
+  passes_accuracy <- function(r) !is.na(r) & r >= accuracy_lo & r <= accuracy_hi
+
+  loq_table$passes_std  <- !is.na(loq_table$cv_pct) &
+    loq_table$cv_pct <= cv_threshold &
+    passes_accuracy(loq_table$pct_recovery)
+
+  loq_table$passes_lloq <- !is.na(loq_table$cv_pct) &
+    loq_table$cv_pct <= lloq_cv_threshold &
+    passes_accuracy(loq_table$pct_recovery)
+
+  lloq_candidates <- which(loq_table$passes_lloq)
+  passing_std     <- which(loq_table$passes_std)
+
+  # ------------------------------------------------------------------
+  # 6. Fitted response (linear scale) at a given log10-concentration
+  # ------------------------------------------------------------------
+  pred_response_at <- function(log_x) {
+    nd   <- setNames(data.frame(log_x), independent_variable)
+    yhat <- as.numeric(predict(fit, newdata = nd))
+    if (is_log_response) 10^yhat else yhat
+  }
+
+  lloq_conc     <- NA_real_
+  lloq_response <- NA_real_
+  uloq_conc     <- NA_real_
+  uloq_response <- NA_real_
+
+  if (length(lloq_candidates) > 0) {
+    lloq_row      <- loq_table[min(lloq_candidates), ]
+    lloq_conc     <- lloq_row$nominal_conc
+    lloq_response <- pred_response_at(lloq_row$nominal_log_x)
+  }
+
+  if (length(passing_std) > 0) {
+    uloq_row      <- loq_table[max(passing_std), ]
+    uloq_conc     <- uloq_row$nominal_conc
+    uloq_response <- pred_response_at(uloq_row$nominal_log_x)
+  }
+
+  if (verbose) {
+    message(sprintf(
+      "[FDA2018] LLOQ: conc=%s, response=%s | ULOQ: conc=%s, response=%s",
+      format(lloq_conc,     digits = 4),
+      format(lloq_response, digits = 4),
+      format(uloq_conc,     digits = 4),
+      format(uloq_response, digits = 4)
+    ))
+  }
+
+  list(
+    LLOQ_FDA2018_response      = lloq_response,
+    LLOQ_FDA2018_concentration = lloq_conc,
+    ULOQ_FDA2018_response      = uloq_response,
+    ULOQ_FDA2018_concentration = uloq_conc,
+    Blank_mean                 = Blank_mean,
+    Blank_SD                   = Blank_SD
+  )
+}
+
 # This function depends on get_loqs, generate_inflection_point, generate_lods as it is a wrapper and calls them
+# fit_qc_glance()
+#
+# Wrapper that assembles the QC-glance data-frame for a single plate fit.
+# Optionally computes the six FDA-2018 LOQ scalars in the same pass so that
+# no second call is required.
+#
+# New / changed arguments vs. the original:
+#   plate_blanks    – data.frame of blank wells with column `mfi` (raw,
+#                     linear scale). Pass NULL to skip FDA-2018 computation.
+#   fda2018_options – named list with any of:
+#                       cv_threshold      (default 20)
+#                       lloq_cv_threshold (default 25)
+#                       accuracy_lo       (default 80)
+#                       accuracy_hi       (default 120)
+#                     Pass NULL (default) to use all defaults.
+#
+# All other arguments are unchanged from the original.
 fit_qc_glance <- function(best_fit,
                           response_variable,
                           independent_variable,
                           fixed_a_result,
                           antigen_settings,
                           antigen_fit_options,
-                          verbose = TRUE) {
+                          plate_blanks     = NULL,
+                          fda2018_options  = NULL,
+                          verbose          = TRUE) {
 
-
-  # Refactor 3: Extract frequently-used members once
+  # ------------------------------------------------------------------
+  # Unpack frequently-used members once
+  # ------------------------------------------------------------------
   fit        <- best_fit$best_fit
   best_data  <- best_fit$best_data
   model_name <- best_fit$best_model_name
 
-  if (antigen_settings$l_asy_constraint_method == "range_of_blanks" && antigen_fit_options$is_log_response && !is.null(fixed_a_result)) {
-    .eps = 0.00005
+  if (antigen_settings$l_asy_constraint_method == "range_of_blanks" &&
+      antigen_fit_options$is_log_response &&
+      !is.null(fixed_a_result)) {
+    .eps           <- 0.00005
     fixed_a_result <- log10(fixed_a_result + .eps)
   }
-  # obtain qc metrics
-  loqs <- get_loqs(best_d2xy = best_fit$best_d2xy, fit = fit, independent_variable = independent_variable)
 
-  # Refactor 5: keep blank SE as plain scalar until final assembly
+  # ------------------------------------------------------------------
+  # QC metrics (unchanged logic)
+  # ------------------------------------------------------------------
+  loqs <- get_loqs(
+    best_d2xy           = best_fit$best_d2xy,
+    fit                 = fit,
+    independent_variable = independent_variable
+  )
+
   blank_se_value <- get_blank_se(antigen_settings = antigen_settings)
 
-  lods <- generate_lods(best_fit = best_fit, fixed_a_result = fixed_a_result, std_error_blank = blank_se_value)
+  lods <- generate_lods(
+    best_fit        = best_fit,
+    fixed_a_result  = fixed_a_result,
+    std_error_blank = blank_se_value
+  )
 
-  inflection_point <- generate_inflection_point(model_name = model_name, fit = fit, fixed_a_result = fixed_a_result, independent_variable = independent_variable)
+  inflection_point <- generate_inflection_point(
+    model_name           = model_name,
+    fit                  = fit,
+    fixed_a_result       = fixed_a_result,
+    independent_variable = independent_variable
+  )
 
-  # Refactor 1: pass pre-computed lods into generate_mdc_rdl
-  mdc_rdl <- generate_mdc_rdl(best_fit = best_fit, lods = lods,
-                               independent_variable = independent_variable,
-                               verbose = verbose)
+  mdc_rdl <- generate_mdc_rdl(
+    best_fit             = best_fit,
+    lods                 = lods,
+    independent_variable = independent_variable,
+    verbose              = verbose
+  )
 
-  theta <- coef(fit)
+  theta      <- coef(fit)
   theta["a"] <- ifelse(!is.null(fixed_a_result), fixed_a_result, theta["a"])
-  # Use inflect_x (concentration) for the derivative, not inflect_y (response)
-  # The dydx functions take x (concentration) as the first argument
-  xi <- as.numeric(inflection_point$inflect_x)
-  # Refactor 4: use dispatch_dydx helper instead of switch block
-  dydx_inflect <- as.numeric(dispatch_dydx(model_name, xi, theta))
 
-  combined_qc_list <- c(loqs, lods, inflection_point, std_error_blank = blank_se_value, dydx_inflect = dydx_inflect, mdc_rdl)
+  xi            <- as.numeric(inflection_point$inflect_x)
+  dydx_inflect  <- as.numeric(dispatch_dydx(model_name, xi, theta))
 
-  # Ensure all values in the list are scalar numerics before creating dataframe
+  # ------------------------------------------------------------------
+  # FDA-2018 six scalars  (NA when plate_blanks is NULL)
+  # ------------------------------------------------------------------
+  fda_opts <- if (is.null(fda2018_options)) list() else fda2018_options
+
+  fda2018_scalars <- .compute_fda2018_scalars(
+    fit                  = fit,
+    best_data            = best_data,
+    model_name           = model_name,
+    plate_blanks         = plate_blanks,
+    response_variable    = response_variable,
+    independent_variable = independent_variable,
+    fixed_a_result       = fixed_a_result,
+    is_log_response      = antigen_fit_options$is_log_response,
+    cv_threshold         = if (!is.null(fda_opts$cv_threshold))      fda_opts$cv_threshold      else 20,
+    lloq_cv_threshold    = if (!is.null(fda_opts$lloq_cv_threshold)) fda_opts$lloq_cv_threshold else 25,
+    accuracy_lo          = if (!is.null(fda_opts$accuracy_lo))       fda_opts$accuracy_lo       else 80,
+    accuracy_hi          = if (!is.null(fda_opts$accuracy_hi))       fda_opts$accuracy_hi       else 120,
+    verbose              = verbose
+  )
+
+  # ------------------------------------------------------------------
+  # Merge all scalars into one flat list, then coerce to data.frame
+  # ------------------------------------------------------------------
+  combined_qc_list <- c(
+    loqs,
+    lods,
+    inflection_point,
+    std_error_blank = blank_se_value,
+    dydx_inflect    = dydx_inflect,
+    mdc_rdl,
+    fda2018_scalars          # <-- six new columns land here
+  )
+
   combined_qc_list <- lapply(combined_qc_list, function(x) {
     if (is.list(x)) as.numeric(unlist(x))[1] else as.numeric(x)[1]
   })
 
   qc_glance <- as.data.frame(combined_qc_list, stringsAsFactors = FALSE)
 
-  # Ensure scalar comparisons
-  uloq_val <- as.numeric(qc_glance$uloq)[1]
+  # ULOQ sanity-check (unchanged)
+  uloq_val   <- as.numeric(qc_glance$uloq)[1]
   inflect_val <- as.numeric(qc_glance$inflect_x)[1]
-
   if (!is.na(uloq_val) && !is.na(inflect_val) && uloq_val < inflect_val) {
-    qc_glance$uloq <- NA_real_
+    qc_glance$uloq   <- NA_real_
     qc_glance$uloq_y <- NA_real_
   }
-  # obtain fit statistics and parameter estimates
-  s <-  summary(fit)
-  coefs <- coef(s)
+
+  # ------------------------------------------------------------------
+  # Fit statistics and parameter estimates (unchanged)
+  # ------------------------------------------------------------------
+  s       <- summary(fit)
+  coefs   <- coef(s)
   coef_df <- as.data.frame(t(coefs[, "Estimate"]))
+  if (!("a" %in% names(coef_df))) coef_df$a <- fixed_a_result
 
-  if (!("a" %in% names(coef_df))) {
-    coef_df$a <- fixed_a_result
-  }
-
-  # Residual stats
-  sigma <- s$sigma
+  sigma    <- s$sigma
   df_resid <- s$df[2]
 
-  # Compute R-squared
-  response <- best_data[[response_variable]]
-
-  rss <- sum(residuals(fit)^2)
-  tss <- sum((response - mean(response))^2)
+  response  <- best_data[[response_variable]]
+  rss       <- sum(residuals(fit)^2)
+  tss       <- sum((response - mean(response))^2)
   r_squared <- 1 - rss / tss
 
-  # AIC and BIC
-  aic <- AIC(fit)
-  bic <- BIC(fit)
+  aic         <- AIC(fit)
+  bic         <- BIC(fit)
+  logLik_val  <- as.numeric(logLik(fit))
+  converged   <- fit$convInfo$isConv
+  iter        <- fit$convInfo$finIter
+  crit        <- model_name
+  model_formula <- gsub(
+    "I\\((.*)\\)", "\\1",
+    paste(deparse(formula(fit)), collapse = " ")
+  )
+  n_obs        <- length(residuals(fit))
+  mse          <- mean(resid(fit)^2, na.rm = TRUE)
+  mean_obs_mfi <- mean(response,     na.rm = TRUE)
+  cv           <- (sqrt(mse) / mean_obs_mfi) * 100
 
-  logLik_val <- as.numeric(logLik(fit))
-  converged <- fit$convInfo$isConv
-  iter <- fit$convInfo$finIter
-
-  crit <- model_name
-
-  model_formula <- paste(deparse(formula(fit)), collapse = " ")
-  model_formula <- gsub("I\\((.*)\\)", "\\1", model_formula)
-
-  n_obs <- length(residuals(fit))
-
-  # calculate mse
-  mse <- mean(resid(fit)^2, na.rm = T)
-  # mean of observed response
-  mean_obs_mfi<- mean(response, na.rm = TRUE)
-  # coefficient of variation.
-  cv <- (sqrt(mse) / mean_obs_mfi) * 100
-
-
-  glance_df <-  data.frame(
-    study_accession = unique(best_data$study_accession),
-    experiment_accession = unique(best_data$experiment_accession),
-    plateid = unique(best_data$plateid),
-    plate = unique(best_data$plate),
+  # ------------------------------------------------------------------
+  # Assemble glance_df  (qc_glance already contains the 6 FDA columns)
+  # ------------------------------------------------------------------
+  glance_df <- data.frame(
+    study_accession        = unique(best_data$study_accession),
+    experiment_accession   = unique(best_data$experiment_accession),
+    plateid                = unique(best_data$plateid),
+    plate                  = unique(best_data$plate),
     nominal_sample_dilution = unique(best_data$nominal_sample_dilution),
-    antigen = unique(best_data$antigen),
-    iter = iter,
-    status = converged,
-    crit = crit,
+    antigen                = unique(best_data$antigen),
+    iter                   = iter,
+    status                 = converged,
+    crit                   = crit,
     coef_df,
-    qc_glance,
+    qc_glance, # includes LLOQ/ULOQ FDA2018 + Blank_mean/SD
     dfresidual = df_resid,
     nobs = n_obs,
     rsquare_fit = r_squared,
@@ -981,8 +1212,314 @@ fit_qc_glance <- function(best_fit,
 
   best_fit$best_glance <- glance_df
   return(best_fit)
-
 }
+
+# fit_qc_glance <- function(best_fit,
+#                           response_variable,
+#                           independent_variable,
+#                           fixed_a_result,
+#                           antigen_settings,
+#                           antigen_fit_options,
+#                           verbose = TRUE) {
+#
+#
+#   # Refactor 3: Extract frequently-used members once
+#   fit        <- best_fit$best_fit
+#   best_data  <- best_fit$best_data
+#   model_name <- best_fit$best_model_name
+#
+#   if (antigen_settings$l_asy_constraint_method == "range_of_blanks" && antigen_fit_options$is_log_response && !is.null(fixed_a_result)) {
+#     .eps = 0.00005
+#     fixed_a_result <- log10(fixed_a_result + .eps)
+#   }
+#   # obtain qc metrics
+#   loqs <- get_loqs(best_d2xy = best_fit$best_d2xy, fit = fit, independent_variable = independent_variable)
+#
+#   # Refactor 5: keep blank SE as plain scalar until final assembly
+#   blank_se_value <- get_blank_se(antigen_settings = antigen_settings)
+#
+#   lods <- generate_lods(best_fit = best_fit, fixed_a_result = fixed_a_result, std_error_blank = blank_se_value)
+#
+#   inflection_point <- generate_inflection_point(model_name = model_name, fit = fit, fixed_a_result = fixed_a_result, independent_variable = independent_variable)
+#
+#   # Refactor 1: pass pre-computed lods into generate_mdc_rdl
+#   mdc_rdl <- generate_mdc_rdl(best_fit = best_fit, lods = lods,
+#                                independent_variable = independent_variable,
+#                                verbose = verbose)
+#
+#   theta <- coef(fit)
+#   theta["a"] <- ifelse(!is.null(fixed_a_result), fixed_a_result, theta["a"])
+#   # Use inflect_x (concentration) for the derivative, not inflect_y (response)
+#   # The dydx functions take x (concentration) as the first argument
+#   xi <- as.numeric(inflection_point$inflect_x)
+#   # Refactor 4: use dispatch_dydx helper instead of switch block
+#   dydx_inflect <- as.numeric(dispatch_dydx(model_name, xi, theta))
+#
+#   combined_qc_list <- c(loqs, lods, inflection_point, std_error_blank = blank_se_value, dydx_inflect = dydx_inflect, mdc_rdl)
+#
+#   # Ensure all values in the list are scalar numerics before creating dataframe
+#   combined_qc_list <- lapply(combined_qc_list, function(x) {
+#     if (is.list(x)) as.numeric(unlist(x))[1] else as.numeric(x)[1]
+#   })
+#
+#   qc_glance <- as.data.frame(combined_qc_list, stringsAsFactors = FALSE)
+#
+#   # Ensure scalar comparisons
+#   uloq_val <- as.numeric(qc_glance$uloq)[1]
+#   inflect_val <- as.numeric(qc_glance$inflect_x)[1]
+#
+#   if (!is.na(uloq_val) && !is.na(inflect_val) && uloq_val < inflect_val) {
+#     qc_glance$uloq <- NA_real_
+#     qc_glance$uloq_y <- NA_real_
+#   }
+#   # obtain fit statistics and parameter estimates
+#   s <-  summary(fit)
+#   coefs <- coef(s)
+#   coef_df <- as.data.frame(t(coefs[, "Estimate"]))
+#
+#   if (!("a" %in% names(coef_df))) {
+#     coef_df$a <- fixed_a_result
+#   }
+#
+#   # Residual stats
+#   sigma <- s$sigma
+#   df_resid <- s$df[2]
+#
+#   # Compute R-squared
+#   response <- best_data[[response_variable]]
+#
+#   rss <- sum(residuals(fit)^2)
+#   tss <- sum((response - mean(response))^2)
+#   r_squared <- 1 - rss / tss
+#
+#   # AIC and BIC
+#   aic <- AIC(fit)
+#   bic <- BIC(fit)
+#
+#   logLik_val <- as.numeric(logLik(fit))
+#   converged <- fit$convInfo$isConv
+#   iter <- fit$convInfo$finIter
+#
+#   crit <- model_name
+#
+#   model_formula <- paste(deparse(formula(fit)), collapse = " ")
+#   model_formula <- gsub("I\\((.*)\\)", "\\1", model_formula)
+#
+#   n_obs <- length(residuals(fit))
+#
+#   # calculate mse
+#   mse <- mean(resid(fit)^2, na.rm = T)
+#   # mean of observed response
+#   mean_obs_mfi<- mean(response, na.rm = TRUE)
+#   # coefficient of variation.
+#   cv <- (sqrt(mse) / mean_obs_mfi) * 100
+#
+#
+#   glance_df <-  data.frame(
+#     study_accession = unique(best_data$study_accession),
+#     experiment_accession = unique(best_data$experiment_accession),
+#     plateid = unique(best_data$plateid),
+#     plate = unique(best_data$plate),
+#     nominal_sample_dilution = unique(best_data$nominal_sample_dilution),
+#     antigen = unique(best_data$antigen),
+#     iter = iter,
+#     status = converged,
+#     crit = crit,
+#     coef_df,
+#     qc_glance,
+#     dfresidual = df_resid,
+#     nobs = n_obs,
+#     rsquare_fit = r_squared,
+#     aic = aic,
+#     bic = bic,
+#     loglik = logLik_val,
+#     mse = mse,
+#     cv = cv,
+#     source = unique(best_data$source),
+#     bkg_method =  antigen_fit_options$blank_option, #blank_option,
+#     is_log_response = antigen_fit_options$is_log_response,
+#     is_log_x = antigen_fit_options$is_log_concentration,
+#     apply_prozone  = antigen_fit_options$apply_prozone,
+#     formula = model_formula
+#     )
+#
+#   best_fit$best_glance <- glance_df
+#   return(best_fit)
+#
+# }
+
+# Compute FDA (2018) LLOQ, ULOQ, Blank_mean, and Blank_SD for a single plate.
+#
+# Protocol (FDA Bioanalytical Method Validation Guidance, 2018 / DeSilva 2003):
+#   LLOQ: lowest nominal concentration at which %CV ≤ lloq_cv_threshold (25%)
+#         AND % recovery is within [accuracy_lo, accuracy_hi] (80–120%).
+#   ULOQ: highest nominal concentration at which %CV ≤ cv_threshold (20%)
+#         AND % recovery is within [accuracy_lo, accuracy_hi].
+#   Blank_mean / Blank_SD: mean and SD of raw blank (PBS) MFI values.
+#
+# Arguments:
+#   best_fit           – list returned by select_model_fit_AIC() (and fit_qc_glance()).
+#   plate_blanks       – data.frame of blank wells with column `mfi` (raw, linear scale).
+#   response_variable  – character name of the MFI column in best_data.
+#   independent_variable – character name of the log10-concentration column in best_data.
+#   fixed_a_result     – fixed lower-asymptote value (NULL if not fixed).
+#   is_log_response    – logical; TRUE if the response was log10-transformed before fitting.
+#   cv_threshold       – %CV acceptance limit for all levels except LLOQ (default 20).
+#   lloq_cv_threshold  – %CV acceptance limit at the LLOQ level (default 25, per FDA 2018).
+#   accuracy_lo / accuracy_hi – % recovery acceptance window (default 80–120%).
+#
+# Returns:
+#   best_fit with a new element $fda2018 containing a named list of the six scalars
+#   plus a fda2018_loq_table data.frame with per-level diagnostics.
+# fit_fda2018_loq <- function(best_fit,
+#                              plate_blanks,
+#                              response_variable,
+#                              independent_variable,
+#                              fixed_a_result    = NULL,
+#                              is_log_response   = FALSE,
+#                              cv_threshold      = 20,
+#                              lloq_cv_threshold = 25,
+#                              accuracy_lo       = 80,
+#                              accuracy_hi       = 120,
+#                              verbose           = TRUE) {
+#
+#   fit        <- best_fit$best_fit
+#   best_data  <- best_fit$best_data
+#   model_name <- best_fit$best_model_name
+#
+#   # --- 1. Blank statistics from raw plate_blanks (mfi column, linear scale) ---
+#   if (!is.null(plate_blanks) && nrow(plate_blanks) > 0) {
+#     blank_vals <- plate_blanks$mfi
+#     Blank_mean <- mean(blank_vals, na.rm = TRUE)
+#     Blank_SD   <- sd(blank_vals,   na.rm = TRUE)
+#     if (is.na(Blank_SD)) Blank_SD <- 0
+#   } else {
+#     Blank_mean <- NA_real_
+#     Blank_SD   <- NA_real_
+#   }
+#
+#   # --- 2. Strip the geometric-mean blank row (stype == "B") from best_data ---
+#   if ("stype" %in% names(best_data)) {
+#     std_data <- best_data[is.na(best_data$stype) | best_data$stype != "B", ]
+#   } else {
+#     std_data <- best_data
+#   }
+#
+#   na_result <- list(
+#     LLOQ_FDA2018_response      = NA_real_,
+#     LLOQ_FDA2018_concentration = NA_real_,
+#     ULOQ_FDA2018_response      = NA_real_,
+#     ULOQ_FDA2018_concentration = NA_real_,
+#     Blank_mean                 = Blank_mean,
+#     Blank_SD                   = Blank_SD,
+#     fda2018_loq_table          = NULL
+#   )
+#
+#   if (nrow(std_data) == 0) {
+#     best_fit$fda2018 <- na_result
+#     return(best_fit)
+#   }
+#
+#   # --- 3. Back-calculate concentration for every standard well ---
+#   std_data_bc <- calculate_predicted_concentration(
+#     model_name        = model_name,
+#     fit               = fit,
+#     plate_samples     = std_data,
+#     fixed_constraint  = fixed_a_result,
+#     response_variable = response_variable,
+#     is_log_response   = is_log_response,
+#     verbose           = verbose
+#   )
+#   # predicted_concentration is on the log10 concentration scale
+#
+#   # --- 4. Per-level %CV and % recovery ---
+#   nominal_concs <- sort(unique(std_data_bc[[independent_variable]]))
+#
+#   loq_rows <- lapply(nominal_concs, function(nom_x) {
+#     rows <- std_data_bc[std_data_bc[[independent_variable]] == nom_x, ]
+#     bc   <- rows$predicted_concentration   # log10-scale
+#     bc   <- bc[!is.na(bc)]
+#     n    <- length(bc)
+#     if (n < 1) return(NULL)
+#
+#     mean_bc      <- mean(bc)
+#     sd_bc        <- if (n > 1) sd(bc) else NA_real_
+#     cv_pct       <- if (!is.na(sd_bc) && mean_bc != 0) (sd_bc / abs(mean_bc)) * 100 else NA_real_
+#     pct_recovery <- (10^mean_bc / 10^nom_x) * 100   # both converted to linear scale
+#
+#     data.frame(
+#       nominal_log_x = nom_x,
+#       nominal_conc  = 10^nom_x,
+#       n_reps        = n,
+#       mean_log_bc   = mean_bc,
+#       sd_log_bc     = sd_bc,
+#       cv_pct        = cv_pct,
+#       pct_recovery  = pct_recovery,
+#       stringsAsFactors = FALSE
+#     )
+#   })
+#
+#   loq_table <- do.call(rbind, Filter(Negate(is.null), loq_rows))
+#
+#   if (is.null(loq_table) || nrow(loq_table) == 0) {
+#     best_fit$fda2018 <- na_result
+#     return(best_fit)
+#   }
+#
+#   # --- 5. Flag passing levels ---
+#   passes_accuracy <- function(pct_rec) !is.na(pct_rec) & pct_rec >= accuracy_lo & pct_rec <= accuracy_hi
+#
+#   loq_table$passes_std  <- !is.na(loq_table$cv_pct) & loq_table$cv_pct <= cv_threshold      & passes_accuracy(loq_table$pct_recovery)
+#   loq_table$passes_lloq <- !is.na(loq_table$cv_pct) & loq_table$cv_pct <= lloq_cv_threshold & passes_accuracy(loq_table$pct_recovery)
+#
+#   lloq_candidates <- which(loq_table$passes_lloq)
+#   passing_std     <- which(loq_table$passes_std)
+#
+#   # Helper: fitted response (linear scale) at a given log10-concentration
+#   pred_response_at <- function(log_x) {
+#     nd   <- setNames(data.frame(log_x), independent_variable)
+#     yhat <- as.numeric(predict(fit, newdata = nd))
+#     if (is_log_response) 10^yhat else yhat
+#   }
+#
+#   lloq_conc     <- NA_real_
+#   lloq_response <- NA_real_
+#   uloq_conc     <- NA_real_
+#   uloq_response <- NA_real_
+#
+#   if (length(lloq_candidates) > 0) {
+#     lloq_row      <- loq_table[min(lloq_candidates), ]
+#     lloq_conc     <- lloq_row$nominal_conc
+#     lloq_response <- pred_response_at(lloq_row$nominal_log_x)
+#   }
+#
+#   if (length(passing_std) > 0) {
+#     uloq_row      <- loq_table[max(passing_std), ]
+#     uloq_conc     <- uloq_row$nominal_conc
+#     uloq_response <- pred_response_at(uloq_row$nominal_log_x)
+#   }
+#
+#   if (verbose) {
+#     message(sprintf(
+#       "FDA2018 LOQ — LLOQ: conc=%s, response=%s | ULOQ: conc=%s, response=%s",
+#       format(lloq_conc, digits = 4), format(lloq_response, digits = 4),
+#       format(uloq_conc, digits = 4), format(uloq_response, digits = 4)
+#     ))
+#   }
+#
+#   best_fit$fda2018 <- list(
+#     LLOQ_FDA2018_response      = lloq_response,
+#     LLOQ_FDA2018_concentration = lloq_conc,
+#     ULOQ_FDA2018_response      = uloq_response,
+#     ULOQ_FDA2018_concentration = uloq_conc,
+#     Blank_mean                 = Blank_mean,
+#     Blank_SD                   = Blank_SD
+#     # ,
+#     # fda2018_loq_table          = loq_table
+#   )
+#
+#   return(best_fit)
+# }
 
 get_loqs <- function(best_d2xy, fit, independent_variable,  verbose = TRUE) {
   y <- as.numeric(best_d2xy$d2x_y)
@@ -1546,6 +2083,64 @@ propagate_error_analytic <- function(model,         # character: "Y4","Yd4","Ygo
        grad_y     = grad_y)
 }
 
+# ── Run this BEFORE calling propagate_error_dataframe ──────────────────────
+diagnose_propagation_inputs <- function(fit, model, fixed_a, y_test = NULL) {
+
+  params <- coef(fit)
+  Sigma  <- vcov(fit)
+
+  cat("\n═══ Propagation Input Diagnosis ═══\n")
+  cat("Model         :", model, "\n")
+  cat("coef(fit)     :", paste(names(params), "=", round(params, 5), collapse = ", "), "\n")
+  cat("vcov dim      :", paste(dim(Sigma), collapse = " x "), "\n")
+  cat("vcov rownames :", paste(rownames(Sigma), collapse = ", "), "\n")
+  cat("fixed_a       :", if (is.null(fixed_a)) "NULL" else round(fixed_a, 6), "\n")
+
+  # If fixed_a is supplied, 'a' should NOT be in coef(fit)
+  if (!is.null(fixed_a) && "a" %in% names(params)) {
+    cat("⚠️  WARNING: fixed_a is supplied BUT 'a' is ALSO in coef(fit).\n")
+    cat("   This causes the augmented-Sigma path to corrupt the gradient alignment.\n")
+    cat("   Solution: fit the model WITHOUT 'a' as a free parameter when fixed_a is used.\n")
+  }
+
+  # Test inv and grad at a sample y value
+  if (!is.null(y_test)) {
+    cat("\nTesting inv/grad at y =", y_test, "\n")
+    fns <- tryCatch(
+      make_inv_and_grad_fixed(model = model, y = y_test,
+                              fixed_a = if (!is.null(fixed_a)) fixed_a else params["a"]),
+      error = function(e) { cat("make_inv_and_grad_fixed ERROR:", e$message, "\n"); NULL }
+    )
+    if (!is.null(fns)) {
+      x_est <- tryCatch(fns$inv(params),    error = function(e) { cat("inv() ERROR:", e$message,"\n"); NA })
+      g_t   <- tryCatch(fns$grad(params),   error = function(e) { cat("grad() ERROR:", e$message,"\n"); NULL })
+      g_y   <- tryCatch(fns$grad_y(params), error = function(e) { cat("grad_y() ERROR:", e$message,"\n"); NA })
+
+      cat("  x_est    :", x_est, "\n")
+      cat("  grad_t   :", if (!is.null(g_t)) paste(names(g_t), "=", round(g_t,5), collapse=", ") else "NULL", "\n")
+      cat("  grad_y   :", g_y, "\n")
+
+      # Check alignment
+      if (!is.null(g_t)) {
+        common <- intersect(names(g_t), rownames(Sigma))
+        cat("  grad_t names  :", paste(names(g_t),   collapse=", "), "\n")
+        cat("  Sigma rownames:", paste(rownames(Sigma), collapse=", "), "\n")
+        cat("  Common names  :", paste(common, collapse=", "), "\n")
+        if (length(common) == length(g_t) && length(common) == nrow(Sigma)) {
+          g_vec  <- g_t[common]
+          S_sub  <- Sigma[common, common, drop=FALSE]
+          var_x  <- as.numeric(t(g_vec) %*% S_sub %*% g_vec)
+          cat("  var_x (param contribution) :", var_x, "\n")
+          cat("  se_x  (param contribution) :", sqrt(max(var_x, 0)), "\n")
+        } else {
+          cat("  ⚠️  NAME MISMATCH — this is the root cause of NA se_x!\n")
+        }
+      }
+    }
+  }
+  cat("═══════════════════════════════════\n\n")
+}
+
 #  Propagation for a whole data‑frame
 #' Propagate the error of a fitted sigmoid model to many new samples
 #'
@@ -1581,173 +2176,371 @@ propagate_error_analytic <- function(model,         # character: "Y4","Yd4","Ygo
 #'                                  y_col = "response_var",
 #'                                  se_col = "se_std_response")
 #' print(out)
+#'
 propagate_error_dataframe <- function(pred_df,
                                       fit,
                                       model = c("Y4","Yd4","Ygomp4","Y5","Yd5"),
                                       y_col,
                                       se_col,
                                       fixed_a,
+                                      cv_x_max = 125,
+                                      is_log_x  = TRUE,   # is x_est on log10 scale?
                                       quiet = FALSE) {
-  ## 0. sanity checks
-  if (!is.data.frame(pred_df))
-    stop("`pred_df` must be a data.frame.", call. = FALSE)
-
   model <- match.arg(model)
 
-  ## 1. tidy‑eval column selectors
-  y_q  <- enquo(y_col)
-  se_q <- enquo(se_col)
+  # Validate is_log_x
+  is_log_x <- isTRUE(is_log_x)
 
-  # evaluate the selectors – they may be a column name, a character string,
-  # or a plain numeric vector (for SEs)
-  y_val  <- rlang::eval_tidy(y_q, pred_df, env = parent.frame())
-  se_val <- rlang::eval_tidy(se_q, pred_df, env = parent.frame())
-
-  ## 1a. Resolve response column --------------------------------------
-  if (is.character(y_val) && length(y_val) == 1) {
-    y_name <- y_val
-  } else if (is.name(y_q) && length(y_val) == 1) {
-    y_name <- as.character(y_val)
-  } else {
-    stop("`y_col` must resolve to a single column name (character).",
-         call. = FALSE)
-  }
-  if (!y_name %in% names(pred_df))
-    stop(sprintf("Column '%s' not found in `pred_df`.", y_name), call. = FALSE)
-
-  ## 1b. Resolve SE column / vector ------------------------------------
-  if (is.numeric(se_val) && length(se_val) == nrow(pred_df)) {
-    se_vec <- se_val                     # a raw numeric vector
-  } else if (is.character(se_val) && length(se_val) == 1) {
-    se_name <- se_val
-    if (!se_name %in% names(pred_df))
-      stop(sprintf("Column '%s' not found in `pred_df`.", se_name),
-           call. = FALSE)
-    se_vec <- pred_df[[se_name]]
-  } else if (is.name(se_q) && length(se_val) == 1) {
-    se_name <- as.character(se_val)
-    if (!se_name %in% names(pred_df))
-      stop(sprintf("Column '%s' not found in `pred_df`.", se_name),
-           call. = FALSE)
-    se_vec <- pred_df[[se_name]]
-  } else {
-    stop("`se_col` must be a column name (quoted/unquoted) or a numeric ",
-         "vector of length = nrow(pred_df).", call. = FALSE)
+  if (!quiet) {
+    message("[propagate] CV formula   : ",
+            if (is_log_x) "LINEAR-scale (se_x * ln(10) * 100) — avoids /0 at log10(conc)=0"
+            else           "LOG-scale    (se_x / |x_est| * 100)")
   }
 
-  ## 2.  Vectorised evaluation -----------------------------------------
-  # The anonymous function returns a *list* with components x_est and se_x.
-  # Using `mapply(..., SIMPLIFY = FALSE)` keeps the list structure.
-  # res <- mapply(
-  #   FUN = function(y_i, se_i) {
-  #     if (is.na(y_i) || is.na(se_i)) {
-  #       return(list(x_est = NA_real_, se_x = NA_real_))
-  #     }
-  #     out <- propagate_error_analytic(model, fit, y_i, se_i, fixed_a)
-  #     list(x_est = out$x_est, se_x = out$se_x)
-  #   },
-  #   y_i = pred_df[[y_name]],
-  #   se_i = se_vec,
-  #   SIMPLIFY = FALSE
-  # )
+  # ── 1. Validate cv_x_max ────────────────────────────────────
+  cv_x_max <- if (isTRUE(is.finite(cv_x_max)) && cv_x_max > 0) {
+    as.numeric(cv_x_max)[1]
+  } else {
+    message("[propagate] cv_x_max invalid; defaulting to 125.")
+    125
+  }
 
-  #   res <- mapply(
-  #   FUN = function(y_i, se_i) {
-  #     if (is.na(y_i) || is.na(se_i)) {
-  #       return(list(x_est = NA_real_, se_x = NA_real_))
-  #     }
-  #     # This is where se_i (from se_col) is used
-  #     out <- propagate_error_analytic(model, fit, y_i, se_i, fixed_a)
-  #     list(x_est = out$x_est, se_x = out$se_x)
-  #   },
-  #   y_i = pred_df[[y_name]],
-  #   se_i = se_vec,  # ← This needs to be non-zero!
-  #   SIMPLIFY = FALSE
-  # )
+  # ── 2. Extract params and Sigma from fit ─────────────────────
+  params <- coef(fit)
+  Sigma  <- vcov(fit)
 
-  # Extract model parameters for bounds checking
-  theta <- coef(fit)
-  a <- if ("a" %in% names(theta)) theta["a"] else fixed_a
-  d <- theta["d"]
+  if (!quiet) {
+    message("[propagate] Model       : ", model)
+    message("[propagate] Free params : ", paste(names(params), collapse = ", "))
+    message("[propagate] Sigma rows  : ", paste(rownames(Sigma), collapse = ", "))
+    message("[propagate] fixed_a     : ",
+            if (is.null(fixed_a)) "NULL (a is free in coef)" else round(as.numeric(fixed_a), 6))
+  }
 
-  # Define valid response range based on model asymptotes
-  tol <- 1e-6
-  y_lower <- min(a, d) + tol
-  y_upper <- max(a, d) - tol
+  # ── 3. Decide which branch make_inv_and_grad_fixed will use ──
+  #
+  #  fixed_a supplied as a real scalar → truly fixed, pass as-is (as.numeric)
+  #  fixed_a is NULL                   → 'a' is free, pass NULL
+  #
+  #  We do NOT read 'a' from params and pass it as fixed_a here.
+  #  When fixed_a = NULL, make_inv_and_grad_fixed Branch B reads
+  #  p["a"] internally from coef(fit) and uses the full grad_* functions.
 
-  res <- mapply(
-    FUN = function(y_i, se_i) {
-      if (is.na(y_i) || is.na(se_i)) {
-        return(list(x_est = NA_real_, se_x = NA_real_))
+  use_fixed_a <- !is.null(fixed_a) && isTRUE(is.finite(as.numeric(fixed_a)))
+  fna         <- if (use_fixed_a) as.numeric(fixed_a) else NULL
+
+  # Sanity: when a is free it must be in coef(fit)
+  if (!use_fixed_a && !"a" %in% names(params)) {
+    stop("[propagate] fixed_a is NULL but 'a' not found in coef(fit).")
+  }
+  # Sanity: when a is fixed it must NOT be in coef(fit)
+  if (use_fixed_a && "a" %in% names(params)) {
+    warning("[propagate] fixed_a supplied but 'a' also in coef(fit). ",
+            "The coef 'a' will be ignored; fixed_a will be used.")
+    params <- params[names(params) != "a"]
+    Sigma  <- Sigma[rownames(Sigma) != "a", colnames(Sigma) != "a", drop = FALSE]
+  }
+
+  # ── 4. Loop ──────────────────────────────────────────────────
+  n   <- nrow(pred_df)
+  res <- vector("list", n)
+  pb  <- if (!quiet) txtProgressBar(min = 0, max = n, style = 3) else NULL
+
+  n_na_inv  <- 0L
+  n_na_grad <- 0L
+  n_na_vpar <- 0L
+  n_capped  <- 0L
+  n_ok      <- 0L
+
+  for (i in seq_len(n)) {
+
+    y_i    <- pred_df[[y_col]][i]
+    se_y_i <- if (isTRUE(is.finite(pred_df[[se_col]][i]))) pred_df[[se_col]][i] else 0
+
+    # Scale sanity check (log10 response only — warn once)
+    if (i == 1 && !quiet) {
+      y_range <- diff(range(pred_df[[y_col]], na.rm = TRUE))
+      se_median <- median(pred_df[[se_col]], na.rm = TRUE)
+      if (isTRUE(is.finite(se_median)) && isTRUE(is.finite(y_range)) && y_range > 0) {
+        se_to_range_ratio <- se_median / y_range
+        if (se_to_range_ratio > 0.5) {
+          message(sprintf(paste0(
+            "\n[propagate] WARNING: median se_col (%.4f) is %.1f%% of the y_col range (%.4f).\n",
+            "  This suggests se_col may be on a different scale than y_col.\n",
+            "  If y_col is log10-transformed, se_col must also be in log10 units.\n",
+            "  Convert: se_log10 = se_raw / (raw_value * log(10))"),
+            se_median, se_to_range_ratio * 100, y_range
+          ))
+        }
+      }
+    }
+
+    # Guard: skip non-finite y
+    if (!isTRUE(is.finite(y_i))) {
+      res[[i]] <- list(x_est = NA_real_, se_x = NA_real_, cv_x = cv_x_max)
+      n_na_inv <- n_na_inv + 1L
+      if (!quiet) setTxtProgressBar(pb, i)
+      next
+    }
+
+    # Build closures — pass fna (NULL or scalar)
+    fns <- tryCatch(
+      make_inv_and_grad_fixed(model = model, y = y_i, fixed_a = fna),
+      error = function(e) {
+        if (!quiet) message(sprintf("[propagate] closure failed row %d: %s", i, e$message))
+        NULL
+      }
+    )
+    if (is.null(fns)) {
+      res[[i]] <- list(x_est = NA_real_, se_x = NA_real_, cv_x = cv_x_max)
+      n_na_inv <- n_na_inv + 1L
+      if (!quiet) setTxtProgressBar(pb, i)
+      next
+    }
+
+    # Inverse prediction
+    x_est <- tryCatch(fns$inv(params), error = function(e) NA_real_)
+    if (!isTRUE(is.finite(x_est))) {
+      res[[i]] <- list(x_est = x_est, se_x = NA_real_, cv_x = cv_x_max)
+      n_na_inv <- n_na_inv + 1L
+      if (!quiet) setTxtProgressBar(pb, i)
+      next
+    }
+
+    # Gradient w.r.t. free parameters ∂x/∂θ
+    grad_t <- tryCatch(
+      fns$grad(params),
+      error = function(e) { n_na_grad <<- n_na_grad + 1L; rep(NA_real_, length(params)) }
+    )
+
+    # Gradient w.r.t. response ∂x/∂y
+    grad_y_val <- tryCatch(fns$grad_y(params), error = function(e) NA_real_)
+
+    # ── Delta-method variance ─────────────────────────────────
+    # Align grad_t names with Sigma — they MUST match now that Branch B
+    # returns a,b,c,d and Branch A returns b,c,d.
+    var_par <- NA_real_
+
+    if (all(is.finite(grad_t))) {
+      common <- intersect(names(grad_t), rownames(Sigma))
+
+      if (length(common) > 0) {
+        if (length(common) < length(grad_t) && !quiet && i == 1) {
+          message("[propagate] NOTE: grad_t has ", length(grad_t),
+                  " names but only ", length(common),
+                  " align with Sigma. Using: ", paste(common, collapse = ", "))
+        }
+        g_sub  <- grad_t[common]
+        S_sub  <- Sigma[common, common, drop = FALSE]
+        var_par <- tryCatch(
+          as.numeric(t(g_sub) %*% S_sub %*% g_sub),
+          error = function(e) NA_real_
+        )
+      } else {
+        # Still a mismatch — emit a clear one-time diagnostic
+        if (!quiet && i == 1) {
+          message("[propagate] WARNING: zero common names between grad_t and Sigma!")
+          message("  grad_t names : ", paste(names(grad_t), collapse = ", "))
+          message("  Sigma rows   : ", paste(rownames(Sigma), collapse = ", "))
+          message("  This means 'a' is neither in Sigma (fixed) nor returned by grad_t (free).")
+          message("  Check that fixed_a is correctly NULL or a scalar.")
+        }
+      }
+    } else {
+      n_na_grad <- n_na_grad + 1L
+    }
+
+    if (!isTRUE(is.finite(var_par))) n_na_vpar <- n_na_vpar + 1L
+
+    # Measurement-error contribution  (∂x/∂y)^2 * se_y^2
+    var_y <- if (isTRUE(is.finite(grad_y_val)) && se_y_i > 0)
+      (grad_y_val^2) * (se_y_i^2) else 0
+
+    var_x <- if (isTRUE(is.finite(var_par))) var_par + var_y else NA_real_
+    se_x  <- if (isTRUE(is.finite(var_x)) && var_x >= 0) sqrt(var_x) else NA_real_
+
+    # CV_x
+    # ── CV_x computation ─────────────────────────────────────────────────────
+    #
+    # STRATEGY: when x_est is on the log10 concentration scale, the standard
+    # ratio cv = (se_x / |x_est|) * 100 diverges as x_est -> 0 (i.e. conc -> 1).
+    # This is a mathematical artefact of the log scale passing through zero —
+    # NOT a real increase in uncertainty.
+    #
+    # Correct approach: propagate se_x to the LINEAR concentration scale first,
+    # then compute the CV there.
+    #
+    #   x_linear     = 10^x_est
+    #   se_x_linear  = se_x * 10^x_est * log(10)      [delta method]
+    #   cv_x_linear  = (se_x_linear / x_linear) * 100
+    #                = se_x * log(10) * 100
+    #                = se_x * 230.259...
+    #
+    # This is independent of x_est, so it never diverges at x_est = 0.
+    # The is_log_x flag controls which formula is used.
+    #
+    cv_x <- if (isTRUE(is.finite(se_x))) {
+
+      if (is_log_x) {
+        # Log10-scale x_est: use linear-scale CV (avoids /0 at x_est=0)
+        raw_cv <- se_x * log(10) * 100   # = se_x * 230.26
+      } else {
+        # Linear-scale x_est: use standard ratio CV
+        if (isTRUE(abs(x_est) > 1e-10)) {
+          raw_cv <- (se_x / abs(x_est)) * 100
+        } else {
+          raw_cv <- Inf
+        }
       }
 
-      # Check if response is within valid range
-      if (y_i <= y_lower || y_i >= y_upper) {
-        # Return NA or extrapolated boundary values
-        return(list(
-          x_est = ifelse(y_i <= y_lower, -Inf, Inf),
-          se_x = NA_real_
-        ))
+      if (isTRUE(is.finite(raw_cv))) {
+        if (raw_cv < cv_x_max) {
+          n_ok <- n_ok + 1L
+        } else {
+          n_capped <- n_capped + 1L
+        }
+        min(raw_cv, cv_x_max)
+      } else {
+        n_capped <- n_capped + 1L
+        cv_x_max
       }
 
-      out <- propagate_error_analytic(model, fit, y_i, se_i, fixed_a)
-      list(x_est = out$x_est, se_x = out$se_x)
-    },
-    y_i = pred_df[[y_name]],
-    se_i = se_vec,
-    SIMPLIFY = FALSE
-  )
+    } else {
+      n_capped <- n_capped + 1L
+      cv_x_max
+    }
 
+    res[[i]] <- list(x_est = x_est, se_x = se_x, cv_x = cv_x)
+    if (!quiet) setTxtProgressBar(pb, i)
+  }
 
-  ## 3. Attach results -------------------------------------------------
+  if (!quiet) close(pb)
+
+  # ── 5. Unpack ─────────────────────────────────────────────────
   pred_df$predicted_concentration <- sapply(res, `[[`, "x_est")
-  pred_df$se_x  <- sapply(res, `[[`, "se_x")
+  pred_df$se_x                    <- sapply(res, `[[`, "se_x")
+  pred_df$cv_x                    <- sapply(res, `[[`, "cv_x")
+  pred_df$cv_x[!is.finite(pred_df$cv_x)] <- cv_x_max
 
+  # ── 6. Summary ────────────────────────────────────────────────
+  if (!quiet) {
+    message("\n── propagate_error_dataframe summary ──────────────────")
+    message(sprintf("  Rows processed     : %d", n))
+    message(sprintf("  x_est finite       : %d", sum(is.finite(pred_df$predicted_concentration))))
+    message(sprintf("  x_est NA           : %d", sum(!is.finite(pred_df$predicted_concentration))))
+    message(sprintf("  se_x finite        : %d", sum(is.finite(pred_df$se_x))))
+    message(sprintf("  se_x NA            : %d  (grad or var_par issue)", sum(!is.finite(pred_df$se_x))))
+    message(sprintf("  cv_x < cap         : %d", n_ok))
+    message(sprintf("  cv_x at cap (%3.0f) : %d", cv_x_max, n_capped))
+    message(sprintf("  grad_t NA rows     : %d", n_na_grad))
+    message(sprintf("  var_par NA rows    : %d", n_na_vpar))
+
+    xv <- pred_df$predicted_concentration[is.finite(pred_df$predicted_concentration)]
+    sv <- pred_df$se_x[is.finite(pred_df$se_x)]
+    cv <- pred_df$cv_x[is.finite(pred_df$cv_x) & pred_df$cv_x < cv_x_max]
+
+    if (length(xv)) message(sprintf("  x_est range        : [%.4f, %.4f]", min(xv), max(xv)))
+    if (length(sv)) message(sprintf("  se_x  range        : [%.4f, %.4f]", min(sv), max(sv)))
+    if (length(cv)) message(sprintf("  cv_x  range (excl cap): [%.2f, %.2f]", min(cv), max(cv)))
+    message("───────────────────────────────────────────────────────")
+  }
+
+  # pred_df_v <<- pred_df
   pred_df
 }
 
-#' Build a list of assay SE estimates for each plate in batch processing
-#'
-#' @param antigen_plate_list_res Result from build_antigen_plate_list()
-#' @param loaded_data_list List of loaded data per experiment
-#' @param response_var Name of response variable (e.g., "mfi")
-#' @param dilution_col Name of dilution column
-#' @return Named list of se_std_response objects keyed by plate ID
-# build_se_std_response_list <- function(antigen_plate_list_res,
-#                                        loaded_data_list,
-#                                        response_var,
-#                                        dilution_col = "dilution") {
-#
-#   antigen_plate_list <- antigen_plate_list_res$antigen_plate_list
-#   antigen_plate_list_ids <- antigen_plate_list_res$antigen_plate_list_ids
-#
-#   se_list <- list()
-#
-#   for (plate_id in antigen_plate_list_ids) {
-#     plate_info <- antigen_plate_list[[plate_id]]
-#
-#     if (is.null(plate_info) || is.null(plate_info$plate_standard)) {
-#       se_list[[plate_id]] <- NULL
-#       next
-#     }
-#
-#     # Calculate SE for this plate's standards
-#     se_list[[plate_id]] <- tryCatch({
-#       assay_se(
-#         data = plate_info$plate_standard,
-#         dilution_col = dilution_col,
-#         response_col = response_var,
-#         method = "pooled_within"  # Use the refactored method
-#       )
-#     }, error = function(e) {
-#       warning(paste("Could not calculate SE for plate:", plate_id, "-", e$message))
-#       NULL
-#     })
-#   }
-#
-#   return(se_list)
-# }
 
+
+diagnose_cv_x <- function(df, label = "pred_se",
+                          lloq = NULL, uloq = NULL,
+                          cv_x_max = 125,     # cap parameter
+                          verbose = TRUE) {
+  if (!verbose) return(invisible(NULL))
+  if (!"cv_x" %in% names(df)) {
+    message(sprintf("[cv_x diagnostic] '%s': cv_x column not found.", label))
+    return(invisible(NULL))
+  }
+
+  cv <- df$cv_x
+  xc <- df$predicted_concentration
+
+  finite_mask <- is.finite(cv) & is.finite(xc)
+  cv_f  <- cv[finite_mask]
+  xc_f  <- xc[finite_mask]
+
+  if (length(cv_f) == 0) {
+    message(sprintf("[cv_x diagnostic] '%s': no finite cv_x values.", label))
+    return(invisible(NULL))
+  }
+
+  min_idx  <- which.min(cv_f)
+  min_cv   <- cv_f[min_idx]
+  min_x    <- xc_f[min_idx]
+  max_cv   <- max(cv_f, na.rm = TRUE)
+  mean_cv  <- mean(cv_f, na.rm = TRUE)
+
+  # Count rows that hit the cap exactly (were clamped) vs genuinely > 20
+  n_at_cap <- sum(cv_f >= cv_x_max, na.rm = TRUE)
+  n_gt_20  <- sum(cv_f >  20,       na.rm = TRUE)
+  n_na_raw <- sum(!is.finite(df$cv_x))   # residual NAs before cap applied
+
+  message(sprintf(
+    "\n[cv_x diagnostic] --- %s ---
+  cv_x_max (cap)   : %.1f
+  N total          : %d
+  N finite cv_x    : %d
+  N non-finite raw : %d  (replaced with cap)
+  Min  cv_x        : %.3f  at predicted_concentration = %.4f
+  Max  cv_x        : %.3f
+  Mean cv_x        : %.3f
+  N cv_x > 20      : %d
+  N cv_x at cap    : %d",
+    label, cv_x_max,
+    nrow(df), length(cv_f), n_na_raw,
+    min_cv, min_x, max_cv, mean_cv,
+    n_gt_20, n_at_cap
+  ))
+
+  if (!is.null(lloq) && !is.null(uloq) && isTRUE(is.finite(lloq)) && isTRUE(is.finite(uloq))) {
+    in_loq    <- finite_mask &
+      df$predicted_concentration >= lloq &
+      df$predicted_concentration <= uloq
+    cv_in_loq <- df$cv_x[in_loq]
+    n_loq_cap <- sum(cv_in_loq >= cv_x_max, na.rm = TRUE)
+
+    message(sprintf(
+      "  Within [lloq=%.4f, uloq=%.4f]:
+    N            = %d
+    mean cv_x    = %.3f
+    max  cv_x    = %.3f
+    N at cap     = %d  %s",
+      lloq, uloq,
+      length(cv_in_loq),
+      mean(cv_in_loq, na.rm = TRUE),
+      max(cv_in_loq,  na.rm = TRUE),
+      n_loq_cap,
+      if (n_loq_cap > 0)
+        "[WARNING] capped values inside LOQ window — check curve fit near limits"
+      else ""
+    ))
+  }
+
+  if (n_at_cap > 0) {
+    message(sprintf(
+      "  [INFO] %d point(s) capped at cv_x_max=%.1f (asymptote proximity or failed propagation).",
+      n_at_cap, cv_x_max
+    ))
+  }
+
+  invisible(list(
+    min_cv   = min_cv,
+    min_x    = min_x,
+    max_cv   = max_cv,
+    mean_cv  = mean_cv,
+    n_gt_20  = n_gt_20,
+    n_at_cap = n_at_cap
+  ))
+}
 
 #' Estimate Assay Response Standard Error from Standard Curve Replicates
 #'
@@ -1811,302 +2604,347 @@ propagate_error_dataframe <- function(pred_df,
 #' print(se_result$pooling_strategy)
 #'
 #' @export
-assay_se <- function(data,
-                     dilution_col = "dilution",
-                     response_col = "mfi",
-                     plate_col    = "plate",
-                     method       = c("pooled_within", "median_se", "mean_se"),
-                     min_reps     = 2,
-                     na.rm        = TRUE) {
+# assay_se <- function(data,
+#                      dilution_col = "dilution",
+#                      response_col = "mfi",
+#                      plate_col    = "plate",
+#                      method       = c("pooled_within", "median_se", "mean_se"),
+#                      min_reps     = 2,
+#                      na.rm        = TRUE) {
+# 
+#   ## 0. Input validation
+#   method <- match.arg(method)
+#   data <- dplyr::as_tibble(data)
+# 
+#   required_cols <- c(dilution_col, response_col)
+#   missing_cols <- setdiff(required_cols, colnames(data))
+#   if (length(missing_cols) > 0) {
+#     stop("Missing required columns: ", paste(missing_cols, collapse = ", "))
+#   }
+# 
+#   # Check if plate column exists
+# 
+#   has_plate_col <- !is.null(plate_col) && plate_col %in% colnames(data)
+# 
+#   ## 1. Remove NA responses
+#   if (na.rm) {
+#     data <- data[!is.na(data[[response_col]]), ]
+#   }
+# 
+#   if (nrow(data) == 0) {
+#     warning("No valid response data after removing NAs")
+#     return(list(
+#       overall_se       = NA_real_,
+#       by_dilution      = NULL,
+#       pooling_method   = method,
+#       pooling_strategy = NA_character_,
+#       total_df         = 0,
+#       n_dilutions_used = 0,
+#       n_plates         = 0
+#     ))
+#   }
+# 
+#   ## 2. Determine pooling strategy
+#   #    Check if we have within-plate replicates or need to pool across plates
+# 
+#   if (has_plate_col) {
+#     # Count replicates per plate-dilution combination
+#     rep_counts <- data %>%
+#       dplyr::group_by(
+#         !!rlang::sym(plate_col),
+#         !!rlang::sym(dilution_col)
+#       ) %>%
+#       dplyr::summarise(n = dplyr::n(), .groups = "drop")
+# 
+#     # Determine if we have within-plate replicates
+#     # If median reps per plate-dilution is > 1, use within-plate strategy
+#     median_reps_per_plate_dilution <- stats::median(rep_counts$n)
+#     has_within_plate_reps <- median_reps_per_plate_dilution >= min_reps
+# 
+#     n_plates <- length(unique(data[[plate_col]]))
+#   } else {
+#     has_within_plate_reps <- TRUE  # No plate info, treat all as one group
+#     n_plates <- 1
+#   }
+# 
+#   ## 3. Compute within-dilution statistics based on strategy
+# 
+#   if (has_within_plate_reps || !has_plate_col) {
+#     # STRATEGY A: Within-plate replicates exist
+#     # Pool variance within each dilution level (original approach)
+#     pooling_strategy <- "within_plate"
+# 
+#     by_dilution <- data %>%
+#       dplyr::group_by(!!rlang::sym(dilution_col)) %>%
+#       dplyr::summarise(
+#         n        = dplyr::n(),
+#         mean     = mean(!!rlang::sym(response_col), na.rm = TRUE),
+#         sd       = stats::sd(!!rlang::sym(response_col), na.rm = TRUE),
+#         variance = stats::var(!!rlang::sym(response_col), na.rm = TRUE),
+#         se       = sd / sqrt(n),
+#         df       = n - 1,
+#         .groups  = "drop"
+#       ) %>%
+#       dplyr::arrange(!!rlang::sym(dilution_col))
+# 
+#   } else {
+#     # STRATEGY B: Single replicate per plate per dilution
+#     # Pool ACROSS plates at each dilution level
+#     pooling_strategy <- "across_plates"
+# 
+#     # Each plate provides one measurement per dilution
+#     # Treat different plates as replicates at each dilution level
+#     by_dilution <- data %>%
+#       dplyr::group_by(!!rlang::sym(dilution_col)) %>%
+#       dplyr::summarise(
+#         n        = dplyr::n(),  # Number of plates with this dilution
+#         n_plates_at_dilution = dplyr::n_distinct(!!rlang::sym(plate_col)),
+#         mean     = mean(!!rlang::sym(response_col), na.rm = TRUE),
+#         sd       = stats::sd(!!rlang::sym(response_col), na.rm = TRUE),
+#         variance = stats::var(!!rlang::sym(response_col), na.rm = TRUE),
+#         se       = sd / sqrt(n),
+#         df       = n - 1,
+#         .groups  = "drop"
+#       ) %>%
+#       dplyr::arrange(!!rlang::sym(dilution_col))
+#   }
+# 
+#   ## 4. Filter to dilutions with sufficient replicates
+#   by_dilution_valid <- by_dilution %>%
+#     dplyr::filter(n >= min_reps, !is.na(variance), variance > 0)
+# 
+#   n_dilutions_used <- nrow(by_dilution_valid)
+# 
+#   if (n_dilutions_used == 0) {
+#     # Provide more informative warning
+#     if (pooling_strategy == "across_plates") {
+#       warning(
+#         "No dilution levels with sufficient replicates (min_reps = ", min_reps, "). ",
+#         "You have ", n_plates, " plates. Need at least ", min_reps,
+#         " plates with measurements at the same dilution to estimate SE."
+#       )
+#     } else {
+#       warning("No dilution levels with sufficient replicates (min_reps = ", min_reps, ")")
+#     }
+# 
+#     return(list(
+#       overall_se       = NA_real_,
+#       by_dilution      = by_dilution,
+#       pooling_method   = method,
+#       pooling_strategy = pooling_strategy,
+#       total_df         = 0,
+#       n_dilutions_used = 0,
+#       n_plates         = n_plates
+#     ))
+#   }
+# 
+#   ## 5. Compute pooled SE estimate based on method
+#   overall_se <- switch(method,
+# 
+#                        # Method 1: Pooled within-group variance (recommended)
+#                        "pooled_within" = {
+#                          total_df <- sum(by_dilution_valid$df)
+#                          pooled_var <- sum(by_dilution_valid$df * by_dilution_valid$variance) / total_df
+#                          pooled_sd <- sqrt(pooled_var)
+# 
+#                          # SE for a single observation
+#                          # Use harmonic mean of n for typical replicate count
+#                          n_harmonic <- n_dilutions_used / sum(1 / by_dilution_valid$n)
+#                          pooled_sd / sqrt(n_harmonic)
+#                        },
+# 
+#                        # Method 2: Median of per-dilution SEs (robust to outliers)
+#                        "median_se" = {
+#                          stats::median(by_dilution_valid$se, na.rm = TRUE)
+#                        },
+# 
+#                        # Method 3: Mean of per-dilution SEs
+#                        "mean_se" = {
+#                          mean(by_dilution_valid$se, na.rm = TRUE)
+#                        }
+#   )
+# 
+#   ## 6. Compute total degrees of freedom
+#   total_df <- sum(by_dilution_valid$df)
+# 
+#   ## 7. Return results
+#   list(
+#     overall_se       = overall_se,
+#     by_dilution      = by_dilution,
+#     pooling_method   = method,
+#     pooling_strategy = pooling_strategy,
+#     total_df         = total_df,
+#     n_dilutions_used = n_dilutions_used,
+#     n_plates         = n_plates
+#   )
+# }
 
-  ## 0. Input validation
-  method <- match.arg(method)
-  data <- dplyr::as_tibble(data)
-
-  required_cols <- c(dilution_col, response_col)
-  missing_cols <- setdiff(required_cols, colnames(data))
-  if (length(missing_cols) > 0) {
-    stop("Missing required columns: ", paste(missing_cols, collapse = ", "))
-  }
-
-  # Check if plate column exists
-
-  has_plate_col <- !is.null(plate_col) && plate_col %in% colnames(data)
-
-  ## 1. Remove NA responses
-  if (na.rm) {
-    data <- data[!is.na(data[[response_col]]), ]
-  }
-
-  if (nrow(data) == 0) {
-    warning("No valid response data after removing NAs")
-    return(list(
-      overall_se       = NA_real_,
-      by_dilution      = NULL,
-      pooling_method   = method,
-      pooling_strategy = NA_character_,
-      total_df         = 0,
-      n_dilutions_used = 0,
-      n_plates         = 0
-    ))
-  }
-
-  ## 2. Determine pooling strategy
-  #    Check if we have within-plate replicates or need to pool across plates
-
-  if (has_plate_col) {
-    # Count replicates per plate-dilution combination
-    rep_counts <- data %>%
-      dplyr::group_by(
-        !!rlang::sym(plate_col),
-        !!rlang::sym(dilution_col)
-      ) %>%
-      dplyr::summarise(n = dplyr::n(), .groups = "drop")
-
-    # Determine if we have within-plate replicates
-    # If median reps per plate-dilution is > 1, use within-plate strategy
-    median_reps_per_plate_dilution <- stats::median(rep_counts$n)
-    has_within_plate_reps <- median_reps_per_plate_dilution >= min_reps
-
-    n_plates <- length(unique(data[[plate_col]]))
-  } else {
-    has_within_plate_reps <- TRUE  # No plate info, treat all as one group
-    n_plates <- 1
-  }
-
-  ## 3. Compute within-dilution statistics based on strategy
-
-  if (has_within_plate_reps || !has_plate_col) {
-    # STRATEGY A: Within-plate replicates exist
-    # Pool variance within each dilution level (original approach)
-    pooling_strategy <- "within_plate"
-
-    by_dilution <- data %>%
-      dplyr::group_by(!!rlang::sym(dilution_col)) %>%
-      dplyr::summarise(
-        n        = dplyr::n(),
-        mean     = mean(!!rlang::sym(response_col), na.rm = TRUE),
-        sd       = stats::sd(!!rlang::sym(response_col), na.rm = TRUE),
-        variance = stats::var(!!rlang::sym(response_col), na.rm = TRUE),
-        se       = sd / sqrt(n),
-        df       = n - 1,
-        .groups  = "drop"
-      ) %>%
-      dplyr::arrange(!!rlang::sym(dilution_col))
-
-  } else {
-    # STRATEGY B: Single replicate per plate per dilution
-    # Pool ACROSS plates at each dilution level
-    pooling_strategy <- "across_plates"
-
-    # Each plate provides one measurement per dilution
-    # Treat different plates as replicates at each dilution level
-    by_dilution <- data %>%
-      dplyr::group_by(!!rlang::sym(dilution_col)) %>%
-      dplyr::summarise(
-        n        = dplyr::n(),  # Number of plates with this dilution
-        n_plates_at_dilution = dplyr::n_distinct(!!rlang::sym(plate_col)),
-        mean     = mean(!!rlang::sym(response_col), na.rm = TRUE),
-        sd       = stats::sd(!!rlang::sym(response_col), na.rm = TRUE),
-        variance = stats::var(!!rlang::sym(response_col), na.rm = TRUE),
-        se       = sd / sqrt(n),
-        df       = n - 1,
-        .groups  = "drop"
-      ) %>%
-      dplyr::arrange(!!rlang::sym(dilution_col))
-  }
-
-  ## 4. Filter to dilutions with sufficient replicates
-  by_dilution_valid <- by_dilution %>%
-    dplyr::filter(n >= min_reps, !is.na(variance), variance > 0)
-
-  n_dilutions_used <- nrow(by_dilution_valid)
-
-  if (n_dilutions_used == 0) {
-    # Provide more informative warning
-    if (pooling_strategy == "across_plates") {
-      warning(
-        "No dilution levels with sufficient replicates (min_reps = ", min_reps, "). ",
-        "You have ", n_plates, " plates. Need at least ", min_reps,
-        " plates with measurements at the same dilution to estimate SE."
-      )
-    } else {
-      warning("No dilution levels with sufficient replicates (min_reps = ", min_reps, ")")
-    }
-
-    return(list(
-      overall_se       = NA_real_,
-      by_dilution      = by_dilution,
-      pooling_method   = method,
-      pooling_strategy = pooling_strategy,
-      total_df         = 0,
-      n_dilutions_used = 0,
-      n_plates         = n_plates
-    ))
-  }
-
-  ## 5. Compute pooled SE estimate based on method
-  overall_se <- switch(method,
-
-                       # Method 1: Pooled within-group variance (recommended)
-                       "pooled_within" = {
-                         total_df <- sum(by_dilution_valid$df)
-                         pooled_var <- sum(by_dilution_valid$df * by_dilution_valid$variance) / total_df
-                         pooled_sd <- sqrt(pooled_var)
-
-                         # SE for a single observation
-                         # Use harmonic mean of n for typical replicate count
-                         n_harmonic <- n_dilutions_used / sum(1 / by_dilution_valid$n)
-                         pooled_sd / sqrt(n_harmonic)
-                       },
-
-                       # Method 2: Median of per-dilution SEs (robust to outliers)
-                       "median_se" = {
-                         stats::median(by_dilution_valid$se, na.rm = TRUE)
-                       },
-
-                       # Method 3: Mean of per-dilution SEs
-                       "mean_se" = {
-                         mean(by_dilution_valid$se, na.rm = TRUE)
-                       }
-  )
-
-  ## 6. Compute total degrees of freedom
-  total_df <- sum(by_dilution_valid$df)
-
-  ## 7. Return results
-  list(
-    overall_se       = overall_se,
-    by_dilution      = by_dilution,
-    pooling_method   = method,
-    pooling_strategy = pooling_strategy,
-    total_df         = total_df,
-    n_dilutions_used = n_dilutions_used,
-    n_plates         = n_plates
-  )
-}
-
-#' Compute Assay SE for Each Antigen Across All Plates
+#' Compute Median Assay SE for Each Antigen/Feature Across All Plates
 #'
-#' Computes the standard error of assay response for each unique combination
-#' of study_accession, experiment_accession, source, and antigen by pooling
-#' standard curve data across all plates. This SE can then be reused for
-#' error propagation on each individual plate.
+#' For each unique combination of study_accession, experiment_accession,
+#' source, antigen, and feature, computes the standard error of assay response
+#' at every dilution level across all plates, then returns the median of those
+#' per-dilution SEs. This pooled median SE can be reused for error propagation
+#' on each individual plate.
 #'
 #' @param standards_data data.frame containing all standard curve data
 #' @param response_col name of the response column (e.g., "mfi")
 #' @param dilution_col name of the dilution column (default = "dilution")
-#' @param plate_col name of the plate column (default = "plate")
+#' @param plate_col name of the plate identifier column (default = "plate_nom")
 #' @param grouping_cols character vector of columns defining the grouping
-#'        (default = c("study_accession", "experiment_accession", "source", "antigen"))
-#' @param method pooling method for assay_se (default = "pooled_within")
-#' @param min_reps minimum replicates required (default = 2)
+#'        (default = c("study_accession", "experiment_accession",
+#'                     "source", "antigen", "feature"))
+#' @param min_reps minimum number of non-missing plate replicates required at a
+#'        dilution level for that dilution's SE to be included (default = 2)
+#' @param verbose logical; if TRUE emit progress messages (default = FALSE)
 #'
-#' @return A data.frame with one row per antigen grouping containing:
-#'   - grouping columns (study_accession, experiment_accession, source, antigen)
-#'   - overall_se: the pooled SE for that antigen
-#'   - pooling_strategy: "within_plate" or "across_plates"
-#'   - n_plates: number of plates contributing
-#'   - n_dilutions_used: number of dilution levels used
-#'   - total_df: total degrees of freedom
+#' @return A data.frame with one row per unique grouping containing:
+#'   \item{grouping_cols}{the grouping columns}
+#'   \item{median_se}{median SE across all qualifying dilution levels}
+#'   \item{n_dilutions_used}{number of dilution levels with >= min_reps
+#'         non-missing observations that contributed to the median}
+#'   \item{n_plates}{number of distinct plates in the group}
+#'   \item{total_obs}{total number of non-missing response observations used}
 #'
 #' @export
-compute_antigen_se_table <- function(standards_data,
-                                     response_col = "mfi",
-                                     dilution_col = "dilution",
-                                     plate_col = "plate",
-                                     grouping_cols = c("study_accession",
-                                                       "experiment_accession",
-                                                       "source",
-                                                       "antigen"),
-                                     method = "pooled_within",
-                                     min_reps = 2,
-                                     verbose = FALSE) {
-
-
-  # Validate inputs
-  required_cols <- c(grouping_cols, response_col, dilution_col, plate_col)
-  missing_cols <- setdiff(required_cols, colnames(standards_data))
+compute_antigen_se_table <- function(
+    standards_data,
+    response_col  = "mfi",
+    dilution_col  = "dilution",
+    plate_col     = "plate_nom",
+    grouping_cols = c("study_accession",
+                      "experiment_accession",
+                      "source",
+                      "antigen",
+                      "feature"),
+    min_reps = 2,
+    verbose  = FALSE) {
+  
+  # ------------------------------------------------------------------
+  # 1. Input validation
+  # ------------------------------------------------------------------
+  required_cols <- unique(c(grouping_cols, response_col, dilution_col, plate_col))
+  missing_cols  <- setdiff(required_cols, colnames(standards_data))
   if (length(missing_cols) > 0) {
     stop("Missing required columns: ", paste(missing_cols, collapse = ", "))
   }
-
-  # Get unique antigen groupings
-  unique_groupings <- unique(standards_data[, grouping_cols, drop = FALSE])
-
-  if (verbose) {
-    message(sprintf("Computing SE for %d antigen groupings", nrow(unique_groupings)))
+  
+  if (!is.numeric(standards_data[[response_col]])) {
+    stop("response_col '", response_col, "' must be numeric.")
   }
-
-  # Compute SE for each grouping
+  
+  # ------------------------------------------------------------------
+  # 2. Identify unique groupings
+  # ------------------------------------------------------------------
+  unique_groupings <- unique(standards_data[, grouping_cols, drop = FALSE])
+  unique_groupings <- unique_groupings[do.call(order, unique_groupings), , drop = FALSE]
+  rownames(unique_groupings) <- NULL
+  
+  if (verbose) {
+    message(sprintf("Computing median SE for %d unique groupings ...",
+                    nrow(unique_groupings)))
+  }
+  
+  # ------------------------------------------------------------------
+  # 3. Compute median SE for each grouping
+  # ------------------------------------------------------------------
   se_results <- lapply(seq_len(nrow(unique_groupings)), function(i) {
+    
     grouping <- unique_groupings[i, , drop = FALSE]
-
-    # Filter standards to this grouping (across all plates)
-    filter_expr <- rep(TRUE, nrow(standards_data))
+    
+    # --- 3a. Subset to this grouping across ALL plates ----------------
+    mask <- rep(TRUE, nrow(standards_data))
     for (col in grouping_cols) {
-      filter_expr <- filter_expr & (standards_data[[col]] == grouping[[col]])
+      val  <- grouping[[col]]
+      mask <- mask & (!is.na(standards_data[[col]]) &
+                        standards_data[[col]] == val)
     }
-    grouped_standards <- standards_data[filter_expr, ]
-
-    if (nrow(grouped_standards) == 0) {
-      return(data.frame(
-        grouping,
-        overall_se = NA_real_,
-        pooling_strategy = NA_character_,
-        n_plates = 0L,
-        n_dilutions_used = 0L,
-        total_df = 0L,
-        stringsAsFactors = FALSE
-      ))
+    grp_data <- standards_data[mask, , drop = FALSE]
+    
+    # --- 3b. Early exit if no data ------------------------------------
+    if (nrow(grp_data) == 0L) {
+      return(.empty_se_row(grouping, grouping_cols))
     }
-
-    # Compute SE using all plates for this antigen
-    se_result <- tryCatch({
-      assay_se(
-        data = grouped_standards,
-        dilution_col = dilution_col,
-        response_col = response_col,
-        plate_col = plate_col,
-        method = method,
-        min_reps = min_reps
-      )
-    }, error = function(e) {
-      if (verbose) {
-        warning(sprintf("SE calculation failed for %s: %s",
-                        paste(grouping, collapse = "/"), e$message))
-      }
-      list(
-        overall_se = NA_real_,
-        pooling_strategy = NA_character_,
-        n_plates = 0L,
-        n_dilutions_used = 0L,
-        total_df = 0L
-      )
-    })
-
+    
+    # --- 3c. Pull relevant vectors (drop rows where key cols are NA) --
+    keep <- !is.na(grp_data[[dilution_col]]) &
+      !is.na(grp_data[[plate_col]])
+    grp_data <- grp_data[keep, , drop = FALSE]
+    
+    if (nrow(grp_data) == 0L) {
+      return(.empty_se_row(grouping, grouping_cols))
+    }
+    
+    dilutions  <- grp_data[[dilution_col]]
+    responses  <- grp_data[[response_col]]   # may contain NA
+    plates     <- grp_data[[plate_col]]
+    
+    unique_dilutions <- sort(unique(dilutions))
+    n_plates         <- length(unique(plates))
+    
+    # --- 3d. SE per dilution level ------------------------------------
+    # SE = sd(response across plates) / sqrt(n_non_missing)
+    per_dil_se <- vapply(unique_dilutions, function(dil) {
+      idx    <- dilutions == dil          # rows for this dilution
+      vals   <- responses[idx]            # may include NA
+      vals   <- vals[!is.na(vals)]        # drop NA responses
+      n      <- length(vals)
+      if (n < min_reps) return(NA_real_)  # insufficient replicates
+      if (n == 1L)      return(NA_real_)  # sd undefined
+      sd(vals) / sqrt(n)
+    }, numeric(1L))
+    
+    # --- 3e. Median SE across dilutions (ignore NA) -------------------
+    valid_se       <- per_dil_se[!is.na(per_dil_se)]
+    n_dil_used     <- length(valid_se)
+    total_obs      <- sum(!is.na(responses))
+    
+    median_se <- if (n_dil_used == 0L) NA_real_ else median(valid_se)
+    
     data.frame(
       grouping,
-      overall_se = se_result$overall_se,
-      pooling_strategy = se_result$pooling_strategy,
-      n_plates = se_result$n_plates,
-      n_dilutions_used = se_result$n_dilutions_used,
-      total_df = se_result$total_df,
-      stringsAsFactors = FALSE
+      median_se       = median_se,
+      n_dilutions_used = n_dil_used,
+      n_plates        = n_plates,
+      total_obs       = total_obs,
+      stringsAsFactors = FALSE,
+      row.names        = NULL
     )
   })
-
-  # Combine results
+  
+  # ------------------------------------------------------------------
+  # 4. Combine and return
+  # ------------------------------------------------------------------
   se_table <- do.call(rbind, se_results)
   rownames(se_table) <- NULL
-
+  
   if (verbose) {
-    message(sprintf("SE table computed: %d groupings, %d with valid SE",
-                    nrow(se_table), sum(!is.na(se_table$overall_se))))
+    n_valid <- sum(!is.na(se_table$median_se))
+    message(sprintf(
+      "Done. %d / %d groupings have a valid median SE.",
+      n_valid, nrow(se_table)
+    ))
   }
-
+  
   return(se_table)
 }
+
+
+# ----------------------------------------------------------------------
+# Internal helper: return an all-NA row for a grouping
+# ----------------------------------------------------------------------
+.empty_se_row <- function(grouping, grouping_cols) {
+  data.frame(
+    grouping,
+    median_se        = NA_real_,
+    n_dilutions_used = 0L,
+    n_plates         = 0L,
+    total_obs        = 0L,
+    stringsAsFactors = FALSE,
+    row.names        = NULL
+  )
+}
+
 
 
 #' Look Up SE for a Specific Antigen from the SE Table
@@ -2123,7 +2961,7 @@ lookup_antigen_se <- function(se_table,
                               study_accession,
                               experiment_accession,
                               source,
-                              antigen) {
+                              antigen, feature) {
 
   if (is.null(se_table) || nrow(se_table) == 0) {
     return(NA_real_)
@@ -2133,180 +2971,18 @@ lookup_antigen_se <- function(se_table,
     se_table$study_accession == study_accession &
       se_table$experiment_accession == experiment_accession &
       se_table$source == source &
-      se_table$antigen == antigen
+      se_table$antigen == antigen & 
+      se_table$feature == feature
   )
 
   if (length(idx) == 0) {
     return(NA_real_)
   }
 
-  return(se_table$overall_se[idx[1]])
+  # return(se_table$overall_se[idx[1]])
+  return(se_table$median_se[idx[1]])
 }
 
-
-#' Replace ∞ with the largest finite value and rescale to [1, max_finite]
-#'
-#' @param x A numeric vector (e.g. a data‑frame column).  `NA`s are kept as `NA`.
-#'
-#' @return A numeric vector of the same length as `x`.  All `Inf` values are
-#'   replaced by the largest finite value that occurs in `x`.  Afterwards the
-#'   whole vector is linearly rescaled so that the smallest (non‑NA) value becomes
-#'   1 and the largest (the former `max_finite`) becomes `max_finite`.
-#'
-#' @details
-#'   * Only positive `Inf` is recoded – any `-Inf` is left untouched (or you can
-#'     change the code if you want a different behaviour).
-#'   * If **no** finite value is present the function returns a vector of `NA`s
-#'     and throws a warning.
-#'   * When all (finite) values are identical the function returns a vector of
-#'     `1`s (the range collapses to a single point).
-#'   * `NA` and `NaN` are preserved, they are **not** used when computing the
-#'     max/min.
-#'
-#' @examples
-#' # Example 1 – a simple column with a few infinities
-#' vec <- c(2, 5, Inf, 8, 3, Inf, NA)
-#' condition_inf_rescale(vec)
-#'
-#' # Example 2 – a column that already has a range 1 … 10
-#' vec2 <- c(1, 4, 7, 10)
-#' condition_inf_rescale(vec2)   # unchanged (apart from possible rounding)
-#'
-#' # Example 3 – all values are Inf  (returns NAs)
-#' condition_inf_rescale(rep(Inf, 5))
-#'
-#' @export
-condition_inf_rescale <- function(x) {
-  ## 0. Input checks
-  if (!is.numeric(x)) {
-    stop("`x` must be a numeric vector (or a numeric data‑frame column).")
-  }
-  ## 1. Identify finite (i.e. non‑NA, non‑NaN, non‑Inf) values
-  finite_idx <- is.finite(x)               # TRUE for numbers that are not NA/NaN/Inf
-  if (!any(finite_idx)) {
-    warning("No finite values found – returning a vector of NA.")
-    return(rep(NA_real_, length(x)))
-  }
-  ## 2. Replace positive Inf with the largest finite value
-  max_finite <- max(x[finite_idx], na.rm = TRUE)   # the target for Inf
-  inf_pos_idx <- is.infinite(x) & (x > 0)          # only +Inf
-  if (any(inf_pos_idx)) {
-    x[inf_pos_idx] <- max_finite
-  }
-  ## 3. Rescale to the interval [1, max_finite]
-  # Re‑compute the finite range after the replacement (NAs are ignored)
-  finite_after <- is.finite(x)
-  min_val <- min(x[finite_after], na.rm = TRUE)
-  max_val <- max(x[finite_after], na.rm = TRUE)   # should equal max_finite
-  # If the range collapses to a single point, just return 1 for every non‑NA
-  if (abs(max_val - min_val) < .Machine$double.eps) {
-    out <- rep(1, length(x))
-    out[!finite_after] <- NA_real_   # keep original NAs/NaNs
-    return(out)
-  }
-  # Linear rescaling:  (x - min) / (max - min)  ->  [0,1]
-  # then stretch to [1, max_finite]
-  scale_factor <- (max_finite - 1) / (max_val - min_val)
-  out <- (x - min_val) * scale_factor + 1
-  # Preserve original NA/NaN positions
-  out[!finite_after] <- NA_real_
-  return(list(out=out, scale_factor=scale_factor, min_val=min_val))
-}
-
-scale_pcov <- function(data, pcov_at_inflect, pcov_at_loq) {
-  # Scale pcov from [pcov_at_inflect, pcov_at_loq] to [pcov_at_inflect, 50]
-  data$pcov_scaled <- pcov_at_inflect +
-    (data$pcov - pcov_at_inflect) * (50 - pcov_at_inflect) / (pcov_at_loq - pcov_at_inflect)
-
-  # data$pcov_scaled <- 1 +
-  #   (data$pcov - 1) * (70 - 1) / (pcov_at_loq - pcov_at_inflect)
-
-  return(data)
-}
-
-scale_1_100 <- function(x, pcov_at_inflect, pcov_at_loq) {
-  # Calculate the minimum and maximum of the input vector, ignoring NAs
-  # min_val <- min(x, na.rm = TRUE)
-  # max_val <- max(x, na.rm = TRUE)
-
-  min_val <- pcov_at_inflect
-  max_val <- pcov_at_loq
-
-  # Apply the scaling formula to range from 1 to 100
-  scaled_x <- ((x - min_val) / (max_val - min_val)) * 99 + 1
-  # Apply the scaling formula to range from 1 to 30
-  scaled_x <- ((x - min_val) / (max_val - min_val)) * 29 + 1
-
-  return(scaled_x)
-}
-
-pcov_calc <- function(data,
-                      dydx_inflect = dydx_inflect,
-                      lloq,
-                      uloq,
-                      se_var,
-                      x_var,
-                      is.samples=TRUE,
-                      scale_factor = NULL,
-                      pcov_at_loq = NULL,
-                      pcov_at_inflect = NULL,
-                      min_val = NULL,
-                      verbose = TRUE) {
-  if (nrow(data) == 0) {
-    stop("Both 'x' and 'se' must be numeric.")
-  }
-  data$pcov <- rep(NA_real_, nrow(data))
-  x_cond <- list()
-  if (is.samples) {
-    x_cond$scale_factor <- scale_factor
-    x_cond$min_val <- min_val
-  } else {
-    x_cond <- condition_inf_rescale(data[!is.na(as.numeric(data[[x_var]])) & !is.na(as.numeric(data[[se_var]])), ][[x_var]])
-  }
-  x_cond$out <- data[[x_var]]
-  data[!is.na(as.numeric(data[[x_var]])) & !is.na(as.numeric(data[[se_var]])), ]$pcov <-
-    data[!is.na(as.numeric(data[[x_var]])) & !is.na(as.numeric(data[[se_var]])), ][[se_var]] ^ 2
-
-  # Calculate pcov_at_loq if not provided
-
-  if (is.null(pcov_at_loq)) {
-    if (!is.na(lloq)) {
-      pcov_subset_lloq <- data[data[[x_var]] >= lloq & data[[x_var]] < dydx_inflect, ]$pcov
-      pcov_at_lloq <- if (length(pcov_subset_lloq) > 0 && !all(is.na(pcov_subset_lloq))) max(pcov_subset_lloq, na.rm = TRUE) else 50
-    } else {
-      pcov_at_lloq <- 50
-    }
-    if (!is.na(uloq)) {
-      pcov_subset_uloq <- data[data[[x_var]] <= uloq & data[[x_var]] > dydx_inflect, ]$pcov
-      pcov_at_uloq <- if (length(pcov_subset_uloq) > 0 && !all(is.na(pcov_subset_uloq))) max(pcov_subset_uloq, na.rm = TRUE) else 50
-    } else {
-      pcov_at_uloq <- 50
-    }
-    pcov_at_loq <- max(pcov_at_lloq, pcov_at_uloq)
-  }
-
-  # Calculate pcov_at_inflect if not provided
-  if (is.null(pcov_at_inflect)) {
-    pcov_at_inflect <- min(data$pcov, na.rm = TRUE)
-  }
-
-  # Handle edge case where pcov_at_loq equals pcov_at_inflect (would cause division by zero)
-  if (pcov_at_loq == pcov_at_inflect) {
-    pcov_at_loq <- pcov_at_inflect + 1  # Avoid division by zero
-  }
-
-  # Scale pcov values and cap at 100
-  data$pcov <- scale_1_100(data$pcov, pcov_at_inflect = pcov_at_inflect, pcov_at_loq = pcov_at_loq)
-  # scaled_data <- scale_pcov(data, pcov_at_inflect = pcov_at_inflect, pcov_at_loq = pcov_at_loq)
-  # data$pcov <- scaled_data$pcov_scaled
-  # data$pcov <- ifelse(data$pcov > 100, 100, data$pcov)
-
-  return(list(data=data,
-              scale_factor=1,
-              min_val=x_cond$min_val,
-              pcov_at_loq = pcov_at_loq,
-              pcov_at_inflect = pcov_at_inflect))
-}
 
 
 
@@ -2315,10 +2991,12 @@ predict_and_propagate_error <- function(best_fit,
                                         response_var,
                                         antigen_plate,
                                         study_params,
-                                        se_std_response = NULL,
+                                        se_std_response,
+                                        cv_x_max = 150,
                                         verbose = TRUE) {
+
   if (study_params$is_log_response) {
-    if(is.null(antigen_plate$fixed_a_result)) {
+    if (is.null(antigen_plate$fixed_a_result)) {
       fixed_a_result <- NULL
     } else {
       .eps <- 0.000005
@@ -2327,156 +3005,221 @@ predict_and_propagate_error <- function(best_fit,
     log_plate_samples <- log10(antigen_plate$plate_samples[[response_var]])
   }
 
-  # keep the raw_assay_response
-  raw_assay_response <- antigen_plate$plate_samples[[response_var]]
+  # ── Compute overall_se_value ────────────────────────────────────────────
+  # se_std_response is on the RAW response scale (e.g. MFI units).
+  # When is_log_response is TRUE the model and all y values are on the
+  # log10 scale.  The delta method needs se_y on the SAME scale as y.
+  #
+  # Conversion via the log10 derivative:
+  #   if Y = log10(Z)  then  dY = dZ / (Z * ln(10))
+  #   => se_log10 = se_mfi / (mean_mfi * ln(10))
+  #
+  # We use the geometric mean of the raw responses as the reference MFI
+  # for the conversion, which is appropriate for a log-transformed variable.
 
+  if (isTRUE(is.finite(se_std_response)) && se_std_response > 0) {
 
-  pred_se <- best_fit$best_pred
-  if (verbose) {
-    if (nrow(pred_se) == 0) {
-      message("pred_se has 0 rows")
+    if (study_params$is_log_response) {
+      # Estimate mean raw MFI from standards (geometric mean on raw scale)
+      raw_standards <- antigen_plate$plate_standard[[response_var]]
+      raw_standards <- raw_standards[is.finite(raw_standards) & raw_standards > 0]
+
+      if (length(raw_standards) > 0) {
+        ref_mfi <- exp(mean(log(raw_standards)))   # geometric mean
+      } else {
+        # Fallback: back-transform from the log10 mean of plate samples
+        raw_plate <- antigen_plate$plate_samples[[response_var]]
+        raw_plate  <- raw_plate[is.finite(raw_plate) & raw_plate > 0]
+        ref_mfi    <- if (length(raw_plate) > 0) exp(mean(log(raw_plate))) else 1
+      }
+
+      # Convert SE from raw MFI units to log10 units
+      overall_se_value <- sqrt(se_std_response / (ref_mfi * log(10) * 100))
+
+      if (verbose) {
+        message(sprintf(
+          "[predict_and_propagate] SE conversion: se_mfi=%.4f, ref_mfi=%.4f -> se_log10=%.6f",
+          se_std_response, ref_mfi, overall_se_value
+        ))
+      }
+
     } else {
-      message(paste("pred_se has", nrow(pred_se), "row(s)"))
+      # Response is NOT log-transformed — use se_std_response directly
+      overall_se_value <- sqrt(se_std_response / 100)
+    }
+
+  } else {
+    # se_std_response is NA / non-finite / zero — use a small fallback
+    # based on the spread of the log-scale standards if available
+    if (study_params$is_log_response) {
+      log_stds <- log10(antigen_plate$plate_standard[[response_var]])
+      log_stds <- log_stds[is.finite(log_stds)]
+      overall_se_value <- if (length(log_stds) > 1) sd(log_stds) * 0.01 else 0.01
+    } else {
+      overall_se_value <- 0
+    }
+
+    if (verbose) {
+      message(sprintf(
+        "[predict_and_propagate] se_std_response not usable (%.4f); using fallback se=%.6f",
+        if (is.finite(se_std_response)) se_std_response else NA_real_,
+        overall_se_value
+      ))
     }
   }
 
-  z    <- qnorm(0.975)
-  max_conc_standard <- ifelse(study_params$is_log_independent,log10(antigen_plate$antigen_settings$standard_curve_concentration),antigen_plate$antigen_settings$standard_curve_concentration)
-
-  # Ensure scalar numeric values from best_glance
-  dydx_inflect <- as.numeric(best_fit$best_glance$dydx_inflect)[1]
-  lloq <- as.numeric(best_fit$best_glance$lloq)[1]
-  uloq <- as.numeric(best_fit$best_glance$uloq)[1]
-
-  # se_std_response <- assay_se(
-  #   data = loaded_data$standards,
-  #   dilution_col = "dilution",
-  #   response_col = response_var,
-  #   plate_col = "plate",
-  #   method = "pooled_within"
-  # )
-
-  # Use provided SE or default to 0 (parameter uncertainty only)
-  overall_se_value <- if (!is.null(se_std_response) && !is.na(se_std_response)) {
-    as.numeric(se_std_response)
-  } else {
-    0
+  # ── Validate that overall_se_value is now on the right scale ────────────
+  # On log10 scale, a realistic se_y is << 1 (typically 0.01 – 0.15).
+  # Warn loudly if it still looks like raw MFI units.
+  if (study_params$is_log_response && overall_se_value > 1) {
+    warning(sprintf(
+      "[predict_and_propagate] overall_se_value=%.4f is > 1 on the log10 scale. ",
+      overall_se_value,
+      "This will inflate se_x. Check that se_std_response is in raw response units."
+    ))
   }
 
-  if (verbose && overall_se_value == 0) {
-    message("Warning: se_std_response is 0 or NA. Only parameter uncertainty will be propagated.")
+  lloq  <- if (!is.null(best_fit$best_glance$lloq)) as.numeric(best_fit$best_glance$lloq)[1] else NA_real_
+  uloq  <- if (!is.null(best_fit$best_glance$uloq)) as.numeric(best_fit$best_glance$uloq)[1] else NA_real_
+
+  # ── Standards prediction curve ──────────────────────────────────────────
+  pred_se <- best_fit$best_pred
+
+  if (verbose) {
+    message(paste("pred_se has", nrow(pred_se), "row(s)"))
   }
 
-  # For standards prediction curve
+  z <- qnorm(0.975)
+  max_conc_standard <- ifelse(
+    study_params$is_log_independent,
+    log10(antigen_plate$antigen_settings$standard_curve_concentration),
+    antigen_plate$antigen_settings$standard_curve_concentration
+  )
+
   pred_se$overall_se <- overall_se_value
 
-  pred_se <- propagate_error_dataframe(pred_df = pred_se,
-                                       fit        = best_fit$best_fit,
-                                       model      = best_fit$best_model_name,
-                                       y_col      = "yhat",
-                                       se_col     = "overall_se",
-                                       fixed_a = fixed_a_result
+  diagnose_propagation_inputs(
+    fit     = best_fit$best_fit,
+    model   = best_fit$best_model_name,
+    fixed_a = fixed_a_result,
+    y_test  = NULL
   )
 
-  pred_se$predicted_concentration <- ifelse(!is.infinite(pred_se$predicted_concentration), pred_se$predicted_concentration,
-                                            ifelse(pred_se$predicted_concentration > 0, max_conc_standard, 0)
+  pred_se <- propagate_error_dataframe(
+    pred_df  = pred_se,
+    fit      = best_fit$best_fit,
+    model    = best_fit$best_model_name,
+    y_col    = "yhat",
+    se_col   = "overall_se",
+    fixed_a  = fixed_a_result,
+    cv_x_max = cv_x_max,
+    is_log_x = study_params$is_log_independent   # TRUE when x is log10(conc)
   )
 
-  pcov_list <- pcov_calc(data = pred_se,
-                         dydx_inflect = dydx_inflect,
-                         lloq = lloq,
-                         uloq = uloq,
-                         se_var = "se_x",
-                         x_var = "predicted_concentration",
-                         is.samples = FALSE)
+  diagnose_cv_x(
+    df       = pred_se,
+    label    = "standards pred_se",
+    lloq     = lloq,
+    uloq     = uloq,
+    cv_x_max = cv_x_max,
+    verbose  = verbose
+  )
 
-  pcov_data <- pcov_list$data[, c("x","pcov")]
-  pred_se <- merge(pred_se, pcov_data, by = "x", all.x = TRUE)
-  pred_se$study_accession <- unique(best_fit$best_data$study_accession)
-  pred_se$experiment_accession <- unique(best_fit$best_data$experiment_accession)
-  pred_se$nominal_sample_dilution <- unique(best_fit$best_data$nominal_sample_dilution)
-  pred_se$plateid <- unique(best_fit$best_data$plateid)
-  pred_se$plate <- unique(best_fit$best_data$plate)
-  pred_se$antigen <- unique(best_fit$best_data$antigen)
-  pred_se$source <- unique(best_fit$best_data$source)
+  pred_se$predicted_concentration <- ifelse(
+    !is.infinite(pred_se$predicted_concentration),
+    pred_se$predicted_concentration,
+    ifelse(pred_se$predicted_concentration > 0, max_conc_standard, 0)
+  )
+
+  pred_se$pcov                     <- pred_se$cv_x
+  pred_se$study_accession          <- unique(best_fit$best_data$study_accession)
+  pred_se$experiment_accession     <- unique(best_fit$best_data$experiment_accession)
+  pred_se$nominal_sample_dilution  <- unique(best_fit$best_data$nominal_sample_dilution)
+  pred_se$plateid                  <- unique(best_fit$best_data$plateid)
+  pred_se$plate                    <- unique(best_fit$best_data$plate)
+  pred_se$antigen                  <- unique(best_fit$best_data$antigen)
+  pred_se$source                   <- unique(best_fit$best_data$source)
+
+  # pred_se_v <<- pred_se
   best_fit$best_pred <- pred_se
 
-  if (verbose) {
-    print(head(antigen_plate$plate_samples))
-  }
+  # ── Sample propagation ──────────────────────────────────────────────────
+  raw_assay_response <- antigen_plate$plate_samples[[response_var]]
 
+  if (verbose) print(head(antigen_plate$plate_samples))
 
-  sample_se <- data.frame(y_new = log_plate_samples,
-                          raw_assay_response = raw_assay_response,
-                          dilution = antigen_plate$plate_samples$dilution,
-                          well = antigen_plate$plate_samples$well
-                          )
-  if (verbose) {
-    if (nrow(sample_se) == 0) {
-      message("sample_se has 0 rows")
-    } else {
-      message(paste("sample_se has", nrow(sample_se), "row(s)"))
-    }
-  }
-
-  sample_se$overall_se <- overall_se_value
-
-  if (verbose) {
-    message("after assigning sample_se$overall_se")
-  }
-
-  sample_se[[response_var]] <- sample_se$y_new
-  sample_se <- propagate_error_dataframe(pred_df = sample_se,
-                                         fit        = best_fit$best_fit,
-                                         model      = best_fit$best_model_name,
-                                         y_col      = response_var,
-                                         se_col     = "overall_se",
-                                         fixed_a =  fixed_a_result
+  sample_se <- data.frame(
+    y_new              = log_plate_samples,
+    raw_assay_response = raw_assay_response,
+    dilution           = antigen_plate$plate_samples$dilution,
+    well               = antigen_plate$plate_samples$well
   )
-  # predicted coefficient of variation: 100 * se_x / predicted concentration
-  # sample_se$pcov <- 50 * (10^(z * sample_se$se_x) - 10^(-z * sample_se$se_x))
-  # sample_se$pcov <- 100 * log(10) * sample_se$se_x
 
-  if(study_params$is_log_independent) {
-    sample_se$final_predicted_concentration <- 10^sample_se$predicted_concentration * sample_se$dilution
-  } else {
-    sample_se$final_predicted_concentration <- sample_se$predicted_concentration * sample_se$dilution
+  if (verbose) {
+    message(paste("sample_se has", nrow(sample_se), "row(s)"))
   }
+
+  sample_se$overall_se      <- overall_se_value   # already on log10 scale
+  sample_se[[response_var]] <- sample_se$y_new
+
+  diagnose_propagation_inputs(
+    fit     = best_fit$best_fit,
+    model   = best_fit$best_model_name,
+    fixed_a = fixed_a_result,
+    y_test  = NULL
+  )
+
+  sample_se <- propagate_error_dataframe(
+    pred_df  = sample_se,
+    fit      = best_fit$best_fit,
+    model    = best_fit$best_model_name,
+    y_col    = response_var,
+    se_col   = "overall_se",
+    fixed_a  = fixed_a_result,
+    cv_x_max = cv_x_max,
+    is_log_x = study_params$is_log_independent
+  )
+
+  diagnose_cv_x(
+    df       = sample_se,
+    label    = "samples sample_se",
+    lloq     = lloq,
+    uloq     = uloq,
+    cv_x_max = cv_x_max,
+    verbose  = verbose
+  )
+
+  if (study_params$is_log_independent) {
+    sample_se$final_predicted_concentration <-
+      10^sample_se$predicted_concentration * sample_se$dilution
+  } else {
+    sample_se$final_predicted_concentration <-
+      sample_se$predicted_concentration * sample_se$dilution
+  }
+
   sample_se <- dplyr::inner_join(
-    antigen_plate$plate_samples[, !(names(antigen_plate$plate_samples) %in% c("mfi", "dilution"))],
+    antigen_plate$plate_samples[
+      , !(names(antigen_plate$plate_samples) %in% c("mfi", "dilution"))
+    ],
     sample_se,
     by = "well"
   )
 
-  pcov_sample_list <- pcov_calc(data = sample_se,
-                                dydx_inflect = dydx_inflect,
-                                lloq = lloq,
-                                uloq = uloq,
-                                se_var = "se_x",
-                                x_var = "predicted_concentration",
-                                is.samples = TRUE,
-                                scale_factor=pcov_list$scale_factor,
-                                pcov_at_loq = pcov_list$pcov_at_loq,
-                                pcov_at_inflect = pcov_list$pcov_at_inflect,
-                                min_val=pcov_list$min_val)
-
-  pcov_sample_data <- pcov_sample_list$data[, c("predicted_concentration","pcov")]
-  names(pcov_sample_data)[which(names(pcov_sample_data) == "predicted_concentration")] <- "x"
-  sample_se <- merge(sample_se, pcov_sample_data, by.x = "predicted_concentration", by.y = "x", all.x = TRUE)
-  sample_se$source <- unique(best_fit$best_data$source)
+  sample_se$pcov    <- sample_se$cv_x
+  sample_se$source  <- unique(best_fit$best_data$source)
   sample_se$feature <- unique(best_fit$best_data$feature)
-  # remove plate_id and y_new; rename se_x to se_concentration for later use.
+
+  # Remove intermediate columns, rename se_x
   sample_se <- sample_se[, !names(sample_se) %in% c("y_new")]
   names(sample_se)[names(sample_se) == "se_x"] <- "se_concentration"
-  # add nominal sample dilution
-  sample_se$nominal_sample_dilution <- unique(best_fit$best_data$nominal_sample_dilution)
-  # rename before returning the best fit
-  names(sample_se)[names(sample_se) == "predicted_concentration"] <- "raw_predicted_concentration"
+
+  names(sample_se)[names(sample_se) == "predicted_concentration"] <-
+    "raw_predicted_concentration"
+
+  # sample_se_v  <<- sample_se
   best_fit$sample_se <- sample_se
 
-  if (verbose) {
-    message("Finished predict_and_propagate_error")
-  }
+  if (verbose) message("Finished predict_and_propagate_error")
 
   return(best_fit)
 }
@@ -2502,6 +3245,61 @@ test_se_at_inflection <- function(best_fit) {
        xlab = "Concentration", ylab = "SE(x)")
   abline(v = inflect_x, col = "red", lty = 2)
   points(pred$x[closest_idx], se_at_inflect, col = "red", pch = 19)
+}
+
+test_cv_x_at_inflection <- function(best_fit, verbose = TRUE) {
+  pred       <- best_fit$best_pred
+  inflect_x  <- best_fit$best_glance$inflect_x
+
+  if (!"cv_x" %in% names(pred)) {
+    if (verbose) message("[test_cv_x] cv_x not found in best_pred.")
+    return(invisible(NULL))
+  }
+
+  finite_mask  <- is.finite(pred$cv_x) & is.finite(pred$predicted_concentration)
+  cv_f  <- pred$cv_x[finite_mask]
+  xc_f  <- pred$predicted_concentration[finite_mask]
+
+  min_cv      <- min(cv_f, na.rm = TRUE)
+  min_idx     <- which.min(cv_f)
+  x_at_min_cv <- xc_f[min_idx]
+
+  closest_idx    <- which.min(abs(xc_f - inflect_x))
+  cv_at_inflect  <- cv_f[closest_idx]
+
+  ratio <- cv_at_inflect / min_cv
+
+  if (verbose) {
+    cat("\n--- cv_x inflection test ---\n")
+    cat("Inflection point (x)        :", inflect_x, "\n")
+    cat("cv_x at inflection point    :", cv_at_inflect, "\n")
+    cat("Minimum cv_x in curve       :", min_cv, "\n")
+    cat("x at minimum cv_x           :", x_at_min_cv, "\n")
+    cat("Ratio cv_at_inflect/min_cv  :", ratio,
+        " (expected ~1.0 if inflection == minimum cv)\n")
+
+    # Visual check
+    plot(xc_f, cv_f, type = "l",
+         xlab = "Predicted Concentration (log10)", ylab = "CV_x (%)",
+         main = "cv_x across concentration range")
+    abline(h  = 20,         col = "orange", lty = 2)
+    abline(h  = 125,        col = "red",    lty = 2)
+    abline(v  = inflect_x,  col = "blue",   lty = 2)
+    points(x_at_min_cv, min_cv, col = "darkgreen", pch = 19, cex = 1.5)
+    points(xc_f[closest_idx], cv_at_inflect, col = "blue", pch = 19, cex = 1.5)
+    legend("topright",
+           legend = c("cv_x = 20 threshold", "cv_x = 125 ceiling",
+                      "Inflection point", "Min cv_x"),
+           col    = c("orange", "red", "blue", "darkgreen"),
+           lty    = c(2, 2, 2, NA), pch = c(NA, NA, NA, 19))
+  }
+
+  invisible(list(
+    cv_at_inflect  = cv_at_inflect,
+    min_cv         = min_cv,
+    x_at_min_cv    = x_at_min_cv,
+    ratio          = ratio
+  ))
 }
 
 gate_samples <- function(best_fit,

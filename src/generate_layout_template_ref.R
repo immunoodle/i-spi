@@ -350,7 +350,9 @@ generate_layout_template <- function(all_plates,
                                         description_status = NULL,
                                         delimiter = NULL,
                                         element_order = NULL,
-                                        bcs_element_order = NULL) {
+                                        bcs_element_order = NULL,
+                                        assay_response_long_override = NULL,
+                                        feature_value = NULL) {
 
   wb <- createWorkbook()
   bold_style <- createStyle(textDecoration = "bold")
@@ -366,6 +368,15 @@ generate_layout_template <- function(all_plates,
     element_order = element_order,
     bcs_element_order = bcs_element_order
   )
+
+  # Resolve feature value: explicit parameter > input$feature_value > NA
+  input_feature_value <- if (!is.null(feature_value) && nzchar(feature_value)) {
+    feature_value
+  } else if (exists("input") && !is.null(input$feature_value)) {
+    input$feature_value
+  } else {
+    NA_character_
+  }
 
   description_status <- config$description_status
   description_delimiter <- config$delimiter
@@ -411,7 +422,8 @@ generate_layout_template <- function(all_plates,
     description_status = description_status,
     delimiter = description_delimiter,
     element_order = XElementOrder,
-    bcs_element_order = BCSElementOrder
+    bcs_element_order = BCSElementOrder,
+    feature_value = input_feature_value
   )
 
   # ==========================================================================
@@ -454,16 +466,41 @@ generate_layout_template <- function(all_plates,
   plate_well_map <- reorder_plates_map_columns(plate_well_map)
 
   # ==========================================================================
-  # STEP 7.5: Build assay_response_long sheet (NEW)
+  # STEP 7.5: Build assay_response_long sheet
   # ==========================================================================
-  assay_response_long <- create_assay_response_long(
-    all_plates = all_plates,
-    plate_id = plate_id,
-    antigen_list = antigen_df,
-    project_id = project_id,
-    study_name = study_accession,
-    experiment_name = experiment_accession
-  )
+  if (!is.null(assay_response_long_override)) {
+    # xPONENT pathway: use pre-built long-format data (preserves bead counts)
+    cat("\n  → Using pre-built assay_response_long (xPONENT pathway)\n")
+    assay_response_long <- assay_response_long_override
+
+    # Add context columns
+    assay_response_long$project_id       <- project_id
+    assay_response_long$study_name       <- study_accession
+    assay_response_long$experiment_name  <- experiment_accession
+
+    # Override feature with user-supplied value (replaces hardcoded "Net_MFI")
+    assay_response_long$feature          <- input_feature_value
+
+    # Select and order final columns
+    final_cols <- c("project_id", "study_name", "experiment_name",
+                    "plateid", "well", "antigen", "feature",
+                    "assay_response", "assay_bead_count")
+    available_final <- intersect(final_cols, names(assay_response_long))
+    assay_response_long <- assay_response_long[, available_final, drop = FALSE]
+
+    cat("  → assay_response_long:", nrow(assay_response_long), "rows,",
+        ncol(assay_response_long), "cols\n")
+  } else {
+    # Raw File pathway: derive from wide-format plate data
+    assay_response_long <- create_assay_response_long(
+      all_plates = all_plates,
+      plate_id = plate_id,
+      antigen_list = antigen_df,
+      project_id = project_id,
+      study_name = study_accession,
+      experiment_name = experiment_accession
+    )
+  }
 
   # ==========================================================================
   # STEP 8: Write workbook
@@ -691,7 +728,8 @@ build_antigen_df <- function(all_plates, study_accession, experiment_accession, 
 #'
 build_plates_map <- function(all_plates, plate_id, header_list, study_accession,
                              experiment_accession, n_wells, project_id,
-                             description_status, delimiter, element_order, bcs_element_order) {
+                             description_status, delimiter, element_order, bcs_element_order,
+                             feature_value = NA_character_) {
 
   # Use plateid (unique run identifier) for expansion, NOT plate_number
   # This ensures each unique plate run gets its own set of wells
@@ -702,8 +740,6 @@ build_plates_map <- function(all_plates, plate_id, header_list, study_accession,
   for (pid in plateids) {
     cat("    - ", pid, "\n", sep="")
   }
-
-  input_feature_value <- if (exists("input") && !is.null(input$feature_value)) input$feature_value else NA_character_
 
   well_list <- generate_well_list(n_wells)
 
@@ -808,7 +844,7 @@ build_plates_map <- function(all_plates, plate_id, header_list, study_accession,
     TRUE ~ ""
   )
 
-  plate_well_map$feature <- input_feature_value
+  plate_well_map$feature <- feature_value
   plate_well_map$project_id <- project_id
 
   # REFACTORED: Apply defaults using centralized function

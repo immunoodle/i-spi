@@ -147,7 +147,6 @@ pull_data <- function(study_accession, experiment_accession, project_id, conn = 
                                                                                                                         "plate", "stype", "nominal_sample_dilution",
                                                                                                                         "sampleid","well","dilution","antigen","mfi",
                                                                                                                         "assay_response_variable", "assay_independent_variable")]
-
  standards$plate_nom <- paste(standards$plate, standards$nominal_sample_dilution, sep = "-")
 
   blanks <- inner_join(fetch_db_buffer(study_accession = study_accession,
