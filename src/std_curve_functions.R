@@ -1192,22 +1192,23 @@ fit_qc_glance <- function(best_fit,
     status                 = converged,
     crit                   = crit,
     coef_df,
-    qc_glance,             # includes LLOQ/ULOQ FDA2018 + Blank_mean/SD
-    dfresidual             = df_resid,
-    nobs                   = n_obs,
-    rsquare_fit            = r_squared,
-    aic                    = aic,
-    bic                    = bic,
-    loglik                 = logLik_val,
-    mse                    = mse,
-    cv                     = cv,
-    source                 = unique(best_data$source),
-    bkg_method             = antigen_fit_options$blank_option,
-    is_log_response        = antigen_fit_options$is_log_response,
-    is_log_x               = antigen_fit_options$is_log_concentration,
-    apply_prozone          = antigen_fit_options$apply_prozone,
-    formula                = model_formula
-  )
+    qc_glance, # includes LLOQ/ULOQ FDA2018 + Blank_mean/SD
+    dfresidual = df_resid,
+    nobs = n_obs,
+    rsquare_fit = r_squared,
+    aic = aic,
+    bic = bic,
+    loglik = logLik_val,
+    mse = mse,
+    cv = cv,
+    source = unique(best_data$source),
+    bkg_method =  antigen_fit_options$blank_option, #blank_option,
+    is_log_response = antigen_fit_options$is_log_response,
+    is_log_x = antigen_fit_options$is_log_concentration,
+    apply_prozone  = antigen_fit_options$apply_prozone,
+    formula = model_formula,
+    last_concentration_calc_method = "interpolated"
+    )
 
   best_fit$best_glance <- glance_df
   return(best_fit)
@@ -2981,6 +2982,8 @@ lookup_antigen_se <- function(se_table,
   # return(se_table$overall_se[idx[1]])
   return(se_table$median_se[idx[1]])
 }
+
+
 
 
 ## The best fit must contain best_pred and antigen_plate containing plate_samples

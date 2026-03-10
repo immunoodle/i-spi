@@ -5,7 +5,7 @@ source("global.R", local = TRUE)
 
 # Set to 1 for local and do not push in prod
 # Sys.setenv(LOCAL_DEV = "1")
-# # # local_email_user <- "seamus.owen.stein@dartmouth.edu"
+# local_email_user <- "seamus.owen.stein@dartmouth.edu"
 # local_email_user <- "mscotzens@gmail.com"
 
 # Source authentication configuration (Step 1)
@@ -208,6 +208,7 @@ body <- dashboardBody(
         content: '';
         animation: dotPulse 1.5s steps(3, start) infinite;
       }
+      
     "))
   ),
 
@@ -819,18 +820,18 @@ server <- function(input, output, session) {
       mininum_dilution_count_boolean <- reactiveVal(NULL)
       luminex_features <- reactiveVal(c("Well", "Type", "Description", "Region", "Gate", "Total", "% Agg Beads", "Sampling Errors", "Rerun Status", "Device Error", "Plate ID", "Regions Selected", "RP1 Target", "Platform Heater Target", "Platform Temp (°C)", "Bead Map", "Bead Count", "Sample Size (µl)", "Sample Timeout (sec)", "Flow Rate (µl/min)", "Air Pressure (psi)", "Sheath Pressure (psi)", "Original DD Gates", "Adjusted DD Gates", "RP1 Gates", "User", "Access Level", "Acquisition Time", "acquisition_time", "Reader Serial Number", "Platform Serial Number", "Software Version", "LXR Library", "Reader Firmware", "Platform Firmware", "DSP Version", "Board Temp (°C)", "DD Temp (°C)", "CL1 Temp (°C)", "CL2 Temp (°C)", "DD APD (Volts)", "CL1 APD (Volts)", "CL2 APD (Volts)", "High Voltage (Volts)", "RP1 PMT (Volts)", "DD Gain", "CL1 Gain", "CL2 Gain", "RP1 Gain"))
 
-       std_curve_data_model_fit <- reactiveVal()
+      std_curve_data_model_fit <- reactiveVal()
       sample_data_model_fit <- reactiveVal()
       buffer_data_model_fit <- reactiveVal()
       # aggrigate_mfi_dilution <- reactiveVal(TRUE)
       # lower_threshold_rv <- reactiveVal(35)
       # upper_threshold_rv <- reactiveVal(50)
       # failed_well_criteria <- reactiveVal("lower")
-       background_control_rv <- reactiveVal("ignored")
-       reference_arm_rv <- reactiveVal()
-       reference_arm <- reactiveVal(NULL)
+      background_control_rv <- reactiveVal("ignored")
+      reference_arm_rv <- reactiveVal()
+      reference_arm <- reactiveVal(NULL)
 
-       dilution_analysis_params_rv <- reactiveVal(NULL)
+      dilution_analysis_params_rv <- reactiveVal(NULL)
       last_saved_dilution_params <- reactiveVal(NULL)
       margin_table_reactive <- reactiveVal(NULL)
       da_filters_rv <- reactiveValues(selected = list(n_pass_dilutions = NULL, status = NULL, timeperiod = NULL))
@@ -957,6 +958,33 @@ server <- function(input, output, session) {
       #outliers
       outlierJobStatus <- reactiveVal(list())
       outlierUIRefresher <- reactiveVal(0)
+      concentrationJobStatus <- reactiveVal(list())
+      
+      concentrationUIRefresher <- reactiveVal(0)
+      is_batch_processing      <- reactiveVal(FALSE)
+      concentrationUIRefresher <- reactiveVal(0)
+      
+      # Persists the user's scope choice across concentration_calc_df() invalidations.
+      # Without this, renderUI re-creates the radio buttons on every refresh and snaps
+      # back to the first choice ("study") while a long calculation is running.
+      selected_scope <- reactiveVal("plate")
+      
+      
+      # Tracks which scope+method combinations are currently pending
+      # Format: list of named vectors, e.g. list(c(scope="study", method="mcmc_robust"))
+      mcmc_pending_scopes <- reactiveVal(list())
+      # Stores the current MCMC progress message for the badge tooltip
+      mcmc_progress_msg    <- reactiveVal(NULL)
+      # Path to the temp file used to pass progress from future → main session for MCMC
+      mcmc_progress_file   <- reactiveVal(NULL)
+      
+      # # ── Interpolated async state (mirrors MCMC pattern) ──────────────────────
+      #Tracks which scope+method combinations are currently pending for interpolation
+      interp_pending_scopes <- reactiveVal(list())
+      # Path to the temp file used to pass progress from future → main session for interpolation
+      interp_progress_file  <- reactiveVal(NULL)
+      # Stores the current interpolation progress message for the badge tooltip
+      interp_progress_msg   <- reactiveVal(NULL)
 
       ### Sourcing all the application logic files from `main`
       source("user.R", local = TRUE)
@@ -992,6 +1020,7 @@ server <- function(input, output, session) {
       source("model_functions.R", local = TRUE)
       # source("se_x_robust_fix.R", local = TRUE)
       source("plot_functions.R", local = TRUE)
+      source("bayes_concentration_functions.R", local = T)
       source("batch_fit_functions.R", local = TRUE)
 
       source("std_curver_summary_ui.R", local = TRUE)
