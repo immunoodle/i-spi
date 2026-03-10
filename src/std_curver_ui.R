@@ -211,7 +211,7 @@ observeEvent(
       dilution_col   = "dilution",
       plate_col      = "plate",
       grouping_cols  = c("study_accession", "experiment_accession", "source", "antigen"),
-      method         = "pooled_within",
+      #method         = "pooled_within",
       verbose        = TRUE
     )
     
@@ -1270,7 +1270,7 @@ lapply(c("study", "experiment", "plate"), function(s) {
     plate_col      = "plate",
     grouping_cols  = c("study_accession", "experiment_accession",
                        "source", "antigen"),
-    method         = "pooled_within",
+    #method         = "pooled_within",
     verbose        = FALSE
   )
   
