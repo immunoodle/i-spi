@@ -132,150 +132,330 @@ prep_plate_data_batch <- function(antigen_plate_list_res, study_params, verbose 
               antigen_plate_name_list = antigen_plate_name_list))
 }
 
+
 fit_experiment_plate_batch <- function(prepped_data_list_res,
-                                       antigen_plate_list_res,
-                                       model_names,
-                                       study_params,
-                                       se_antigen_table = NULL,
-                                       verbose = TRUE) {
-  #prepped_data_list_res_v <<- prepped_data_list_res
-  prepped_data_list <- prepped_data_list_res$prepped_data_list
-  formula_list <- prepped_data_list_res$formula_list
+                                      antigen_plate_list_res,
+                                      model_names,
+                                      study_params,
+                                      se_antigen_table = NULL,
+                                      prog_file        = NULL,   # <-- NEW: IPC progress file
+                                      verbose          = TRUE) {
+  
+  prepped_data_list  <- prepped_data_list_res$prepped_data_list
+  formula_list       <- prepped_data_list_res$formula_list
   antigen_plate_list <- antigen_plate_list_res$antigen_plate_list
-
+  
   plate_model_constraints_list <- list()
-  plate_start_lists <- list()
-  plate_robust_fit_list <- list()
-  fit_summary_list <- list()
-  fit_params_list <- list()
-  plot_data_list <- list()
-  candidate_best_fit_list <- list()
-  best_fit_list <- list()
-  for(prep_dat_name in names(prepped_data_list)) {
-    # showNotification(id = "batch_sc_fit_notify", div(class = "big-notification", paste("Processing", prep_dat_name)), duration = NULL)
-
-    # Split the name string into components
-    components <- strsplit(prep_dat_name, "\\|")[[1]]
-    field_names <- c("Study", "Experiment", "Plate - Sample Dilution(s)", "Dilution","Source", "Antigen")
-    # Create labeled lines
-    labeled_lines <- paste0("<b>", field_names, ":</b> ", components, collapse = "<br>")
-
-    showNotification(
-      id = "batch_sc_fit_notify",
-      div(
-        class = "big-notification",
-        HTML(paste0("<strong>Processing</strong><br><br>", labeled_lines))
+  plate_start_lists            <- list()
+  plate_robust_fit_list        <- list()
+  fit_summary_list             <- list()
+  fit_params_list              <- list()
+  plot_data_list               <- list()
+  candidate_best_fit_list      <- list()
+  best_fit_list                <- list()
+  
+  all_ids <- names(prepped_data_list)
+  n_total <- length(all_ids)
+  
+  if (!is.null(prog_file)) {
+    tryCatch(
+      writeLines(
+        paste0(
+          "Interpolated: starting batch fitting...\n",
+          "Total antigens to fit: ", n_total
+        ),
+        prog_file
       ),
-      duration = NULL
+      error = function(e) NULL
     )
-
+  }
+  
+  for (i in seq_along(all_ids)) {
+    prep_dat_name <- all_ids[[i]]
+    
+    # ── Write progress to file so main-session poller can display it ─────
+    # (replaces the old showNotification call which cannot run in a future)
+    components <- strsplit(prep_dat_name, "\\|")[[1]]
+    progress_text <- paste0(
+      "Interpolated: ", i, " / ", n_total, "\n",
+      "Study:      ", components[1],       "\n",
+      "Experiment: ", components[2],       "\n",
+      "Plate:      ", components[3],       "\n",
+      "Source:     ", components[4],       "\n",
+      "Antigen:    ", components[5]
+    )
+    if (!is.null(prog_file))
+      tryCatch(writeLines(progress_text, prog_file), error = function(e) NULL)
+    message(progress_text)
+    # ─────────────────────────────────────────────────────────────────────
+    
     if (verbose) print(prep_dat_name)
-    plate_prepped_data <- prepped_data_list[[prep_dat_name]]
-    formulas <- formula_list[[prep_dat_name]]
-    response_variable <- unique(antigen_plate_list[[prep_dat_name]]$plate_standard$assay_response_variable)
+    
+    plate_prepped_data   <- prepped_data_list[[prep_dat_name]]
+    formulas             <- formula_list[[prep_dat_name]]
+    response_variable    <- unique(antigen_plate_list[[prep_dat_name]]$plate_standard$assay_response_variable)
     independent_variable <- unique(antigen_plate_list[[prep_dat_name]]$plate_standard$assay_independent_variable)
-    fixed_a_result <- antigen_plate_list[[prep_dat_name]]$fixed_a_result
-    antigen_settings <- antigen_plate_list[[prep_dat_name]]$antigen_settings
+    fixed_a_result       <- antigen_plate_list[[prep_dat_name]]$fixed_a_result
+    antigen_settings     <- antigen_plate_list[[prep_dat_name]]$antigen_settings
+    
     if (verbose) print(independent_variable)
-    plate_model_constraints_list[[prep_dat_name]] <- obtain_model_constraints(data = plate_prepped_data$data,
-                                                                              formulas = formulas,
-                                                                              independent_variable = independent_variable,
-                                                                              response_variable = response_variable,
-                                                                              is_log_response = TRUE,
-                                                                              is_log_concentration = TRUE,
-                                                                              antigen_settings = antigen_settings,
-                                                                              max_response = max(plate_prepped_data$data[[response_variable]], na.rm = TRUE),
-                                                                              min_response = min(plate_prepped_data$data[[response_variable]], na.rm = TRUE),
-                                                                              verbose = verbose)
-
-
-    plate_start_lists[[prep_dat_name]] <- make_start_lists(model_constraints = plate_model_constraints_list[[prep_dat_name]],
-                                                           frac_generate = 0.8,
-                                                           quants = c(low = 0.2, mid = 0.5, high = 0.8))
-
-    plate_robust_fit_list[[prep_dat_name]] <- compute_robust_curves(prepped_data = plate_prepped_data$data,
-                                                                    response_variable = response_variable,
-                                                                    independent_variable = independent_variable,
-                                                                    formulas = formulas,
-                                                                    model_constraints = plate_model_constraints_list[[prep_dat_name]],
-                                                                    start_lists =  plate_start_lists[[prep_dat_name]],
-                                                                    verbose = verbose)
-
-    fit_summary_list[[prep_dat_name]] <- summarize_model_fits(plate_robust_fit_list[[prep_dat_name]], verbose = verbose)
-
-    fit_params_list[[prep_dat_name]] <- summarize_model_parameters(models_fit_list = plate_robust_fit_list[[prep_dat_name]],
-                                                                   level = 0.95,
-                                                                   model_names = model_names,
-                                                                   verbose = verbose)
-
-    plot_data_list[[prep_dat_name]] <- get_plot_data(models_fit_list =  plate_robust_fit_list[[prep_dat_name]],
-                                                     prepped_data = plate_prepped_data$data,
-                                                     fit_params = fit_params_list[[prep_dat_name]],
-                                                     fixed_a_result = fixed_a_result,
-                                                     model_names = model_names,
-                                                     x_var = independent_variable,
-                                                     y_var = response_variable,
-                                                     verbose = verbose)
-
-
-    candidate_best_fit_list[[prep_dat_name]]<- select_model_fit_AIC(fit_summary = fit_summary_list[[prep_dat_name]],
-                                                                    fit_robust_lm = plate_robust_fit_list[[prep_dat_name]],
-                                                                    fit_params = fit_params_list[[prep_dat_name]],
-                                                                    plot_data = plot_data_list[[prep_dat_name]],
-                                                                    verbose = verbose)
-    # add the glance for the best fit
-    # print(prep_dat_name)
-    # print(length(candidate_best_fit_list[[prep_dat_name]]$best_model_name) == 1)
-
-
-    candidate_best_fit_list[[prep_dat_name]] <- fit_qc_glance(best_fit = candidate_best_fit_list[[prep_dat_name]],
-                                                              response_variable = response_variable,
-                                                              independent_variable = independent_variable,
-                                                              fixed_a_result = fixed_a_result,
-                                                              antigen_settings = antigen_settings,
-                                                              antigen_fit_options = prepped_data_list[[prep_dat_name]]$antigen_fit_options,
-                                                              verbose = verbose)
-
-
-    # # ## add the tidy to the best fit object
-    candidate_best_fit_list[[prep_dat_name]] <- tidy.nlsLM(best_fit = candidate_best_fit_list[[prep_dat_name]],
-                                                           fixed_a_result = fixed_a_result,
-                                                           model_constraints = plate_model_constraints_list[[prep_dat_name]],
-                                                           antigen_settings = antigen_settings,
-                                                           antigen_fit_options = prepped_data_list[[prep_dat_name]]$antigen_fit_options,
-                                                           verbose = verbose)
-
-    # Extract identifiers for SE lookup
+    
+    plate_model_constraints_list[[prep_dat_name]] <- obtain_model_constraints(
+      data                 = plate_prepped_data$data,
+      formulas             = formulas,
+      independent_variable = independent_variable,
+      response_variable    = response_variable,
+      is_log_response      = TRUE,
+      is_log_concentration = TRUE,
+      antigen_settings     = antigen_settings,
+      max_response         = max(plate_prepped_data$data[[response_variable]], na.rm = TRUE),
+      min_response         = min(plate_prepped_data$data[[response_variable]], na.rm = TRUE),
+      verbose              = verbose
+    )
+    
+    plate_start_lists[[prep_dat_name]] <- make_start_lists(
+      model_constraints = plate_model_constraints_list[[prep_dat_name]],
+      frac_generate     = 0.8,
+      quants            = c(low = 0.2, mid = 0.5, high = 0.8)
+    )
+    
+    plate_robust_fit_list[[prep_dat_name]] <- compute_robust_curves(
+      prepped_data         = plate_prepped_data$data,
+      response_variable    = response_variable,
+      independent_variable = independent_variable,
+      formulas             = formulas,
+      model_constraints    = plate_model_constraints_list[[prep_dat_name]],
+      start_lists          = plate_start_lists[[prep_dat_name]],
+      verbose              = verbose
+    )
+    
+    fit_summary_list[[prep_dat_name]] <- summarize_model_fits(
+      plate_robust_fit_list[[prep_dat_name]],
+      verbose = verbose
+    )
+    
+    fit_params_list[[prep_dat_name]] <- summarize_model_parameters(
+      models_fit_list = plate_robust_fit_list[[prep_dat_name]],
+      level           = 0.95,
+      model_names     = model_names,
+      verbose         = verbose
+    )
+    
+    plot_data_list[[prep_dat_name]] <- get_plot_data(
+      models_fit_list  = plate_robust_fit_list[[prep_dat_name]],
+      prepped_data     = plate_prepped_data$data,
+      fit_params       = fit_params_list[[prep_dat_name]],
+      fixed_a_result   = fixed_a_result,
+      model_names      = model_names,
+      x_var            = independent_variable,
+      y_var            = response_variable,
+      verbose          = verbose
+    )
+    
+    candidate_best_fit_list[[prep_dat_name]] <- select_model_fit_AIC(
+      fit_summary   = fit_summary_list[[prep_dat_name]],
+      fit_robust_lm = plate_robust_fit_list[[prep_dat_name]],
+      fit_params    = fit_params_list[[prep_dat_name]],
+      plot_data     = plot_data_list[[prep_dat_name]],
+      verbose       = verbose
+    )
+    
+    candidate_best_fit_list[[prep_dat_name]] <- fit_qc_glance(
+      best_fit             = candidate_best_fit_list[[prep_dat_name]],
+      response_variable    = response_variable,
+      independent_variable = independent_variable,
+      fixed_a_result       = fixed_a_result,
+      antigen_settings     = antigen_settings,
+      antigen_fit_options  = prepped_data_list[[prep_dat_name]]$antigen_fit_options,
+      verbose              = verbose
+    )
+    
+    candidate_best_fit_list[[prep_dat_name]] <- tidy.nlsLM(
+      best_fit            = candidate_best_fit_list[[prep_dat_name]],
+      fixed_a_result      = fixed_a_result,
+      model_constraints   = plate_model_constraints_list[[prep_dat_name]],
+      antigen_settings    = antigen_settings,
+      antigen_fit_options = prepped_data_list[[prep_dat_name]]$antigen_fit_options,
+      verbose             = verbose
+    )
+    
     current_plate <- antigen_plate_list[[prep_dat_name]]
     current_se <- if (!is.null(se_antigen_table)) {
       lookup_antigen_se(
-        se_table = se_antigen_table,
-        study_accession = unique(current_plate$plate_standard$study_accession),
+        se_table             = se_antigen_table,
+        study_accession      = unique(current_plate$plate_standard$study_accession),
         experiment_accession = unique(current_plate$plate_standard$experiment_accession),
-        source = unique(current_plate$plate_standard$source),
-        antigen = unique(current_plate$plate_standard$antigen)
+        source               = unique(current_plate$plate_standard$source),
+        antigen              = unique(current_plate$plate_standard$antigen)
       )
     } else {
       NA_real_
     }
-    candidate_best_fit_list[[prep_dat_name]]  <- predict_and_propagate_error(best_fit = candidate_best_fit_list[[prep_dat_name]],
-                                                                             response_var = "mfi",
-                                                                             antigen_plate = antigen_plate_list[[prep_dat_name]],
-                                                                             study_params = study_params,
-                                                                             se_std_response = current_se,
-                                                                             verbose = verbose)
-
-    candidate_best_fit_list[[prep_dat_name]] <- gate_samples(best_fit = candidate_best_fit_list[[prep_dat_name]],
-                                                             response_variable = "mfi",
-                                                             pcov_threshold = antigen_settings$pcov_threshold, verbose = verbose
+    
+    candidate_best_fit_list[[prep_dat_name]] <- predict_and_propagate_error(
+      best_fit        = candidate_best_fit_list[[prep_dat_name]],
+      response_var    = "mfi",
+      antigen_plate   = antigen_plate_list[[prep_dat_name]],
+      study_params    = study_params,
+      se_std_response = current_se,
+      verbose         = verbose
     )
-
-
+    
+    candidate_best_fit_list[[prep_dat_name]] <- gate_samples(
+      best_fit          = candidate_best_fit_list[[prep_dat_name]],
+      response_variable = "mfi",
+      pcov_threshold    = antigen_settings$pcov_threshold,
+      verbose           = verbose
+    )
   }
-
+  
   return(candidate_best_fit_list)
-
 }
+
+# fit_experiment_plate_batch <- function(prepped_data_list_res,
+#                                        antigen_plate_list_res,
+#                                        model_names,
+#                                        study_params,
+#                                        se_antigen_table = NULL,
+#                                        verbose = TRUE) {
+#   #prepped_data_list_res_v <<- prepped_data_list_res
+#   prepped_data_list <- prepped_data_list_res$prepped_data_list
+#   formula_list <- prepped_data_list_res$formula_list
+#   antigen_plate_list <- antigen_plate_list_res$antigen_plate_list
+# 
+#   plate_model_constraints_list <- list()
+#   plate_start_lists <- list()
+#   plate_robust_fit_list <- list()
+#   fit_summary_list <- list()
+#   fit_params_list <- list()
+#   plot_data_list <- list()
+#   candidate_best_fit_list <- list()
+#   best_fit_list <- list()
+#   for(prep_dat_name in names(prepped_data_list)) {
+#     # showNotification(id = "batch_sc_fit_notify", div(class = "big-notification", paste("Processing", prep_dat_name)), duration = NULL)
+# 
+#     # Split the name string into components
+#     components <- strsplit(prep_dat_name, "\\|")[[1]]
+#     field_names <- c("Study", "Experiment", "Plate - Sample Dilution(s)", "Dilution","Source", "Antigen")
+#     # Create labeled lines
+#     labeled_lines <- paste0("<b>", field_names, ":</b> ", components, collapse = "<br>")
+# 
+#     showNotification(
+#       id = "batch_sc_fit_notify",
+#       div(
+#         class = "big-notification",
+#         HTML(paste0("<strong>Processing</strong><br><br>", labeled_lines))
+#       ),
+#       duration = NULL
+#     )
+# 
+#     if (verbose) print(prep_dat_name)
+#     plate_prepped_data <- prepped_data_list[[prep_dat_name]]
+#     formulas <- formula_list[[prep_dat_name]]
+#     response_variable <- unique(antigen_plate_list[[prep_dat_name]]$plate_standard$assay_response_variable)
+#     independent_variable <- unique(antigen_plate_list[[prep_dat_name]]$plate_standard$assay_independent_variable)
+#     fixed_a_result <- antigen_plate_list[[prep_dat_name]]$fixed_a_result
+#     antigen_settings <- antigen_plate_list[[prep_dat_name]]$antigen_settings
+#     if (verbose) print(independent_variable)
+#     plate_model_constraints_list[[prep_dat_name]] <- obtain_model_constraints(data = plate_prepped_data$data,
+#                                                                               formulas = formulas,
+#                                                                               independent_variable = independent_variable,
+#                                                                               response_variable = response_variable,
+#                                                                               is_log_response = TRUE,
+#                                                                               is_log_concentration = TRUE,
+#                                                                               antigen_settings = antigen_settings,
+#                                                                               max_response = max(plate_prepped_data$data[[response_variable]], na.rm = TRUE),
+#                                                                               min_response = min(plate_prepped_data$data[[response_variable]], na.rm = TRUE),
+#                                                                               verbose = verbose)
+# 
+# 
+#     plate_start_lists[[prep_dat_name]] <- make_start_lists(model_constraints = plate_model_constraints_list[[prep_dat_name]],
+#                                                            frac_generate = 0.8,
+#                                                            quants = c(low = 0.2, mid = 0.5, high = 0.8))
+# 
+#     plate_robust_fit_list[[prep_dat_name]] <- compute_robust_curves(prepped_data = plate_prepped_data$data,
+#                                                                     response_variable = response_variable,
+#                                                                     independent_variable = independent_variable,
+#                                                                     formulas = formulas,
+#                                                                     model_constraints = plate_model_constraints_list[[prep_dat_name]],
+#                                                                     start_lists =  plate_start_lists[[prep_dat_name]],
+#                                                                     verbose = verbose)
+# 
+#     fit_summary_list[[prep_dat_name]] <- summarize_model_fits(plate_robust_fit_list[[prep_dat_name]], verbose = verbose)
+# 
+#     fit_params_list[[prep_dat_name]] <- summarize_model_parameters(models_fit_list = plate_robust_fit_list[[prep_dat_name]],
+#                                                                    level = 0.95,
+#                                                                    model_names = model_names,
+#                                                                    verbose = verbose)
+# 
+#     plot_data_list[[prep_dat_name]] <- get_plot_data(models_fit_list =  plate_robust_fit_list[[prep_dat_name]],
+#                                                      prepped_data = plate_prepped_data$data,
+#                                                      fit_params = fit_params_list[[prep_dat_name]],
+#                                                      fixed_a_result = fixed_a_result,
+#                                                      model_names = model_names,
+#                                                      x_var = independent_variable,
+#                                                      y_var = response_variable,
+#                                                      verbose = verbose)
+# 
+# 
+#     candidate_best_fit_list[[prep_dat_name]]<- select_model_fit_AIC(fit_summary = fit_summary_list[[prep_dat_name]],
+#                                                                     fit_robust_lm = plate_robust_fit_list[[prep_dat_name]],
+#                                                                     fit_params = fit_params_list[[prep_dat_name]],
+#                                                                     plot_data = plot_data_list[[prep_dat_name]],
+#                                                                     verbose = verbose)
+#     # add the glance for the best fit
+#     # print(prep_dat_name)
+#     # print(length(candidate_best_fit_list[[prep_dat_name]]$best_model_name) == 1)
+# 
+# 
+#     candidate_best_fit_list[[prep_dat_name]] <- fit_qc_glance(best_fit = candidate_best_fit_list[[prep_dat_name]],
+#                                                               response_variable = response_variable,
+#                                                               independent_variable = independent_variable,
+#                                                               fixed_a_result = fixed_a_result,
+#                                                               antigen_settings = antigen_settings,
+#                                                               antigen_fit_options = prepped_data_list[[prep_dat_name]]$antigen_fit_options,
+#                                                               verbose = verbose)
+# 
+# 
+#     # # ## add the tidy to the best fit object
+#     candidate_best_fit_list[[prep_dat_name]] <- tidy.nlsLM(best_fit = candidate_best_fit_list[[prep_dat_name]],
+#                                                            fixed_a_result = fixed_a_result,
+#                                                            model_constraints = plate_model_constraints_list[[prep_dat_name]],
+#                                                            antigen_settings = antigen_settings,
+#                                                            antigen_fit_options = prepped_data_list[[prep_dat_name]]$antigen_fit_options,
+#                                                            verbose = verbose)
+# 
+#     # Extract identifiers for SE lookup
+#     current_plate <- antigen_plate_list[[prep_dat_name]]
+#     current_se <- if (!is.null(se_antigen_table)) {
+#       lookup_antigen_se(
+#         se_table = se_antigen_table,
+#         study_accession = unique(current_plate$plate_standard$study_accession),
+#         experiment_accession = unique(current_plate$plate_standard$experiment_accession),
+#         source = unique(current_plate$plate_standard$source),
+#         antigen = unique(current_plate$plate_standard$antigen)
+#       )
+#     } else {
+#       NA_real_
+#     }
+#     candidate_best_fit_list[[prep_dat_name]]  <- predict_and_propagate_error(best_fit = candidate_best_fit_list[[prep_dat_name]],
+#                                                                              response_var = "mfi",
+#                                                                              antigen_plate = antigen_plate_list[[prep_dat_name]],
+#                                                                              study_params = study_params,
+#                                                                              se_std_response = current_se,
+#                                                                              verbose = verbose)
+# 
+#     candidate_best_fit_list[[prep_dat_name]] <- gate_samples(best_fit = candidate_best_fit_list[[prep_dat_name]],
+#                                                              response_variable = "mfi",
+#                                                              pcov_threshold = antigen_settings$pcov_threshold, verbose = verbose
+#     )
+# 
+# 
+#   }
+# 
+#   return(candidate_best_fit_list)
+# 
+# }
 
 create_batch_fit_outputs <- function(batch_fit_res, antigen_plate_list_res) {
 
@@ -338,8 +518,8 @@ process_batch_outputs <- function(batch_outputs, response_var, project_id) {
   # ensure those out of range are null not inf for database storing.
   batch_outputs$best_sample_se_all <-
     batch_outputs$best_sample_se_all %>%
-    mutate(raw_predicted_concentration =
-             if_else(is.finite(raw_predicted_concentration),
+    dplyr::mutate(raw_predicted_concentration =
+             dplyr::if_else(is.finite(raw_predicted_concentration),
                      raw_predicted_concentration,
                      NA_real_))
 #
@@ -367,7 +547,7 @@ process_batch_outputs <- function(batch_outputs, response_var, project_id) {
   #   dplyr::mutate(uid = dplyr::row_number()) %>%
   #   dplyr::ungroup()
   batch_outputs$best_sample_se_all <- batch_outputs$best_sample_se_all %>%
-    dplyr::rename(assay_response = all_of(response_var)) %>%
+    dplyr::rename(assay_response = dplyr::all_of(response_var)) %>%
     dplyr::distinct()
     # dplyr::group_by(
     #   study_accession, experiment_accession,
@@ -381,7 +561,7 @@ process_batch_outputs <- function(batch_outputs, response_var, project_id) {
   #   dplyr::mutate(uid = dplyr::row_number())
 
   batch_outputs$best_standard_all <- batch_outputs$best_standard_all %>%
-    dplyr::rename(assay_response = all_of(response_var)) %>%
+    dplyr::rename(assay_response = dplyr::all_of(response_var)) %>%
     dplyr::distinct()
 
 
