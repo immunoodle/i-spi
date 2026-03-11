@@ -12,7 +12,8 @@ RUN apt-get update && apt-get install -y \
     libxt-dev \
     xtail \
     wget \
-    vim
+    vim \
+    jags 
 
 
 RUN apt-get install libpq-dev -y
@@ -97,6 +98,9 @@ RUN R -e "install.packages('nls.multstart')"
 RUN R -e "install.packages(c('ggrepel', 'cowplot'))"
 RUN R -e "install.packages('patchwork')"
 RUN R -e "install.packages('digest')"
+RUN R -e "install.packages('rjags')"
+RUN R -e "install.packages('bit64')"
+RUN R -e "install.packages('shinycssloaders')"
 
 
 RUN rm -rf /srv/shiny-server/*

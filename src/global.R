@@ -54,6 +54,9 @@ library(tmvtnorm)
 ## std-curver
 library(patchwork)
 library(rlang)
+library(rjags)
+library(bit64)
+library(shinycssloaders)
 
 # For standard curve Summary
 library(fracture)
@@ -196,6 +199,31 @@ get_db_connection <- function() {
   )
 }
 
+# Returns a plain list of connection parameters (no live connection object)
+get_db_connection_args <- function() {
+  list(
+    host   = Sys.getenv("db_host"),
+    port   = as.integer(Sys.getenv("db_port", "5432")),
+    dbname = Sys.getenv("db"),
+    user   = Sys.getenv("db_userid_x"),
+    pass   = Sys.getenv("db_pwd_x")
+  )
+}
+
+# Called inside the future to open a fresh connection
+get_db_connection_from_args <- function(host, port, dbname, user, pass) {
+  DBI::dbConnect(
+    RPostgres::Postgres(),
+    host     = host,
+    port     = port,
+    dbname   = dbname,
+    user     = user,
+    password = pass,
+    sslmode = 'require',
+    options = "-c search_path=madi_results"
+  )
+  
+}
 # Function to get project name
 getProjectName <- function(conn, current_user) {
   query <- glue::glue("SELECT project_name, workspace_id FROM madi_results.xmap_users pu WHERE pu.auth0_user = {dbQuoteLiteral(conn, current_user)}")

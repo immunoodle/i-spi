@@ -401,11 +401,9 @@ upsert_best_curve <- function(conn,
                               batch_size = 50000,
                               use_copy = TRUE,
                               skip_index_check = FALSE,
-                              use_on_conflict = TRUE) {
-
-  ##
-  ## Notifier
-  ##
+                              use_on_conflict = TRUE,
+                              shiny_mode = TRUE) {
+  
   if (is.null(notify)) {
     notify <- function(msg) if (!quiet) message(Sys.time(), " - ", msg)
   }
@@ -413,10 +411,7 @@ upsert_best_curve <- function(conn,
     notify(msg)
     invisible(FALSE)
   }
-
-  ##
-  ## Basic checks
-  ##
+  
   if (!DBI::dbIsValid(conn)) return(bail("Database connection is not valid."))
   if (!is.data.frame(df) || nrow(df) == 0) return(bail("No data provided."))
   
@@ -484,10 +479,11 @@ upsert_best_curve <- function(conn,
   ## De-duplicate incoming data on natural keys
   ## This prevents within-batch duplicate-key violations
   ##
-  cols <- names(df)
-  nk <- get_natural_keys(table)
-  pk <- get_primary_key(table)  # New function to get primary key
 
+  cols <- names(df)
+  nk   <- get_natural_keys(table)
+  pk   <- get_primary_key(table)
+  
   if (is.null(nk)) stop("Unknown table: ", table)
 
   present_nk <- intersect(nk, cols)
@@ -505,47 +501,30 @@ upsert_best_curve <- function(conn,
   if (length(missing_keys) > 0) {
     stop("Missing natural-key columns: ", paste(missing_keys, collapse = ", "))
   }
-
+  
   nk_has_na <- sapply(df[, nk, drop = FALSE], function(x) any(is.na(x)))
-
   if (any(nk_has_na)) {
-    # Columns that contain any NA
-    cols_with_na <- names(nk_has_na)[nk_has_na]
-
-    # How many rows are affected per column (use `colSums` for a quick count)
-    rows_per_col <- colSums(is.na(df[, cols_with_na, drop = FALSE]))
-
-  # If you also want to know *which rows* are problematic you can
-  # collect the row numbers (limited to the first `max_rows_to_show`)
-  problematic_rows <- which(rowSums(is.na(df[, cols_with_na, drop = FALSE])) > 0)
-
-  # Build a helpful message
-  msg <- paste0(
-    "Natural‑key column(s) contain NA in table `", table, "`:\n",
-    paste0(" - ", cols_with_na, ": ", rows_per_col, " NA(s)"),
-    collapse = "\n"
-  )
-
-  if (length(problematic_rows) > 0) {
-    shown <- head(problematic_rows, 3)
+    cols_with_na    <- names(nk_has_na)[nk_has_na]
+    rows_per_col    <- colSums(is.na(df[, cols_with_na, drop = FALSE]))
+    problematic_rows <- which(rowSums(is.na(df[, cols_with_na, drop = FALSE])) > 0)
+    
     msg <- paste0(
-      msg,
-      "\nFirst ", length(shown), " problematic row(s): ",
-      paste(shown, collapse = ", "),
-      if (length(problematic_rows) > 3) " …"
+      "Natural-key column(s) contain NA in table `", table, "`:\n",
+      paste0(" - ", cols_with_na, ": ", rows_per_col, " NA(s)"),
+      collapse = "\n"
     )
+    if (length(problematic_rows) > 0) {
+      shown <- head(problematic_rows, 3)
+      msg <- paste0(
+        msg,
+        "\nFirst ", length(shown), " problematic row(s): ",
+        paste(shown, collapse = ", "),
+        if (length(problematic_rows) > 3) " …"
+      )
+    }
+    return(bail(msg))
   }
-
-  return(bail(msg))
-}
-
-  # if (anyNA(df[, nk, drop = FALSE])) {
-  #   return(bail("Natural-key columns contain NA; cannot upsert."))
-  # }
-
-  ##
-  ## Pre-compute SQL components
-  ##
+  
   sql_parts <- build_sql_components_pk(conn, schema, table, cols, nk, pk)
 
   ##
@@ -564,79 +543,110 @@ upsert_best_curve <- function(conn,
 
   if (n_rows > batch_size) {
     notif_id <- paste0("upsert_", table)
-
-    showNotification(
-      sprintf("Processing %d rows in %d batches", n_rows, ceiling(n_rows / batch_size)),
-      id = notif_id,
-      duration = 3,
-      type = "message"
-    )
-
+    
+    if (shiny_mode) {
+      showNotification(
+        sprintf("Processing %d rows in %d batches", n_rows, ceiling(n_rows / batch_size)),
+        id       = notif_id,
+        duration = 3,
+        type     = "message"
+      )
+    } else {
+      message(sprintf("Processing %d rows in %d batches", n_rows, ceiling(n_rows / batch_size)))
+    }
+    
     batches <- split(df, ceiling(seq_len(n_rows) / batch_size))
-
+    
     results <- tryCatch({
       vapply(seq_along(batches), function(i) {
-        showNotification(
-          sprintf("Batch %d/%d (%d rows)", i, length(batches), nrow(batches[[i]])),
-          id = notif_id,
-          duration = NULL,
-          type = "message"
-        )
-        upsert_fn(conn, batches[[i]], table, sql_parts, use_copy, notify)
+        if (shiny_mode) {
+          showNotification(
+            sprintf("Batch %d/%d (%d rows)", i, length(batches), nrow(batches[[i]])),
+            id       = notif_id,
+            duration = NULL,
+            type     = "message"
+          )
+          # upsert_fn(conn, batches[[i]], table, sql_parts, use_copy, notify)
+        } else {
+          message(sprintf("Batch %d/%d (%d rows)", i, length(batches), nrow(batches[[i]])))
+        }
+        upsert_batch_pk(conn, batches[[i]], table, sql_parts, use_copy, notify,
+                        shiny_mode = shiny_mode)
+
       }, logical(1))
     }, error = function(e) {
-      showNotification(
-        sprintf("Error during batch processing: %s", conditionMessage(e)),
-        id = notif_id,
-        duration = NULL,
-        type = "error"
-      )
+      if (shiny_mode) {
+        showNotification(
+          sprintf("Error during batch processing: %s", conditionMessage(e)),
+          id       = notif_id,
+          duration = NULL,
+          type     = "error"
+        )
+      } else {
+        message(sprintf("Error during batch processing: %s", conditionMessage(e)))
+      }
       return(NULL)
     })
-
-    if (is.null(results)) {
-      return(invisible(FALSE))
-    }
-
+    
+    if (is.null(results)) return(invisible(FALSE))
+    
     if (all(results)) {
-      removeNotification(notif_id)
-      showNotification(
-        sprintf("All %d batches completed successfully", length(batches)),
-        duration = 5,
-        type = "message"
-      )
+      if (shiny_mode) {
+        removeNotification(notif_id)
+        showNotification(
+          sprintf("All %d batches completed successfully", length(batches)),
+          duration = 5,
+          type     = "message"
+        )
+      } else {
+        message(sprintf("All %d batches completed successfully", length(batches)))
+      }
       return(invisible(TRUE))
     } else {
-      showNotification(
-        sprintf("%d/%d batches failed", sum(!results), length(batches)),
-        id = notif_id,
-        duration = NULL,
-        type = "error"
-      )
+      if (shiny_mode) {
+        showNotification(
+          sprintf("%d/%d batches failed", sum(!results), length(batches)),
+          id       = notif_id,
+          duration = NULL,
+          type     = "error"
+        )
+      } else {
+        message(sprintf("%d/%d batches failed", sum(!results), length(batches)))
+      }
       return(invisible(FALSE))
     }
   }
-
-  ## Single batch
+  
+  # Single batch
   ok <- tryCatch({
-    upsert_fn(conn, df, table, sql_parts, use_copy, notify)
+    # upsert_fn(conn, df, table, sql_parts, use_copy, notify)
+    upsert_batch_pk(conn, df, table, sql_parts, use_copy, notify,
+                    shiny_mode = shiny_mode)
   }, error = function(e) {
-    showNotification(
-      sprintf("Upsert failed: %s", conditionMessage(e)),
-      duration = NULL,
-      type = "error"
-    )
+    if (shiny_mode) {
+      showNotification(
+        sprintf("Upsert failed: %s", conditionMessage(e)),
+        duration = NULL,
+        type     = "error"
+      )
+    } else {
+      message(sprintf("Upsert failed: %s", conditionMessage(e)))
+    }
     return(FALSE)
   })
-
+  
   if (ok) {
-    showNotification(
-      paste0(table, " upsert completed (", n_rows, " rows)."),
-      duration = 5,
-      type = "message"
-    )
+    if (shiny_mode) {
+      showNotification(
+        paste0(table, " upsert completed (", n_rows, " rows)."),
+        duration = 5,
+        type     = "message"
+      )
+    } else {
+      message(paste0(table, " upsert completed (", n_rows, " rows)."))
+    }
   }
-
+  
   invisible(ok)
 }
 
@@ -719,6 +729,7 @@ build_sql_components_pk <- function(conn, schema, table, cols, nk, pk) {
   )
 }
 
+
 ## ────────────────────────────────────────────────────────────────────
 ## PLATE SCOPE columns — the leading prefix of every UNIQUE constraint.
 ## Within a batch, ALL rows for each plate scope are regenerated,
@@ -732,36 +743,36 @@ SCOPE_COLS <- c("project_id", "study_accession", "experiment_accession",
 ## This replaces the old row-level IS NOT DISTINCT FROM join with a
 ## set-level DELETE by plate scope, which is orders of magnitude faster
 ## because it uses the leading columns of the UNIQUE constraint B-tree index.
-upsert_batch_pk <- function(conn, df, table, sql_parts, use_copy, notify) {
+upsert_batch_pk <- function(conn, df, table, sql_parts, use_copy, notify,
+                            shiny_mode = TRUE) {
+  
   tryCatch({
     DBI::dbWithTransaction(conn, {
       tmp_name <- paste0("tmp_", substr(digest::digest(Sys.time()), 1, 8))
-      tmp_id <- as.character(DBI::dbQuoteIdentifier(conn, tmp_name))
-
-      # Create temp table (excluding primary key column if present)
+      tmp_id   <- as.character(DBI::dbQuoteIdentifier(conn, tmp_name))
       temp_cols <- setdiff(sql_parts$cols, sql_parts$pk)
       df_temp <- df[, temp_cols, drop = FALSE]
-
       create_sql <- sprintf(
         "CREATE TEMP TABLE %s (%s) ON COMMIT DROP",
         tmp_id,
         paste(sprintf("%s %s",
-                      vapply(temp_cols, function(x) as.character(DBI::dbQuoteIdentifier(conn, x)), character(1)),
+                      vapply(temp_cols, function(x)
+                        as.character(DBI::dbQuoteIdentifier(conn, x)), character(1)),
                       vapply(df_temp, pg_type_map, character(1))
         ), collapse = ", ")
       )
       DBI::dbExecute(conn, create_sql)
 
       # Load data into temp table using COPY (binary protocol)
+
       if (use_copy && requireNamespace("RPostgres", quietly = TRUE)) {
         RPostgres::dbWriteTable(
           conn, tmp_name, df_temp,
-          append = TRUE,
-          row.names = FALSE,
-          copy = TRUE
+          append = TRUE, row.names = FALSE, copy = TRUE
         )
       } else {
-        DBI::dbWriteTable(conn, tmp_name, df_temp, append = TRUE, row.names = FALSE)
+        DBI::dbWriteTable(conn, tmp_name, df_temp,
+                          append = TRUE, row.names = FALSE)
       }
 
       # Let PostgreSQL know the temp table's size for better query plans
@@ -793,28 +804,35 @@ upsert_batch_pk <- function(conn, df, table, sql_parts, use_copy, notify) {
       )
       n_deleted <- DBI::dbExecute(conn, delete_sql)
       message(sprintf("[upsert_batch_pk] %s: scoped DELETE removed %d existing rows", table, n_deleted))
+      
+      # delete_sql <- sprintf(
+      #   "DELETE FROM %s.%s t USING %s tmp WHERE %s",
+      #   sql_parts$schema_id, sql_parts$table_id,
+      #   tmp_id, sql_parts$nk_where_clause
+      # )
+      # DBI::dbExecute(conn, delete_sql)
 
       # ── Step 2: Bulk INSERT ────────────────────────────────────────
+
       insert_sql <- sprintf(
-        "INSERT INTO %s.%s (%s)
-         SELECT %s FROM %s",
+        "INSERT INTO %s.%s (%s) SELECT %s FROM %s",
         sql_parts$schema_id, sql_parts$table_id,
-        sql_parts$insert_cols_list,
-        sql_parts$insert_cols_list,
-        tmp_id
+        sql_parts$insert_cols_list, sql_parts$insert_cols_list, tmp_id
       )
       n_inserted <- DBI::dbExecute(conn, insert_sql)
       message(sprintf("[upsert_batch_pk] %s: INSERT added %d rows", table, n_inserted))
     })
     TRUE
   }, error = function(e) {
-    showNotification(
-      id = "error_batch",
-      paste0("Batch failed for ", table, ": ", conditionMessage(e)),
-      duration = NULL,
-      closeButton = TRUE,
-      type = "error"
-    )
+    msg <- paste0("Batch failed for ", table, ": ", conditionMessage(e))
+    if (shiny_mode && !is.null(shiny::getDefaultReactiveDomain())) {
+      showNotification(
+        id = "error_batch", msg,
+        duration = NULL, closeButton = TRUE, type = "error"
+      )
+    } else {
+      message(msg)
+    }
     FALSE
   })
 }
@@ -1158,9 +1176,10 @@ fetch_best_tidy_all <- function(study_accession,experiment_accession, project_id
 }
 
 fetch_best_pred_all <- function(study_accession, experiment_accession, project_id, conn) {
+
   query <- glue("SELECT best_pred_all_id, project_id, x, model, yhat, overall_se, predicted_concentration, se_x, pcov, study_accession, experiment_accession, 
   nominal_sample_dilution, plateid, plate,
-  antigen, feature, source, wavelength, best_glance_all_id
+  antigen, feature, source, wavelength, best_glance_all_id, raw_robust_concentration, final_robust_concentration, se_robust_concentration, pcov_robust_concentration
 	FROM madi_results.best_pred_all
 	WHERE project_id = {project_id}
 	AND study_accession = '{study_accession}'
@@ -1183,14 +1202,151 @@ fetch_best_standard_all <- function(study_accession,experiment_accession, projec
 
 fetch_best_glance_all <- function(study_accession,experiment_accession, project_id, conn) {
   query <- glue("SELECT best_glance_all_id, project_id, study_accession, experiment_accession, plateid, plate, nominal_sample_dilution
-  , antigen, feature, iter, status, crit, a, b, c, d, lloq, uloq, lloq_y, uloq_y, llod, ulod, inflect_x, inflect_y, std_error_blank
-  , dydx_inflect, mindc, maxdc, minrdl, maxrdl, dfresidual, nobs, rsquare_fit, aic, bic, loglik, mse, cv, source, wavelength, bkg_method, is_log_response, is_log_x, apply_prozone, formula, g
+  , antigen, feature, iter, status, crit, a, b, c, d, g, lloq, uloq, lloq_y, uloq_y, llod, ulod, inflect_x, inflect_y, std_error_blank
+  , dydx_inflect, mindc, maxdc, minrdl, maxrdl, dfresidual, nobs, rsquare_fit, aic, bic, loglik, mse, cv, source, wavelength, bkg_method, 
+  is_log_response, is_log_x, apply_prozone, formula, last_concentration_calc_method
 	FROM madi_results.best_glance_all
 	WHERE project_id = {project_id}
 	AND study_accession = '{study_accession}'
   AND experiment_accession = '{experiment_accession}';")
   best_glance_all <- dbGetQuery(conn, query)
   return(best_glance_all)
+}
+
+fetch_best_glance_mcmc <- function(study_accession, project_id, conn) {
+  query <- glue("SELECT best_glance_all_id, project_id, study_accession, experiment_accession, plateid, plate,  
+  nominal_sample_dilution, CONCAT(plate, '-',nominal_sample_dilution) as plate_nom,
+  antigen, feature, source, wavelength, 
+  iter, status, crit as model_name, a, b, c, d, g,  is_log_response,
+  is_log_x, last_concentration_calc_method,
+  CASE WHEN nobs > 1 THEN mse * dfresidual / (nobs - 1) ELSE NULL END AS resid_sample_variance
+	FROM madi_results.best_glance_all
+	WHERE project_id = {project_id}
+	AND study_accession = '{study_accession}'
+  AND nominal_sample_dilution is NOT NULL;")
+  best_glance_all <- dbGetQuery(conn, query)
+  
+  best_glance_all$best_glance_all_id <- bit64::as.integer64(best_glance_all$best_glance_all_id)
+  
+  return(best_glance_all)
+}
+
+# fetch_best_pred_mcmc - fixed
+fetch_best_pred_mcmc <- function(study_accession, project_id, best_glance_ids, conn) {
+  ids_collapsed <- paste(best_glance_ids, collapse = ", ")
+  query <- glue("
+    SELECT best_pred_all_id, x as concentration,  1 as dilution, yhat as assay_response, best_glance_all_id,
+    'pred_se' as mcmc_set
+    FROM madi_results.best_pred_all
+    WHERE project_id = {project_id}
+      AND study_accession = '{study_accession}'
+      AND best_glance_all_id IN ({ids_collapsed})
+  ")
+  dbGetQuery(conn, query)
+}
+
+# fetch_best_sample_se_mcmc - fixed
+fetch_best_sample_se_mcmc <- function(study_accession, project_id, best_glance_ids, conn) {
+  ids_collapsed <- paste(best_glance_ids, collapse = ", ")
+  query <- glue("
+    SELECT best_sample_se_all_id, assay_response_variable,
+           dilution, assay_response, best_glance_all_id,
+           'sample_se' as mcmc_set
+    FROM madi_results.best_sample_se_all
+    WHERE project_id = {project_id}
+      AND study_accession = '{study_accession}'
+      AND best_glance_all_id IN ({ids_collapsed})
+  ")
+  dbGetQuery(conn, query)
+}
+
+fetch_combined_mcmc <- function(study_accession, project_id, best_glance_ids, conn) {
+  
+  ids <- paste(best_glance_ids, collapse = ", ")
+  
+  query <- glue::glue("
+    SELECT 
+      best_pred_all_id  AS row_id,
+      x                 AS concentration,
+      1                 AS dilution,
+      yhat              AS assay_response,
+      best_glance_all_id,
+      'pred_se'         AS mcmc_set
+    FROM madi_results.best_pred_all
+    WHERE project_id = {project_id}
+      AND study_accession = '{study_accession}'
+      AND best_glance_all_id IN ({ids})
+
+    UNION ALL
+
+    SELECT 
+      best_sample_se_all_id AS row_id,
+      NULL                  AS concentration,
+      dilution,
+      assay_response,
+      best_glance_all_id,
+      'sample_se'           AS mcmc_set
+    FROM madi_results.best_sample_se_all
+    WHERE project_id = {project_id}
+      AND study_accession = '{study_accession}'
+      AND best_glance_all_id IN ({ids})
+  ")
+  
+  DBI::dbGetQuery(conn, query)
+}
+
+
+update_combined_mcmc_bulk <- function(pred_all_mcmc, sample_all_mcmc, best_glance_complete,  conn) {
+  # -------------------------------------------------------------
+  # 1️⃣  Write temporary staging tables
+  # -------------------------------------------------------------
+  dbExecute(conn, "CREATE TEMP TABLE tmp_pred (LIKE madi_results.best_pred_all INCLUDING ALL) ON COMMIT DROP;")
+  dbExecute(conn, "CREATE TEMP TABLE tmp_samp (LIKE madi_results.best_sample_se_all INCLUDING ALL) ON COMMIT DROP;")
+  dbExecute(conn, "CREATE TEMP TABLE tmp_glance (LIKE madi_results.best_glance_all INCLUDING ALL) ON COMMIT DROP;")
+  
+  
+  # Only the columns we need – if the source tables have many extra columns,
+  # we can select a subset before writing.
+  dbWriteTable(conn, "tmp_pred", pred_all_mcmc, overwrite = TRUE, row.names = FALSE)
+  dbWriteTable(conn, "tmp_samp", sample_all_mcmc, overwrite = TRUE, row.names = FALSE)
+  dbWriteTable(conn, "tmp_glance", best_glance_complete, overwrite = TRUE, row.names = FALSE)
+  
+  # -------------------------------------------------------------
+  # 2️⃣  Bulk UPDATE via JOIN
+  # -------------------------------------------------------------
+  sql_update_pred <- "
+    UPDATE madi_results.best_pred_all AS tgt
+    SET    raw_robust_concentration = src.raw_robust_concentration,
+           se_robust_concentration   = src.se_robust_concentration,
+           pcov_robust_concentration = src.pcov_robust_concentration
+    FROM   tmp_pred AS src
+    WHERE  tgt.best_pred_all_id = src.best_pred_all_id
+  "
+  
+  sql_update_samp <- "
+    UPDATE madi_results.best_sample_se_all AS tgt
+    SET    raw_robust_concentration = src.raw_robust_concentration,
+           se_robust_concentration   = src.se_robust_concentration,
+           pcov_robust_concentration = src.pcov_robust_concentration,
+           final_robust_concentration = src.final_robust_concentration
+    FROM   tmp_samp AS src
+    WHERE  tgt.best_sample_se_all_id = src.best_sample_se_all_id
+  "
+  
+  sql_update_glance <- "
+  UPDATE madi_results.best_glance_all AS tgt
+  SET    last_concentration_calc_method = src.last_concentration_calc_method
+  FROM tmp_glance as src
+  WHERE  tgt.best_glance_all_id = src.best_glance_all_id
+  "
+  
+  dbBegin(conn)
+  dbExecute(conn, sql_update_pred)
+  dbExecute(conn, sql_update_samp)
+  dbExecute(conn, sql_update_glance)
+  dbCommit(conn)   # one transaction covers both updates
+  # Temp tables automatically drop at end of transaction because of ON COMMIT DROP
+  invisible(TRUE)
 }
 
 #' Fetch best_glance_all filtered by user's current study parameters
@@ -1222,7 +1378,7 @@ fetch_best_glance_all_summary <- function(study_accession, experiment_accession,
       g.uloq_y, g.llod, g.ulod, g.inflect_x, g.inflect_y, g.std_error_blank,
       g.dydx_inflect, g.dfresidual, g.nobs, g.rsquare_fit, g.aic, g.bic,
       g.loglik, g.mse, g.cv, g.source, g.wavelength, g.bkg_method, g.is_log_response,
-      g.is_log_x, g.apply_prozone, g.formula, g.g
+      g.is_log_x, g.apply_prozone, g.formula, g.g, g.last_concentration_calc_method
     FROM madi_results.best_glance_all g
     CROSS JOIN params
     WHERE g.project_id = {project_id}
@@ -1238,12 +1394,13 @@ fetch_best_glance_all_summary <- function(study_accession, experiment_accession,
 
 fetch_best_sample_se_all <- function(study_accession, experiment_accession, project_id, conn) {
   query <- glue("
+
 SELECT best_sample_se_all_id, raw_predicted_concentration, project_id, study_accession, experiment_accession, timeperiod, patientid, well, stype, sampleid,
 agroup, pctaggbeads, samplingerrors, antigen, feature,
 antibody_n, plateid, plate, nominal_sample_dilution, assay_response_variable, assay_independent_variable, dilution, overall_se, raw_assay_response, 
 assay_response,
 se_concentration, final_predicted_concentration, pcov, source, wavelength, gate_class_loq, gate_class_lod,
-gate_class_pcov, best_glance_all_id, feature, norm_assay_response
+gate_class_pcov, best_glance_all_id, feature, norm_assay_response, raw_robust_concentration, final_robust_concentration, se_robust_concentration, pcov_robust_concentration
 	FROM madi_results.best_sample_se_all
 	WHERE project_id = {project_id}
 	AND study_accession = '{study_accession}'
@@ -1252,6 +1409,14 @@ gate_class_pcov, best_glance_all_id, feature, norm_assay_response
   return(best_sample_se_all)
 }
 
+
+
+#etch_concentration_calculation_status <- function(study_accession, experiment_accession, project_id, conn) {
+#   query <- glue("
+#   
+#   
+#   ")
+# }
 
 ## Specific fetch queries for the summary of standard curves accounting for
 # selected study_configuration based on glance_id
@@ -1275,7 +1440,7 @@ fetch_best_pred_all_summary <- function(study_accession, experiment_accession, p
       p.predicted_concentration, p.se_x, p.pcov, p.project_id,
       p.study_accession, p.experiment_accession, p.nominal_sample_dilution,
       p.plateid, p.plate, p.antigen, p.feature, p.source , p.wavelength, p.best_glance_all_id,
-      g.is_log_response, g.is_log_x, g.bkg_method, g.apply_prozone
+      g.is_log_response, g.is_log_x, g.bkg_method, g.apply_prozone, g.last_concentration_calc_method
     FROM madi_results.best_pred_all p
     LEFT JOIN madi_results.best_glance_all g
       ON p.best_glance_all_id = g.best_glance_all_id
@@ -1307,7 +1472,7 @@ fetch_best_standard_all_summary <- function(study_accession, experiment_accessio
       GROUP BY study_accession
     )
     SELECT
-      s.best_standard_all_id, s.study_accession, s.experiment_accession,
+      s.best_standard_all_id, s.project_id, s.study_accession, s.experiment_accession,
       s.feature, s.source, s.wavelength, s.plateid, s.plate, s.stype, s.nominal_sample_dilution,
       s.sampleid, s.well, s.dilution, s.antigen, s.assay_response,
       s.assay_response_variable, s.assay_independent_variable,
@@ -1393,6 +1558,8 @@ GROUP BY study_accession, param_user
   print(query)
   dbGetQuery(conn, query)
 }
+
+
 
 attach_antigen_familes <- function(best_pred_all, antigen_families, default_family = "All Antigens") {
   # Handle case where antigen_families is NULL or empty
