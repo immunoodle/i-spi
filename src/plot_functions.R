@@ -215,6 +215,8 @@ get_plot_data <- function(models_fit_list,
   fit_summary_long$conf.high <- fit_summary_long$estimate
 
   fit_params_aic <- rbind(fit_summary_long, fit_params)
+  # ── Drop rows where parameter is NA (from non-converged models) ──
+  fit_params_aic <- fit_params_aic[!is.na(fit_params_aic$parameter), , drop = FALSE]
 
   if (verbose) {
     message("Plot Data Completed")
@@ -293,6 +295,9 @@ plot_model_comparisons <- function(plot_data,
 
 
 
+  # ── Drop any rows with NA parameter to prevent phantom facet panels ──
+  fit_params_aic <- fit_params_aic[!is.na(fit_params_aic$parameter), , drop = FALSE]
+
   p_ci_params <- ggplot(fit_params_aic) +
     geom_point(aes(as.factor(model), estimate), color = "black") +
     facet_wrap(~ parameter, scale = 'free_x', ncol = 6) +
@@ -356,10 +361,13 @@ plot_model_comparisons <- function(plot_data,
 }
 
 
-# format terms such as mfi and concentration
+# format terms such as mfi, absorbance, and concentration for display
 format_assay_terms <- function(x) {
   lookup <- c(
     MFI = "MFI",
+    Absorbance = "Absorbance",
+    Fluorescence = "Fluorescence",
+    OD = "OD",
     Concentration = "Concentration"
   )
 
@@ -380,69 +388,152 @@ plot_standard_curve <- function(best_fit,
                                 response_variable = "mfi",
                                 independent_variable = "concentration") {
   p <- plotly::plot_ly()
-
+  
+  # ── Resolve response column ────────────────────────────────────────
+  resolved <- ensure_response_column(
+    df           = best_fit$best_data,
+    response_var = response_variable,
+    coerce_numeric = TRUE,
+    context      = "plot_standard_curve/best_data"
+  )
+  best_fit$best_data <- resolved$df
+  response_variable  <- resolved$response_var
+  
+  if (!resolved$ok) {
+    return(
+      plotly::plot_ly() %>%
+        plotly::layout(
+          title = "Cannot plot: response variable not found",
+          annotations = list(
+            text = paste0(
+              "Column '", response_variable, 
+              "' not found or has no finite values in standard data.<br>",
+              "Available columns: ", 
+              paste(names(best_fit$best_data), collapse = ", ")
+            ),
+            xref = "paper", yref = "paper",
+            x = 0.5, y = 0.5, showarrow = FALSE
+          )
+        )
+    )
+  }
+  
+  # ── Resolve independent variable ───────────────────────────────────
+  if (!independent_variable %in% names(best_fit$best_data)) {
+    if ("concentration" %in% names(best_fit$best_data)) {
+      independent_variable <- "concentration"
+    } else {
+      return(plotly::plot_ly() %>%
+               plotly::layout(title = "Missing independent variable column"))
+    }
+  }
+  
+  # ── Ensure stype exists ────────────────────────────────────────────
+  if (!"stype" %in% names(best_fit$best_data)) {
+    best_fit$best_data$stype <- "S"
+  }
+  
+  # ── Resolve response column in sample_se too ───────────────────────
   samples_predicted_conc <- best_fit$sample_se
-  samples_predicted_conc <- samples_predicted_conc[!is.nan(samples_predicted_conc$raw_predicted_concentration),]
+  if (!is.null(samples_predicted_conc) && nrow(samples_predicted_conc) > 0) {
+    samp_resolved <- ensure_response_column(
+      df           = samples_predicted_conc,
+      response_var = response_variable,
+      coerce_numeric = TRUE,
+      context      = "plot_standard_curve/sample_se"
+    )
+    samples_predicted_conc <- samp_resolved$df
+    # If the response column was found under a different name in sample_se,
+    # we need the SAME name for consistency
+    if (samp_resolved$ok && samp_resolved$response_var != response_variable) {
+      samples_predicted_conc[[response_variable]] <- 
+        samples_predicted_conc[[samp_resolved$response_var]]
+    }
+    samples_predicted_conc <- samples_predicted_conc[
+      !is.nan(samples_predicted_conc$raw_predicted_concentration) &
+        is.finite(samples_predicted_conc$raw_predicted_concentration), ,
+      drop = FALSE
+    ]
+  } else {
+    samples_predicted_conc <- data.frame(
+      raw_predicted_concentration = numeric(0),
+      pcov = numeric(0),
+      stringsAsFactors = FALSE
+    )
+    samples_predicted_conc[[response_variable]] <- numeric(0)
+  }
+  
   best_fit$best_pred$pcov_threshold <- pcov_threshold
-
-  ### 1. RESPONSE VARIABLE (Y)
-
-  log_response_status <- best_fit$best_glance$is_log_response
-
-  if (log_response_status && !is_display_log_response) {
+  safe_glance <- function(field, default = NA_real_) {
+    val <- best_fit$best_glance[[field]]
+    if (is.null(val) || length(val) == 0) return(default)
+    val <- unlist(val)
+    if (all(is.na(val))) return(default)
+    val[1]
+  }
+  
+  ### 1. RESPONSE VARIABLE (Y) log transform
+  log_response_status <- isTRUE(as.logical(safe_glance("is_log_response", FALSE)))
+  
+  if (log_response_status && !isTRUE(is_display_log_response)) {
     best_fit$best_data[[response_variable]] <- 10^best_fit$best_data[[response_variable]]
     best_fit$best_pred$yhat               <- 10^best_fit$best_pred$yhat
-    best_fit$best_glance$llod             <- 10^best_fit$best_glance$llod
-    best_fit$best_glance$ulod             <- 10^best_fit$best_glance$ulod
-    best_fit$best_glance$lloq_y           <- 10^best_fit$best_glance$lloq_y
-    best_fit$best_glance$uloq_y           <- 10^best_fit$best_glance$uloq_y
-    best_fit$best_glance$inflect_y        <- 10^best_fit$best_glance$inflect_y
+    best_fit$best_glance$llod             <- 10^safe_glance("llod")
+    best_fit$best_glance$ulod             <- 10^safe_glance("ulod")
+    best_fit$best_glance$lloq_y           <- 10^safe_glance("lloq_y")
+    best_fit$best_glance$uloq_y           <- 10^safe_glance("uloq_y")
+    best_fit$best_glance$inflect_y        <- 10^safe_glance("inflect_y")
     best_fit$best_d2xy$d2x_y              <- 10^best_fit$best_d2xy$d2x_y
     if (!is.null(best_fit$best_curve_ci)) {
       best_fit$best_curve_ci$ci_lo        <- 10^best_fit$best_curve_ci$ci_lo
       best_fit$best_curve_ci$ci_hi        <- 10^best_fit$best_curve_ci$ci_hi
     }
-
-    samples_predicted_conc[[response_variable]] <- 10^samples_predicted_conc[[response_variable]]
-  }
-
-
-  ### 2. INDEPENDENT VARIABLE (X)
-
-  log_independent_variable_status <- best_fit$best_glance$is_log_x
-
-  if (log_independent_variable_status && !is_display_log_independent) {
-    best_fit$best_data$concentration              <- 10^best_fit$best_data$concentration
-    best_fit$best_pred$x                          <- 10^best_fit$best_pred$x
-    best_fit$best_glance$lloq                     <- 10^best_fit$best_glance$lloq
-    best_fit$best_glance$uloq                     <- 10^best_fit$best_glance$uloq
-    best_fit$best_glance$inflect_x                <- 10^best_fit$best_glance$inflect_x
-    best_fit$best_d2xy$x                          <- 10^best_fit$best_d2xy$x
-    samples_predicted_conc$raw_predicted_concentration <- 10^samples_predicted_conc$raw_predicted_concentration
-    best_fit$best_glance$mindc                    <- 10^best_fit$best_glance$mindc
-    best_fit$best_glance$maxdc                    <- 10^best_fit$best_glance$maxdc
-    best_fit$best_glance$minrdl                   <- 10^best_fit$best_glance$minrdl
-    best_fit$best_glance$maxrdl                   <- 10^best_fit$best_glance$maxrdl
-    if (!is.null(best_fit$best_curve_ci)) {
-      best_fit$best_curve_ci$x                   <- 10^best_fit$best_curve_ci$x
+    if (nrow(samples_predicted_conc) > 0 && 
+        response_variable %in% names(samples_predicted_conc)) {
+      samples_predicted_conc[[response_variable]] <- 
+        10^samples_predicted_conc[[response_variable]]
     }
   }
+  
+  ### 2. INDEPENDENT VARIABLE (X) log transform
+  log_x_status <- isTRUE(as.logical(safe_glance("is_log_x", FALSE)))
+  
+  if (log_x_status && !isTRUE(is_display_log_independent)) {
+    best_fit$best_data$concentration       <- 10^best_fit$best_data$concentration
+    best_fit$best_pred$x                   <- 10^best_fit$best_pred$x
+    best_fit$best_glance$lloq              <- 10^safe_glance("lloq")
+    best_fit$best_glance$uloq              <- 10^safe_glance("uloq")
+    best_fit$best_glance$inflect_x         <- 10^safe_glance("inflect_x")
+    best_fit$best_d2xy$x                   <- 10^best_fit$best_d2xy$x
+    if (nrow(samples_predicted_conc) > 0) {
+      samples_predicted_conc$raw_predicted_concentration <- 
+        10^samples_predicted_conc$raw_predicted_concentration
+    }
+    best_fit$best_glance$mindc             <- 10^safe_glance("mindc")
+    best_fit$best_glance$maxdc             <- 10^safe_glance("maxdc")
+    best_fit$best_glance$minrdl            <- 10^safe_glance("minrdl")
+    best_fit$best_glance$maxrdl            <- 10^safe_glance("maxrdl")
+    if (!is.null(best_fit$best_curve_ci)) {
+      best_fit$best_curve_ci$x             <- 10^best_fit$best_curve_ci$x
+    }
+  }
+  
   # y3_label <- paste(stringr::str_to_title(independent_variable), "Uncertainty (pCoV %)")
   y3_label <- "Precision Coefficient of Variation (pCoV %)"
   if (is_display_log_response) {
     y_label <- paste("log<sub>10</sub>", format_assay_terms(response_variable))
-
+    
   } else {
     y_label <- format_assay_terms(response_variable)
   }
-
+  
   if (is_display_log_independent) {
     x_label <- paste("log<sub>10</sub>", format_assay_terms(independent_variable))
   } else {
     x_label <- format_assay_terms(independent_variable)
   }
   ### 3. MODEL NAME
-
+  
   model_name <- best_fit$best_model_name
   title_model_name <- switch(
     model_name,
@@ -453,65 +544,72 @@ plot_standard_curve <- function(best_fit,
     "Yd5" = "5-parameter Log-Logistic",
     model_name
   )
-
+  
   ## 3b.  PREPARE SAMPLE‑UNCERTAINTY (single scaling) -------------------
-
+  
   ##   • Convert everything to log10(SE) *once*.
   ##   • Combine model‑derived SE and sample‑specific SE to get a
   ##     common axis range.
-
+  
   print(names(best_fit$best_pred))
   se_model   <- best_fit$best_pred$pcov
   se_samples <- samples_predicted_conc$pcov
   se_all <- c(best_fit$best_pred$pcov,  samples_predicted_conc$pcov)
   se_range      <- range(se_all, na.rm = TRUE)
-
+  
   # se_max <- min(ceiling(quantile(se_samples ^ 2, probs = 0.95, na.rm = TRUE) * 1000), 100)
-
-
+  
+  
   # se_margin <- (se_max - 0) * 0.02
   # # se_margin <- (100 - se_range[1]) * 0.05
   # se_axis_limits <- c(1 - se_margin, se_max + se_margin)
   # # se_axis_limits <- c(se_range[1] - se_margin, 100 + se_margin)
-
+  
   # se_max <- min(ceiling(quantile(se_samples ^ 2, probs = 0.95, na.rm = TRUE) * 1000), 100)
   # se_min <- max(min(se_all, na.rm = TRUE), 0.1)  # Ensure positive minimum for log scale
-
+  
   se_max <- 125
   se_min <- 0.1
-
+  
   # For log scale, work with the actual values (Plotly will handle the log transform)
   se_axis_limits <- c(se_min * 0.9, se_max * 1.1)  # Add some padding
   dtick <- ifelse(se_max > 19, ifelse(se_max > 35,10, 5), 1)
   # dtick <- 0.301
-
-    # microviz_kelly_pallete <-  c("#f3c300","#875692","#f38400","#a1caf1","#be0032","#c2b280","#848482",
+  
+  # microviz_kelly_pallete <-  c("#f3c300","#875692","#f38400","#a1caf1","#be0032","#c2b280","#848482",
   #                              "#008856","#e68fac","#0067a5","#f99379","#604e97", "#f6a600",  "#b3446c" ,
   #                              "#dcd300","#882d17","#8db600", "#654522", "#e25822","#2b3d26","lightgrey")
-
-  ### 4. RAW POINTS (standards + blanks)
-
-  p <- p %>% add_trace(
-    data = best_fit$best_data,
-    x = best_fit$best_data[[independent_variable]],
-    y = best_fit$best_data[[response_variable]],
-    type = "scatter",
-    mode = "markers",
-    name = ~ifelse(stype == "S", "Standards",
-                   ifelse(stype == "B", "Geometric Mean of Blanks", stype)),
-    color = ~stype,
+  
+  ### 4. RAW POINTS — pre-compute to avoid plotly lazy-eval scope issues
+  plot_std <- best_fit$best_data
+  plot_std$.trace_name <- ifelse(
+    plot_std$stype == "S", "Standards",
+    ifelse(plot_std$stype == "B", "Geometric Mean of Blanks",
+           as.character(plot_std$stype))
+  )
+  
+  p <- p %>% plotly::add_trace(
+    data   = plot_std,
+    x      = plot_std[[independent_variable]],
+    y      = plot_std[[response_variable]],
+    type   = "scatter",
+    mode   = "markers",
+    name   = ~.trace_name,
+    color  = ~stype,
     colors = c("B" = "#c2b280", "S" = "#2b3d26"),
-    text = ~paste0(
-      "<br>", format_assay_terms(independent_variable), ": ", best_fit$best_data[[independent_variable]],
+    text   = ~paste0(
+      "<br>", format_assay_terms(independent_variable), ": ",
+      plot_std[[independent_variable]],
       "<br>Dilution Factor: ", dilution,
-      "<br>", format_assay_terms(response_variable), ": ", best_fit$best_data[[response_variable]]
+      "<br>", format_assay_terms(response_variable), ": ",
+      plot_std[[response_variable]]
     ),
     hoverinfo = "text"
   )
-
-
+  
+  
   ### 5. FITTED CURVE
-
+  
   p <- p %>% add_lines(
     x = best_fit$best_pred$x,
     y = best_fit$best_pred$yhat,
@@ -520,9 +618,9 @@ plot_standard_curve <- function(best_fit,
     showlegend = TRUE,
     line = list(color = "#2b3d26")
   )
-
+  
   ### 5b. 95% CI BANDS (delta method)
-
+  
   if (!is.null(best_fit$best_curve_ci)) {
     p <- p %>% add_lines(
       x           = best_fit$best_curve_ci$x,
@@ -538,14 +636,14 @@ plot_standard_curve <- function(best_fit,
       name        = "",
       line        = list(color = "#2b3d26", dash = "dash"),
       legendgroup = "fitted_curve",
-     # legendgroup = "linked_curve_ci",
+      # legendgroup = "linked_curve_ci",
       showlegend  = FALSE
       # visible     = "legendonly"
     )
   }
-
+  
   ### 6. LOD lines (horizontal)
-
+  
   p <- p %>% add_lines(
     x = best_fit$best_pred$x,
     y = best_fit$best_glance$ulod,
@@ -559,7 +657,7 @@ plot_standard_curve <- function(best_fit,
     legendgroup = "linked_ulod",
     visible     = "legendonly"
   )
-
+  
   p <- p %>% add_lines(
     x = best_fit$best_pred$x,
     y = best_fit$best_glance$llod,
@@ -573,16 +671,16 @@ plot_standard_curve <- function(best_fit,
     legendgroup = "linked_llod",
     visible     = "legendonly"
   )
-
-
+  
+  
   ### 7. LOQ (vertical + horizontal)
-
+  
   y_min <- min(best_fit$best_data[[response_variable]], na.rm = TRUE)
   y_max <- max(best_fit$best_data[[response_variable]], na.rm = TRUE)
-
-
+  
+  
   ### 6b. MDC / RDL vertical lines
-
+  
   ### mindc – vertical dashed line at x where fitted curve == llod
   if (!is.na(best_fit$best_glance$mindc)) {
     p <- p %>% add_lines(
@@ -596,7 +694,7 @@ plot_standard_curve <- function(best_fit,
       visible     = "legendonly"
     )
   }
-
+  
   ### minrdl – vertical solid line at x where lower CI of fitted curve == llod
   if (!is.na(best_fit$best_glance$minrdl)) {
     p <- p %>% add_lines(
@@ -610,7 +708,7 @@ plot_standard_curve <- function(best_fit,
       visible     = "legendonly"
     )
   }
-
+  
   ### maxdc – vertical dashed line at x where fitted curve == ulod
   if (!is.na(best_fit$best_glance$maxdc)) {
     p <- p %>% add_lines(
@@ -624,7 +722,7 @@ plot_standard_curve <- function(best_fit,
       visible     = "legendonly"
     )
   }
-
+  
   ### maxrdl – vertical solid line at x where upper CI of fitted curve == ulod
   if (!is.na(best_fit$best_glance$maxrdl)) {
     p <- p %>% add_lines(
@@ -638,7 +736,7 @@ plot_standard_curve <- function(best_fit,
       visible     = "legendonly"
     )
   }
-
+  
   ### LLOQ – vertical line
   p <- p %>% add_lines(
     x = c(best_fit$best_glance$lloq),
@@ -653,7 +751,7 @@ plot_standard_curve <- function(best_fit,
     hoverinfo = "text",
     visible     = "legendonly"
   )
-
+  
   ### ULOQ – vertical line
   p <- p %>% add_lines(
     x = c(best_fit$best_glance$uloq),
@@ -668,7 +766,7 @@ plot_standard_curve <- function(best_fit,
     hoverinfo = "text",
     visible     = "legendonly"
   )
-
+  
   ### Horizontal LOQ lines
   p <- p %>% add_lines(
     x = best_fit$best_pred$x,
@@ -678,7 +776,7 @@ plot_standard_curve <- function(best_fit,
     line = list(color = "#875692"),
     visible     = "legendonly"
   )
-
+  
   p <- p %>% add_lines(
     x = best_fit$best_pred$x,
     y = best_fit$best_glance$lloq_y,
@@ -687,11 +785,11 @@ plot_standard_curve <- function(best_fit,
     line = list(color = "#875692"),
     visible     = "legendonly"
   )
-
-
-
+  
+  
+  
   ### 8a. SECOND DERIVATIVE (y2 axis)
-
+  
   p <- p %>% add_lines(
     x = best_fit$best_d2xy$x,
     y = best_fit$best_d2xy$d2x_y,
@@ -700,10 +798,10 @@ plot_standard_curve <- function(best_fit,
     line = list(color = "#604e97"),
     visible = "legendonly"
   )
-
-
+  
+  
   ### 8b. Sample uncertainty (y3 axis)
-
+  
   unc_col <- list(color = "#e68fac")
   p <- p %>% add_lines(
     x = best_fit$best_pred$x,
@@ -737,10 +835,10 @@ plot_standard_curve <- function(best_fit,
     legendgroup = "linked_uncertainty",
     visible = "legendonly"
   )
-
-
+  
+  
   ### 9a. SAMPLES
-
+  
   p <- p %>% add_trace(
     data = samples_predicted_conc,
     x = ~raw_predicted_concentration,
@@ -760,10 +858,10 @@ plot_standard_curve <- function(best_fit,
     #"<br>Timeperiod:", timeperiod),
     hovertemplate = "%{text}<extra></extra>"
   )
-
-
+  
+  
   ### 10. INFLECTION POINT
-
+  
   p <- p %>% add_trace(
     x = best_fit$best_glance$inflect_x,
     y = best_fit$best_glance$inflect_y,
@@ -777,12 +875,12 @@ plot_standard_curve <- function(best_fit,
     legendgroup = "fitted_curve",
     showlegend = TRUE,
     marker = list(color = "#2724F0", size = 8)
-   # visible     = "legendonly"
+    # visible     = "legendonly"
   )
-
-
+  
+  
   ### 11. LAYOUT
-
+  
   p <- p %>% layout(
     title = paste(
       "Fitted", title_model_name, "Model (",
@@ -799,7 +897,7 @@ plot_standard_curve <- function(best_fit,
                   y = 1,
                   xanchor = "left"),
     font = list(size = 12),
-
+    
     yaxis2 = list(
       showticklabels = FALSE,
       title = "",
@@ -810,7 +908,7 @@ plot_standard_curve <- function(best_fit,
       showgrid = FALSE,
       zeroline = FALSE
     ),
-
+    
     yaxis3 = list(
       overlaying = "y",
       side = "right",
@@ -825,9 +923,466 @@ plot_standard_curve <- function(best_fit,
       showticklabels = TRUE
     )
   )
-
+  
   return(p)
 }
+
+
+# plot_standard_curve <- function(best_fit,
+#                                 is_display_log_response,
+#                                 is_display_log_independent,
+#                                 pcov_threshold,
+#                                 response_variable = "mfi",
+#                                 independent_variable = "concentration") {
+#   p <- plotly::plot_ly()
+# 
+#   samples_predicted_conc <- best_fit$sample_se
+#   samples_predicted_conc <- samples_predicted_conc[!is.nan(samples_predicted_conc$raw_predicted_concentration),]
+#   best_fit$best_pred$pcov_threshold <- pcov_threshold
+# 
+#   ### 1. RESPONSE VARIABLE (Y)
+# 
+#   log_response_status <- best_fit$best_glance$is_log_response
+# 
+#   if (log_response_status && !is_display_log_response) {
+#     best_fit$best_data[[response_variable]] <- 10^best_fit$best_data[[response_variable]]
+#     best_fit$best_pred$yhat               <- 10^best_fit$best_pred$yhat
+#     best_fit$best_glance$llod             <- 10^best_fit$best_glance$llod
+#     best_fit$best_glance$ulod             <- 10^best_fit$best_glance$ulod
+#     best_fit$best_glance$lloq_y           <- 10^best_fit$best_glance$lloq_y
+#     best_fit$best_glance$uloq_y           <- 10^best_fit$best_glance$uloq_y
+#     best_fit$best_glance$inflect_y        <- 10^best_fit$best_glance$inflect_y
+#     best_fit$best_d2xy$d2x_y              <- 10^best_fit$best_d2xy$d2x_y
+#     if (!is.null(best_fit$best_curve_ci)) {
+#       best_fit$best_curve_ci$ci_lo        <- 10^best_fit$best_curve_ci$ci_lo
+#       best_fit$best_curve_ci$ci_hi        <- 10^best_fit$best_curve_ci$ci_hi
+#     }
+# 
+#     samples_predicted_conc[[response_variable]] <- 10^samples_predicted_conc[[response_variable]]
+#   }
+# 
+# 
+#   ### 2. INDEPENDENT VARIABLE (X)
+# 
+#   log_independent_variable_status <- best_fit$best_glance$is_log_x
+# 
+#   if (log_independent_variable_status && !is_display_log_independent) {
+#     best_fit$best_data$concentration              <- 10^best_fit$best_data$concentration
+#     best_fit$best_pred$x                          <- 10^best_fit$best_pred$x
+#     best_fit$best_glance$lloq                     <- 10^best_fit$best_glance$lloq
+#     best_fit$best_glance$uloq                     <- 10^best_fit$best_glance$uloq
+#     best_fit$best_glance$inflect_x                <- 10^best_fit$best_glance$inflect_x
+#     best_fit$best_d2xy$x                          <- 10^best_fit$best_d2xy$x
+#     samples_predicted_conc$raw_predicted_concentration <- 10^samples_predicted_conc$raw_predicted_concentration
+#     best_fit$best_glance$mindc                    <- 10^best_fit$best_glance$mindc
+#     best_fit$best_glance$maxdc                    <- 10^best_fit$best_glance$maxdc
+#     best_fit$best_glance$minrdl                   <- 10^best_fit$best_glance$minrdl
+#     best_fit$best_glance$maxrdl                   <- 10^best_fit$best_glance$maxrdl
+#     if (!is.null(best_fit$best_curve_ci)) {
+#       best_fit$best_curve_ci$x                   <- 10^best_fit$best_curve_ci$x
+#     }
+#   }
+#   # y3_label <- paste(stringr::str_to_title(independent_variable), "Uncertainty (pCoV %)")
+#   y3_label <- "Precision Coefficient of Variation (pCoV %)"
+#   if (is_display_log_response) {
+#     y_label <- paste("log<sub>10</sub>", format_assay_terms(response_variable))
+# 
+#   } else {
+#     y_label <- format_assay_terms(response_variable)
+#   }
+# 
+#   if (is_display_log_independent) {
+#     x_label <- paste("log<sub>10</sub>", format_assay_terms(independent_variable))
+#   } else {
+#     x_label <- format_assay_terms(independent_variable)
+#   }
+#   ### 3. MODEL NAME
+# 
+#   model_name <- best_fit$best_model_name
+#   title_model_name <- switch(
+#     model_name,
+#     "Y4" = "4-parameter Logistic",
+#     "Yd4" = "4-parameter Log-Logistic",
+#     "Ygomp4" = "4-parameter Gompertz type",
+#     "Y5" = "5-parameter Logistic",
+#     "Yd5" = "5-parameter Log-Logistic",
+#     model_name
+#   )
+# 
+#   ## 3b.  PREPARE SAMPLE‑UNCERTAINTY (single scaling) -------------------
+# 
+#   ##   • Convert everything to log10(SE) *once*.
+#   ##   • Combine model‑derived SE and sample‑specific SE to get a
+#   ##     common axis range.
+# 
+#   print(names(best_fit$best_pred))
+#   se_model   <- best_fit$best_pred$pcov
+#   se_samples <- samples_predicted_conc$pcov
+#   se_all <- c(best_fit$best_pred$pcov,  samples_predicted_conc$pcov)
+#   se_range      <- range(se_all, na.rm = TRUE)
+# 
+#   # se_max <- min(ceiling(quantile(se_samples ^ 2, probs = 0.95, na.rm = TRUE) * 1000), 100)
+# 
+# 
+#   # se_margin <- (se_max - 0) * 0.02
+#   # # se_margin <- (100 - se_range[1]) * 0.05
+#   # se_axis_limits <- c(1 - se_margin, se_max + se_margin)
+#   # # se_axis_limits <- c(se_range[1] - se_margin, 100 + se_margin)
+# 
+#   # se_max <- min(ceiling(quantile(se_samples ^ 2, probs = 0.95, na.rm = TRUE) * 1000), 100)
+#   # se_min <- max(min(se_all, na.rm = TRUE), 0.1)  # Ensure positive minimum for log scale
+# 
+#   se_max <- 125
+#   se_min <- 0.1
+# 
+#   # For log scale, work with the actual values (Plotly will handle the log transform)
+#   se_axis_limits <- c(se_min * 0.9, se_max * 1.1)  # Add some padding
+#   dtick <- ifelse(se_max > 19, ifelse(se_max > 35,10, 5), 1)
+#   # dtick <- 0.301
+# 
+#     # microviz_kelly_pallete <-  c("#f3c300","#875692","#f38400","#a1caf1","#be0032","#c2b280","#848482",
+#   #                              "#008856","#e68fac","#0067a5","#f99379","#604e97", "#f6a600",  "#b3446c" ,
+#   #                              "#dcd300","#882d17","#8db600", "#654522", "#e25822","#2b3d26","lightgrey")
+# 
+#   ### 4. RAW POINTS (standards + blanks)
+# 
+#   p <- p %>% add_trace(
+#     data = best_fit$best_data,
+#     x = best_fit$best_data[[independent_variable]],
+#     y = best_fit$best_data[[response_variable]],
+#     type = "scatter",
+#     mode = "markers",
+#     name = ~ifelse(stype == "S", "Standards",
+#                    ifelse(stype == "B", "Geometric Mean of Blanks", stype)),
+#     color = ~stype,
+#     colors = c("B" = "#c2b280", "S" = "#2b3d26"),
+#     text = ~paste0(
+#       "<br>", format_assay_terms(independent_variable), ": ", best_fit$best_data[[independent_variable]],
+#       "<br>Dilution Factor: ", dilution,
+#       "<br>", format_assay_terms(response_variable), ": ", best_fit$best_data[[response_variable]]
+#     ),
+#     hoverinfo = "text"
+#   )
+# 
+# 
+#   ### 5. FITTED CURVE
+# 
+#   p <- p %>% add_lines(
+#     x = best_fit$best_pred$x,
+#     y = best_fit$best_pred$yhat,
+#     name = "Fitted Curve",
+#     legendgroup = "fitted_curve",
+#     showlegend = TRUE,
+#     line = list(color = "#2b3d26")
+#   )
+# 
+#   ### 5b. 95% CI BANDS (delta method)
+# 
+#   if (!is.null(best_fit$best_curve_ci)) {
+#     p <- p %>% add_lines(
+#       x           = best_fit$best_curve_ci$x,
+#       y           = best_fit$best_curve_ci$ci_lo,
+#       name        = "95% CI",
+#       line        = list(color = "#2b3d26", dash = "dash"),
+#       #legendgroup = "linked_curve_ci"
+#       legendgroup = "fitted_curve",
+#       # visible     = "legendonly"
+#     ) %>% add_lines(
+#       x           = best_fit$best_curve_ci$x,
+#       y           = best_fit$best_curve_ci$ci_hi,
+#       name        = "",
+#       line        = list(color = "#2b3d26", dash = "dash"),
+#       legendgroup = "fitted_curve",
+#      # legendgroup = "linked_curve_ci",
+#       showlegend  = FALSE
+#       # visible     = "legendonly"
+#     )
+#   }
+# 
+#   ### 6. LOD lines (horizontal)
+# 
+#   p <- p %>% add_lines(
+#     x = best_fit$best_pred$x,
+#     y = best_fit$best_glance$ulod,
+#     name = paste(
+#       "Upper LOD: (",
+#       round(best_fit$best_glance$maxdc, 3), ",",
+#       round(best_fit$best_glance$ulod, 3), ")"
+#     ),
+#     # name = paste("Upper LOD:", round(best_fit$best_glance$ulod, 3)),
+#     line = list(color = "#e25822", dash = "dash"),
+#     legendgroup = "linked_ulod",
+#     visible     = "legendonly"
+#   )
+# 
+#   p <- p %>% add_lines(
+#     x = best_fit$best_pred$x,
+#     y = best_fit$best_glance$llod,
+#     name = paste(
+#       "Lower LOD: (",
+#       round(best_fit$best_glance$mindc, 3), ",",
+#       round(best_fit$best_glance$llod, 3), ")"
+#     ),
+#     # name = paste("Lower LOD:", round(best_fit$best_glance$llod, 3)),
+#     line = list(color = "#e25822", dash = "dash"),
+#     legendgroup = "linked_llod",
+#     visible     = "legendonly"
+#   )
+# 
+# 
+#   ### 7. LOQ (vertical + horizontal)
+# 
+#   y_min <- min(best_fit$best_data[[response_variable]], na.rm = TRUE)
+#   y_max <- max(best_fit$best_data[[response_variable]], na.rm = TRUE)
+# 
+# 
+#   ### 6b. MDC / RDL vertical lines
+# 
+#   ### mindc – vertical dashed line at x where fitted curve == llod
+#   if (!is.na(best_fit$best_glance$mindc)) {
+#     p <- p %>% add_lines(
+#       x = c(best_fit$best_glance$mindc, best_fit$best_glance$mindc),
+#       y = c(y_min, y_max),
+#       name = paste("Lower DC:", round(best_fit$best_glance$mindc, 3)),
+#       line = list(color = "#e25822", dash = "dash"),
+#       legendgroup = "linked_llod",
+#       showlegend = FALSE,
+#       hoverinfo = "text",
+#       visible     = "legendonly"
+#     )
+#   }
+# 
+#   ### minrdl – vertical solid line at x where lower CI of fitted curve == llod
+#   if (!is.na(best_fit$best_glance$minrdl)) {
+#     p <- p %>% add_lines(
+#       x = c(best_fit$best_glance$minrdl, best_fit$best_glance$minrdl),
+#       y = c(y_min, y_max),
+#       name = paste("Lower RDL:", round(best_fit$best_glance$minrdl, 3)),
+#       line = list(color = "#e25822"),
+#       legendgroup = "linked_llod",
+#       showlegend = TRUE,
+#       hoverinfo = "text",
+#       visible     = "legendonly"
+#     )
+#   }
+# 
+#   ### maxdc – vertical dashed line at x where fitted curve == ulod
+#   if (!is.na(best_fit$best_glance$maxdc)) {
+#     p <- p %>% add_lines(
+#       x = c(best_fit$best_glance$maxdc, best_fit$best_glance$maxdc),
+#       y = c(y_min, y_max),
+#       name = paste("Upper DC:", round(best_fit$best_glance$maxdc, 3)),
+#       line = list(color = "#e25822", dash = "dash"),
+#       legendgroup = "linked_ulod",
+#       showlegend = FALSE,
+#       hoverinfo = "text",
+#       visible     = "legendonly"
+#     )
+#   }
+# 
+#   ### maxrdl – vertical solid line at x where upper CI of fitted curve == ulod
+#   if (!is.na(best_fit$best_glance$maxrdl)) {
+#     p <- p %>% add_lines(
+#       x = c(best_fit$best_glance$maxrdl, best_fit$best_glance$maxrdl),
+#       y = c(y_min, y_max),
+#       name = paste("Upper RDL:", round(best_fit$best_glance$maxrdl, 3)),
+#       line = list(color = "#e25822"),
+#       legendgroup = "linked_ulod",
+#       showlegend = TRUE,
+#       hoverinfo = "text",
+#       visible     = "legendonly"
+#     )
+#   }
+# 
+#   ### LLOQ – vertical line
+#   p <- p %>% add_lines(
+#     x = c(best_fit$best_glance$lloq),
+#     y = c(y_min, y_max),
+#     name = paste(
+#       "Lower LOQ: (",
+#       round(best_fit$best_glance$lloq, 3), ",",
+#       round(best_fit$best_glance$lloq_y, 3), ")"
+#     ),
+#     line = list(color = "#875692"),
+#     legendgroup = "linked_lloq",
+#     hoverinfo = "text",
+#     visible     = "legendonly"
+#   )
+# 
+#   ### ULOQ – vertical line
+#   p <- p %>% add_lines(
+#     x = c(best_fit$best_glance$uloq),
+#     y = c(y_min, y_max),
+#     name = paste(
+#       "Upper LOQ: (",
+#       round(best_fit$best_glance$uloq, 3), ",",
+#       round(best_fit$best_glance$uloq_y, 3), ")"
+#     ),
+#     line = list(color = "#875692"),
+#     legendgroup = "linked_uloq",
+#     hoverinfo = "text",
+#     visible     = "legendonly"
+#   )
+# 
+#   ### Horizontal LOQ lines
+#   p <- p %>% add_lines(
+#     x = best_fit$best_pred$x,
+#     y = best_fit$best_glance$uloq_y,
+#     name = "",
+#     legendgroup = "linked_uloq", showlegend = FALSE,
+#     line = list(color = "#875692"),
+#     visible     = "legendonly"
+#   )
+# 
+#   p <- p %>% add_lines(
+#     x = best_fit$best_pred$x,
+#     y = best_fit$best_glance$lloq_y,
+#     name = "",
+#     legendgroup = "linked_lloq", showlegend = FALSE,
+#     line = list(color = "#875692"),
+#     visible     = "legendonly"
+#   )
+# 
+# 
+# 
+#   ### 8a. SECOND DERIVATIVE (y2 axis)
+# 
+#   p <- p %>% add_lines(
+#     x = best_fit$best_d2xy$x,
+#     y = best_fit$best_d2xy$d2x_y,
+#     name = "2nd Derivative of x given y",
+#     yaxis = "y2",
+#     line = list(color = "#604e97"),
+#     visible = "legendonly"
+#   )
+# 
+# 
+#   ### 8b. Sample uncertainty (y3 axis)
+# 
+#   unc_col <- list(color = "#e68fac")
+#   p <- p %>% add_lines(
+#     x = best_fit$best_pred$x,
+#     y = best_fit$best_pred$pcov,
+#     name = "Measurement Uncertainty",
+#     yaxis = "y3",
+#     line = unc_col,
+#     legendgroup = "linked_uncertainty",
+#     visible = "legendonly"
+#   ) %>% add_trace(
+#     data = samples_predicted_conc,
+#     x = ~raw_predicted_concentration,
+#     y = ~pcov,
+#     type = "scatter",
+#     mode = "markers",
+#     name = "",                         ## no extra legend entry
+#     marker = list(color = "#800032", symbol = "circle"),
+#     text = ~paste("Predicted", x_label, ":", raw_predicted_concentration,
+#                   "<br>Coefficient of Variation (pCoV):", round(pcov,2), "%"),
+#     yaxis = "y3",
+#     legendgroup = "linked_uncertainty",
+#     showlegend = FALSE,
+#     hovertemplate = "%{text}<extra></extra>",
+#     visible = "legendonly"
+#   ) %>% add_lines(
+#     x = best_fit$best_pred$x,
+#     y = best_fit$best_pred$pcov_threshold,
+#     name = paste0("pCoV Threshold: ",best_fit$best_pred$pcov_threshold,"%"),
+#     yaxis = "y3",
+#     line = list(color = "#e68fac", dash = "dash"),
+#     legendgroup = "linked_uncertainty",
+#     visible = "legendonly"
+#   )
+# 
+# 
+#   ### 9a. SAMPLES
+# 
+#   p <- p %>% add_trace(
+#     data = samples_predicted_conc,
+#     x = ~raw_predicted_concentration,
+#     y = samples_predicted_conc[[response_variable]],
+#     type = "scatter",
+#     mode = "markers",
+#     name = "Samples",
+#     marker = list(color = "#d1992a", symbol = "circle"),
+#     text = ~paste("Predicted", x_label, ":", raw_predicted_concentration,
+#                   "<br>",y_label , ":", samples_predicted_conc[[response_variable]],
+#                   "<br>Patient ID:", patientid,
+#                   "<br> Timepoint:", timeperiod,
+#                   "<br>Well:", well,
+#                   "<br>LOQ Gate Class:", samples_predicted_conc$gate_class_loq,
+#                   "<br>LOD Gate Class:", samples_predicted_conc$gate_class_lod,
+#                   "<br> PCOV Gate Class:",samples_predicted_conc$gate_class_pcov ),
+#     #"<br>Timeperiod:", timeperiod),
+#     hovertemplate = "%{text}<extra></extra>"
+#   )
+# 
+# 
+#   ### 10. INFLECTION POINT
+# 
+#   p <- p %>% add_trace(
+#     x = best_fit$best_glance$inflect_x,
+#     y = best_fit$best_glance$inflect_y,
+#     type = "scatter",
+#     mode = "markers",
+#     name = paste(
+#       "Inflection Point: (",
+#       round(best_fit$best_glance$inflect_x, 3), ",",
+#       round(best_fit$best_glance$inflect_y, 3), ")"
+#     ),
+#     legendgroup = "fitted_curve",
+#     showlegend = TRUE,
+#     marker = list(color = "#2724F0", size = 8)
+#    # visible     = "legendonly"
+#   )
+# 
+# 
+#   ### 11. LAYOUT
+# 
+#   p <- p %>% layout(
+#     title = paste(
+#       "Fitted", title_model_name, "Model (",
+#       unique(best_fit$best_data$plate), ",",
+#       unique(best_fit$best_data$antigen), ")"
+#     ),
+#     xaxis = list(title = x_label,
+#                  showgrid = TRUE,
+#                  zeroline = FALSE),
+#     yaxis = list(title = y_label,
+#                  showgrid = TRUE,
+#                  zeroline = TRUE),
+#     legend = list(x = 1.1,
+#                   y = 1,
+#                   xanchor = "left"),
+#     font = list(size = 12),
+# 
+#     yaxis2 = list(
+#       showticklabels = FALSE,
+#       title = "",
+#       tickmode = "linear",
+#       dtick = 10,
+#       overlaying = "y",
+#       side = "right",
+#       showgrid = FALSE,
+#       zeroline = FALSE
+#     ),
+# 
+#     yaxis3 = list(
+#       overlaying = "y",
+#       side = "right",
+#       title = y3_label,
+#       range = se_axis_limits,
+#       tickmode = "linear",
+#       type = "linear",
+#       # range = log10(se_axis_limits),
+#       dtick = dtick,
+#       showgrid = FALSE,
+#       zeroline = FALSE,
+#       showticklabels = TRUE
+#     )
+#   )
+# 
+#   return(p)
+# }
 
 glance_plot_data <- function(best_glance_all,
                              best_plate_all,

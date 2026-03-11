@@ -1,3 +1,14 @@
+# ---- Wavelength sentinel — used instead of NA/NULL so that SQL UNIQUE constraints ----
+# and R joins work correctly for bead-array data (no wavelength).
+# Must match the value used in the DB migration.
+# 
+WL_NONE <- "__none__"
+
+#' Replace NA or empty wavelength values with the sentinel
+normalize_wavelength <- function(x) {
+ ifelse(is.na(x) | trimws(x) == "", WL_NONE, as.character(x))
+}
+
 fetch_study_parameters <- function(study_accession, param_user, param_group = "standard_curve_options", project_id = userWorkSpaceID(), conn) {
   query <- glue("
   SELECT study_accession, param_name, param_boolean_value, param_character_value
@@ -65,7 +76,7 @@ WHERE study_accession = '{study_accession}'
 }
 
 fetch_db_standards <- function(study_accession, experiment_accession, project_id, conn) {
-  query <- glue("SELECT study_accession, experiment_accession, feature, plate_id, stype, source, sampleid, well, dilution, antigen, antibody_mfi AS mfi, nominal_sample_dilution
+  query <- glue("SELECT study_accession, experiment_accession, feature, plate_id, stype, source, wavelength, sampleid, well, dilution, antigen, antibody_mfi AS mfi, nominal_sample_dilution
   FROM madi_results.xmap_standard
 WHERE project_id = {project_id}
 AND study_accession = '{study_accession}'
@@ -77,7 +88,9 @@ AND experiment_accession = '{experiment_accession}'
 }
 
 fetch_db_buffer <- function(study_accession, experiment_accession, project_id, conn) {
-  query <- glue("SELECT study_accession, experiment_accession, plate_id, stype, well, antigen, dilution, feature, antibody_mfi AS mfi, nominal_sample_dilution FROM madi_results.xmap_buffer
+  query <- glue("SELECT study_accession, experiment_accession, plate_id, stype, source, wavelength, well, antigen, dilution, 
+  feature, antibody_mfi AS mfi, nominal_sample_dilution 
+  FROM madi_results.xmap_buffer
 WHERE project_id = {project_id}
 AND study_accession = '{study_accession}'
 AND experiment_accession = '{experiment_accession}'
@@ -88,8 +101,7 @@ AND experiment_accession = '{experiment_accession}'
 }
 
 fetch_db_controls <- function(study_accession, experiment_accession, project_id, conn) {
-  query <- glue("SELECT study_accession, experiment_accession, plate_id, well, stype, sampleid,
-                    source, dilution, pctaggbeads, samplingerrors, antigen, antibody_mfi as MFI, antibody_n
+  query <- glue("SELECT study_accession, experiment_accession, plate_id, well, stype, source, wavelength, dilution, pctaggbeads, samplingerrors, antigen, antibody_mfi as MFI, antibody_n
                     feature, project_id, plateid, nominal_sample_dilution, plate
                   	FROM madi_results.xmap_control
               WHERE project_id = {project_id}
@@ -105,7 +117,7 @@ fetch_db_controls <- function(study_accession, experiment_accession, project_id,
 fetch_db_samples <- function(study_accession, experiment_accession, project_id, conn) {
   query <- glue("SELECT study_accession,
 experiment_accession, plate_id, timeperiod, patientid,
-well, stype, sampleid,  agroup, dilution, pctaggbeads, samplingerrors, antigen, antibody_mfi AS mfi,
+well, stype, source, wavelength, sampleid,  agroup, dilution, pctaggbeads, samplingerrors, antigen, antibody_mfi AS mfi,
 antibody_n, nominal_sample_dilution, feature FROM madi_results.xmap_sample
 WHERE project_id = {project_id}
 AND study_accession = '{study_accession}'
@@ -143,7 +155,7 @@ pull_data <- function(study_accession, experiment_accession, project_id, conn = 
   # print(names(standard_curve_data))
 
   standards <- inner_join(standard_curve_data, plates[, c("study_accession", "experiment_accession" ,"plateid", "plate", "plate_id" , "assay_response_variable" ,"assay_independent_variable"
-   ,"project_id")], by = c("study_accession", "experiment_accession","plate_id"))[ ,c("study_accession","experiment_accession","feature","source","plateid",
+   ,"project_id")], by = c("study_accession", "experiment_accession","plate_id"))[ ,c("study_accession","experiment_accession","feature", "source", "wavelength","plateid",
                                                                                                                         "plate", "stype", "nominal_sample_dilution",
                                                                                                                         "sampleid","well","dilution","antigen","mfi",
                                                                                                                         "assay_response_variable", "assay_independent_variable")]
@@ -170,6 +182,61 @@ pull_data <- function(study_accession, experiment_accession, project_id, conn = 
   response_var = unique(plates$assay_response_variable)
   indep_var = unique(plates$assay_independent_variable)
 
+  # ====================================================================
+  # RESPONSE VARIABLE COLUMN ALIGNMENT
+  # ====================================================================
+  # The DB always stores the measurement in 'antibody_mfi' (aliased as 'mfi').
+  # For bead arrays, assay_response_variable = "mfi" → column name matches.
+  # For ELISA, assay_response_variable = "absorbance" → column name mismatch.
+  # Rename the data column so downstream code can use response_var directly.
+  if (length(response_var) == 1 && response_var != "mfi") {
+    if ("mfi" %in% names(standards)) names(standards)[names(standards) == "mfi"] <- response_var
+    if ("mfi" %in% names(blanks))    names(blanks)[names(blanks) == "mfi"] <- response_var
+    if ("mfi" %in% names(samples))   names(samples)[names(samples) == "mfi"] <- response_var
+    cat("  ✓ Renamed 'mfi' column to '", response_var, "' for ELISA compatibility\n", sep = "")
+  }
+
+  # ====================================================================
+  # WAVELENGTH DETECTION AND source_nom CONSTRUCTION
+  # ====================================================================
+  # For ELISA, wavelength identifies distinct measurement channels.
+  # For bead array, wavelength is not applicable.
+  # Try to get wavelength from the data; if not available, derive from context.
+  
+  # Check if wavelength column exists in any of the data frames
+  has_wavelength_std <- "wavelength" %in% names(standards)
+  has_wavelength_blk <- "wavelength" %in% names(blanks)
+  has_wavelength_smp <- "wavelength" %in% names(samples)
+  
+  # Add wavelength column if not present
+  if (!has_wavelength_std) standards$wavelength <- WL_NONE
+  if (!has_wavelength_blk) blanks$wavelength    <- WL_NONE
+  if (!has_wavelength_smp) samples$wavelength   <- WL_NONE
+  
+  # Normalize any NA/empty wavelength values from DB to sentinel
+  standards$wavelength <- normalize_wavelength(standards$wavelength)
+  blanks$wavelength    <- normalize_wavelength(blanks$wavelength)
+  samples$wavelength   <- normalize_wavelength(samples$wavelength)
+  
+  # Construct source_nom: combines source with wavelength for ELISA
+  # For bead array (wavelength == WL_NONE), source_nom = source
+  build_source_nom <- function(df) {
+    src <- if ("source" %in% names(df)) as.character(df$source) else rep(NA_character_, nrow(df))
+    src[is.na(src) | trimws(src) == ""] <- "unknown"
+    wl <- as.character(df$wavelength)
+    ifelse(
+      is.na(wl) | trimws(wl) == "" | wl == WL_NONE,
+      src,
+      paste0(src, "|", wl, "_nm")
+    )
+  }
+  
+  standards$source_nom <- build_source_nom(standards)
+  blanks$source_nom    <- build_source_nom(blanks)
+  samples$source_nom   <- build_source_nom(samples)
+  
+  cat("  source_nom values (standards):", paste(unique(standards$source_nom), collapse = ", "), "\n")
+
 
   return(list(plates=plates, standards=standards,
               blanks=blanks, samples=samples,
@@ -189,6 +256,142 @@ shiny_notify <- function(session = shiny::getDefaultReactiveDomain()) {
   }
 }
 
+# ---- DIAGNOSTIC: Pre-upsert data inspector ----
+#' ---- Diagnose potential duplicate-key issues before upserting ----
+#' Call this immediately before upsert_best_curve() to see exactly what
+#' the data looks like in the natural-key space.  The output goes to the
+#' R console (message()) and is also returned invisibly as a list.
+#'
+#' @param df         data.frame to be upserted
+#' @param table      target table name (used to look up natural keys)
+#' @param conn       optional DBI connection – if supplied the function also
+#'                   checks which rows already exist in the DB on the NK
+#' @param schema     DB schema (default "madi_results")
+#' @return invisibly, a list with elements: nk, n_rows, n_distinct_nk,
+#'         dup_keys (data.frame of duplicated NK combos), wavelength_info
+diagnose_upsert_data <- function(df, table, conn = NULL, schema = "madi_results") {
+
+  nk <- get_natural_keys(table)
+  if (is.null(nk)) {
+    message("[diagnose] Unknown table: ", table)
+    return(invisible(NULL))
+  }
+
+  hdr <- paste0(
+    "\n",
+    strrep("=", 70), "\n",
+    "  UPSERT DIAGNOSTIC — table: ", table, "\n",
+    strrep("=", 70)
+  )
+  message(hdr)
+
+  # ----- basic shape -----
+  message("  Incoming rows        : ", nrow(df))
+  message("  Incoming columns     : ", paste(names(df), collapse = ", "))
+  message("  Natural key columns  : ", paste(nk, collapse = ", "))
+
+  missing_nk <- setdiff(nk, names(df))
+  if (length(missing_nk) > 0) {
+    message("  ** MISSING NK cols   : ", paste(missing_nk, collapse = ", "))
+  }
+
+  present_nk <- intersect(nk, names(df))
+
+  # ----- NA audit per NK column -----
+  for (col in present_nk) {
+    n_na <- sum(is.na(df[[col]]))
+    n_empty <- if (is.character(df[[col]])) sum(trimws(df[[col]]) == "", na.rm = TRUE) else 0
+    uniq <- length(unique(df[[col]]))
+    message(sprintf("  %-30s  NA=%d  empty=%d  unique=%d  sample: %s",
+                    col, n_na, n_empty, uniq,
+                    paste(head(unique(df[[col]]), 4), collapse = ", ")))
+  }
+
+  # ----- wavelength-specific diagnostics -----
+  wl_info <- NULL
+  if ("wavelength" %in% names(df)) {
+    wl_vals    <- unique(df$wavelength)
+    wl_na      <- sum(is.na(df$wavelength))
+    wl_sentinel <- sum(df$wavelength == WL_NONE, na.rm = TRUE)
+    wl_info    <- list(values = wl_vals, n_na = wl_na, n_sentinel = wl_sentinel)
+    message("  wavelength values    : ", paste(wl_vals, collapse = ", "),
+            "  (NA: ", wl_na, ", sentinel '", WL_NONE, "': ", wl_sentinel, ")")
+    if (wl_na > 0) {
+      message("  ** WARNING: wavelength has NA values — these should be '", WL_NONE, "'")
+    }
+  } else {
+    message("  wavelength column    : NOT PRESENT in data")
+  }
+
+  # ----- duplicate detection on NK -----
+  if (length(present_nk) > 0) {
+    nk_df   <- df[, present_nk, drop = FALSE]
+    dup_idx <- duplicated(nk_df)
+    n_dup   <- sum(dup_idx)
+    message("  Distinct NK combos   : ", nrow(unique(nk_df)))
+    message("  Duplicate NK rows    : ", n_dup)
+
+    if (n_dup > 0) {
+      dup_keys <- unique(nk_df[dup_idx, , drop = FALSE])
+      message("  ** DUPLICATE NK combos (first 5):")
+      print(head(dup_keys, 5))
+    } else {
+      dup_keys <- data.frame()
+    }
+  } else {
+    dup_keys <- data.frame()
+  }
+
+  # ----- check for within-data duplicates on the DB constraint (6-col) -----
+  # This catches the case where NK in R has more columns than DB constraint
+  nk_no_wl <- setdiff(present_nk, "wavelength")
+  if (length(nk_no_wl) > 0 && "wavelength" %in% present_nk) {
+    nk6_df <- df[, nk_no_wl, drop = FALSE]
+    dup6   <- sum(duplicated(nk6_df))
+    message("  Distinct NK combos WITHOUT wavelength : ", nrow(unique(nk6_df)))
+    message("  Duplicate rows WITHOUT wavelength     : ", dup6)
+    if (dup6 > 0) {
+      message("  ** WARNING: Data has rows that differ ONLY by wavelength.")
+      message("     If the DB unique constraint does NOT include wavelength,")
+      message("     the INSERT will fail with a duplicate-key violation.")
+    }
+  }
+
+  # ----- optional: check DB for existing rows -----
+  if (!is.null(conn) && DBI::dbIsValid(conn) && length(present_nk) > 0) {
+    tryCatch({
+      # Sample first NK combo to check
+      sample_row <- df[1, present_nk, drop = FALSE]
+      conditions <- vapply(present_nk, function(col) {
+        val <- sample_row[[col]]
+        if (is.na(val)) {
+          paste0(col, " IS NULL")
+        } else {
+          paste0(col, " = '", gsub("'", "''", as.character(val)), "'")
+        }
+      }, character(1))
+      check_sql <- sprintf(
+        "SELECT COUNT(*) AS n FROM %s.%s WHERE %s",
+        schema, table, paste(conditions, collapse = " AND ")
+      )
+      existing_n <- DBI::dbGetQuery(conn, check_sql)$n
+      message("  Existing DB rows matching first NK combo: ", existing_n)
+    }, error = function(e) {
+      message("  DB check skipped: ", conditionMessage(e))
+    })
+  }
+
+  message(strrep("=", 70), "\n")
+
+  invisible(list(
+    nk             = nk,
+    n_rows         = nrow(df),
+    n_distinct_nk  = if (length(present_nk) > 0) nrow(unique(df[, present_nk, drop = FALSE])) else NA,
+    dup_keys       = dup_keys,
+    wavelength_info = wl_info
+  ))
+}
+
 upsert_best_curve <- function(conn,
                               df,
                               schema = "madi_results",
@@ -197,7 +400,8 @@ upsert_best_curve <- function(conn,
                               quiet  = FALSE,
                               batch_size = 50000,
                               use_copy = TRUE,
-                              skip_index_check = FALSE) {
+                              skip_index_check = FALSE,
+                              use_on_conflict = TRUE) {
 
   ##
   ## Notifier
@@ -215,12 +419,87 @@ upsert_best_curve <- function(conn,
   ##
   if (!DBI::dbIsValid(conn)) return(bail("Database connection is not valid."))
   if (!is.data.frame(df) || nrow(df) == 0) return(bail("No data provided."))
+  
+  old_names <- names(df)
+  names(df) <- tolower(names(df))
+  changed <- old_names != names(df)
+  if (any(changed)) {
+    message(sprintf(
+      "[upsert_best_curve] Lowercased %d column name(s) for table '%s': %s",
+      sum(changed), table,
+      paste(sprintf("%s -> %s", old_names[changed], names(df)[changed]), collapse = ", ")
+    ))
+  }
+  
+  # Remove obsolete column if present
+  if ("sample_dilution_factor" %in% names(df)) {
+    message(sprintf("[upsert_best_curve] Removing obsolete 'sample_dilution_factor' from %s", table))
+    df$sample_dilution_factor <- NULL
+  }
+  
+  # Ensure 'feature' column exists (required by NK for most tables)
+  nk <- get_natural_keys(table)
+  if (!is.null(nk) && "feature" %in% nk && !"feature" %in% names(df)) {
+    message(sprintf("[upsert_best_curve] 'feature' missing from %s — filling FEAT_NONE.", table))
+    df$feature <- FEAT_NONE
+  }
+  
+  # Normalize feature values (NA/empty → sentinel) for consistent NK matching
+  if ("feature" %in% names(df)) {
+    df$feature <- normalize_feature(df$feature)
+  }
+  
+  ##
+  ## Defensive column filter: drop any R-only columns not in the DB table.
+  ## Prevents errors from internal routing columns (source_nom, plate_nom, etc.)
+  ##
+  tryCatch({
+    db_cols_query <- sprintf(
+      "SELECT column_name FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s'",
+      schema, table
+    )
+    db_cols <- DBI::dbGetQuery(conn, db_cols_query)$column_name
+    if (length(db_cols) > 0) {
+      extra_cols <- setdiff(names(df), db_cols)
+      if (length(extra_cols) > 0) {
+        message(sprintf(
+          "[upsert_best_curve] Dropping %d column(s) not in %s.%s: %s",
+          length(extra_cols), schema, table,
+          paste(extra_cols, collapse = ", ")
+        ))
+        df <- df[, names(df) %in% db_cols, drop = FALSE]
+      }
+    }
+  }, error = function(e) {
+    message(sprintf("[upsert_best_curve] Column introspection failed for %s: %s — skipping filter.",
+                    table, conditionMessage(e)))
+  })
+  
+  ##
+  ## Run diagnostics before any DB operations
+  ##
+  diag <- diagnose_upsert_data(df, table, conn = conn, schema = schema)
 
+  ##
+  ## De-duplicate incoming data on natural keys
+  ## This prevents within-batch duplicate-key violations
+  ##
   cols <- names(df)
   nk <- get_natural_keys(table)
   pk <- get_primary_key(table)  # New function to get primary key
 
   if (is.null(nk)) stop("Unknown table: ", table)
+
+  present_nk <- intersect(nk, cols)
+  if (length(present_nk) > 0) {
+    n_before <- nrow(df)
+    df <- df[!duplicated(df[, present_nk, drop = FALSE]), , drop = FALSE]
+    n_after <- nrow(df)
+    if (n_before != n_after) {
+      message(sprintf("[upsert_best_curve] De-duplicated %s: %d -> %d rows (removed %d NK dupes)",
+                      table, n_before, n_after, n_before - n_after))
+    }
+  }
 
   missing_keys <- setdiff(nk, cols)
   if (length(missing_keys) > 0) {
@@ -270,6 +549,15 @@ upsert_best_curve <- function(conn,
   sql_parts <- build_sql_components_pk(conn, schema, table, cols, nk, pk)
 
   ##
+  ## Select upsert strategy
+  ## Phase 1 (default): scoped DELETE + bulk INSERT — works with nullable NKs
+  ## Phase 2 (use_on_conflict = TRUE): INSERT ... ON CONFLICT — requires NOT NULL NKs
+  ##
+  upsert_fn <- if (use_on_conflict) upsert_batch_on_conflict else upsert_batch_pk
+  strategy_label <- if (use_on_conflict) "ON CONFLICT" else "scoped DELETE"
+  message(sprintf("[upsert_best_curve] %s: %d rows, strategy=%s", table, nrow(df), strategy_label))
+
+  ##
   ## Batch processing for large datasets
   ##
   n_rows <- nrow(df)
@@ -294,7 +582,7 @@ upsert_best_curve <- function(conn,
           duration = NULL,
           type = "message"
         )
-        upsert_batch_pk(conn, batches[[i]], table, sql_parts, use_copy, notify)
+        upsert_fn(conn, batches[[i]], table, sql_parts, use_copy, notify)
       }, logical(1))
     }, error = function(e) {
       showNotification(
@@ -331,7 +619,7 @@ upsert_best_curve <- function(conn,
 
   ## Single batch
   ok <- tryCatch({
-    upsert_batch_pk(conn, df, table, sql_parts, use_copy, notify)
+    upsert_fn(conn, df, table, sql_parts, use_copy, notify)
   }, error = function(e) {
     showNotification(
       sprintf("Upsert failed: %s", conditionMessage(e)),
@@ -384,9 +672,12 @@ build_sql_components_pk <- function(conn, schema, table, cols, nk, pk) {
   nk_list <- paste(nk_quoted, collapse = ", ")
 
   # Build WHERE clause for natural key matching
+  # Use IS NOT DISTINCT FROM instead of = to handle NULL values correctly
+  # (NULL = NULL evaluates to NULL/FALSE in SQL, but IS NOT DISTINCT FROM
+  #  treats two NULLs as equal, which is the correct behavior for NK matching)
   nk_conditions <- vapply(nk, function(x) {
     col_quoted <- as.character(DBI::dbQuoteIdentifier(conn, x))
-    paste0("t.", col_quoted, " = tmp.", col_quoted)
+    paste0("t.", col_quoted, " IS NOT DISTINCT FROM tmp.", col_quoted)
   }, character(1), USE.NAMES = FALSE)
 
   nk_where_clause <- paste(nk_conditions, collapse = " AND ")
@@ -428,7 +719,19 @@ build_sql_components_pk <- function(conn, schema, table, cols, nk, pk) {
   )
 }
 
-## Execute single batch using DELETE/INSERT strategy based on natural keys
+## ────────────────────────────────────────────────────────────────────
+## PLATE SCOPE columns — the leading prefix of every UNIQUE constraint.
+## Within a batch, ALL rows for each plate scope are regenerated,
+## so we can safely DELETE by scope (fast index scan) rather than
+## matching every row on the full 11-14 column NK (slow IS NOT DISTINCT FROM).
+## ────────────────────────────────────────────────────────────────────
+SCOPE_COLS <- c("project_id", "study_accession", "experiment_accession",
+                "plateid", "plate", "nominal_sample_dilution")
+
+## Execute single batch using SCOPED DELETE + bulk INSERT
+## This replaces the old row-level IS NOT DISTINCT FROM join with a
+## set-level DELETE by plate scope, which is orders of magnitude faster
+## because it uses the leading columns of the UNIQUE constraint B-tree index.
 upsert_batch_pk <- function(conn, df, table, sql_parts, use_copy, notify) {
   tryCatch({
     DBI::dbWithTransaction(conn, {
@@ -437,8 +740,6 @@ upsert_batch_pk <- function(conn, df, table, sql_parts, use_copy, notify) {
 
       # Create temp table (excluding primary key column if present)
       temp_cols <- setdiff(sql_parts$cols, sql_parts$pk)
-
-      # Filter df to exclude primary key column for temp table
       df_temp <- df[, temp_cols, drop = FALSE]
 
       create_sql <- sprintf(
@@ -451,7 +752,7 @@ upsert_batch_pk <- function(conn, df, table, sql_parts, use_copy, notify) {
       )
       DBI::dbExecute(conn, create_sql)
 
-      # Load data into temp table using COPY
+      # Load data into temp table using COPY (binary protocol)
       if (use_copy && requireNamespace("RPostgres", quietly = TRUE)) {
         RPostgres::dbWriteTable(
           conn, tmp_name, df_temp,
@@ -463,18 +764,37 @@ upsert_batch_pk <- function(conn, df, table, sql_parts, use_copy, notify) {
         DBI::dbWriteTable(conn, tmp_name, df_temp, append = TRUE, row.names = FALSE)
       }
 
-      # Step 1: DELETE existing rows that match natural keys
+      # Let PostgreSQL know the temp table's size for better query plans
+      DBI::dbExecute(conn, sprintf("ANALYZE %s", tmp_id))
+
+      # ── Step 1: Scoped DELETE ──────────────────────────────────────
+      # Delete ALL existing rows whose plate-scope matches any incoming
+      # plate-scope. This is safe because a batch always regenerates
+      # complete results for each plate scope.
+      #
+      # Uses the leading columns of the UNIQUE index → index scan,
+      # not the old 11-14 column IS NOT DISTINCT FROM → seq scan.
+      scope_available <- intersect(SCOPE_COLS, temp_cols)
+      scope_quoted <- vapply(scope_available, function(x)
+        as.character(DBI::dbQuoteIdentifier(conn, x)), character(1), USE.NAMES = FALSE)
+
       delete_sql <- sprintf(
         "DELETE FROM %s.%s t
-         USING %s tmp
-         WHERE %s",
+         WHERE EXISTS (
+           SELECT 1 FROM (
+             SELECT DISTINCT %s FROM %s
+           ) scope
+           WHERE %s
+         )",
         sql_parts$schema_id, sql_parts$table_id,
+        paste(scope_quoted, collapse = ", "),
         tmp_id,
-        sql_parts$nk_where_clause
+        paste(sprintf("t.%s = scope.%s", scope_quoted, scope_quoted), collapse = " AND ")
       )
-      DBI::dbExecute(conn, delete_sql)
+      n_deleted <- DBI::dbExecute(conn, delete_sql)
+      message(sprintf("[upsert_batch_pk] %s: scoped DELETE removed %d existing rows", table, n_deleted))
 
-      # Step 2: INSERT all rows from temp table (primary key auto-generates)
+      # ── Step 2: Bulk INSERT ────────────────────────────────────────
       insert_sql <- sprintf(
         "INSERT INTO %s.%s (%s)
          SELECT %s FROM %s",
@@ -483,7 +803,8 @@ upsert_batch_pk <- function(conn, df, table, sql_parts, use_copy, notify) {
         sql_parts$insert_cols_list,
         tmp_id
       )
-      DBI::dbExecute(conn, insert_sql)
+      n_inserted <- DBI::dbExecute(conn, insert_sql)
+      message(sprintf("[upsert_batch_pk] %s: INSERT added %d rows", table, n_inserted))
     })
     TRUE
   }, error = function(e) {
@@ -498,255 +819,106 @@ upsert_batch_pk <- function(conn, df, table, sql_parts, use_copy, notify) {
   })
 }
 
+## ────────────────────────────────────────────────────────────────────
+## Feature sentinel — same pattern as wavelength.
+## Use AFTER running migration_phase2_not_null_nk.sql.
+## ────────────────────────────────────────────────────────────────────
+FEAT_NONE <- "__none__"
 
+#' Replace NA or empty feature values with the sentinel
+normalize_feature <- function(x) {
+  ifelse(is.na(x) | trimws(x) == "", FEAT_NONE, as.character(x))
+}
 
+## ────────────────────────────────────────────────────────────────────
+## Phase 2: ON CONFLICT upsert (requires NOT NULL NK columns)
+## ────────────────────────────────────────────────────────────────────
+## Activate by passing use_on_conflict = TRUE to upsert_best_curve
+## AFTER running migration_phase2_not_null_nk.sql.
+##
+## This is the fastest possible upsert strategy:
+## - Single SQL statement: INSERT ... ON CONFLICT ... DO UPDATE SET
+## - PostgreSQL uses the B-tree index on the UNIQUE constraint directly
+## - No DELETE, no two-pass, no IS NOT DISTINCT FROM
+## ────────────────────────────────────────────────────────────────────
+upsert_batch_on_conflict <- function(conn, df, table, sql_parts, use_copy, notify) {
+  tryCatch({
+    DBI::dbWithTransaction(conn, {
+      tmp_name <- paste0("tmp_", substr(digest::digest(Sys.time()), 1, 8))
+      tmp_id <- as.character(DBI::dbQuoteIdentifier(conn, tmp_name))
 
+      temp_cols <- setdiff(sql_parts$cols, sql_parts$pk)
+      df_temp <- df[, temp_cols, drop = FALSE]
 
-# upsert_best_curve <- function(conn,
-#                               df,
-#                               schema = "madi_results",
-#                               table  = "best_plate_all",
-#                               notify = NULL,
-#                               quiet  = FALSE,
-#                               batch_size = 50000,
-#                               use_copy = TRUE,
-#                               skip_index_check = FALSE) {
-#
-#   ##
-#   ## Notifier
-#   ##
-#   if (is.null(notify)) {
-#     notify <- function(msg) if (!quiet) message(Sys.time(), " - ", msg)
-#   }
-#   bail <- function(msg) {
-#     notify(msg)
-#     invisible(FALSE)
-#   }
-#
-#   ##
-#   ## Basic checks
-#   ##
-#   if (!DBI::dbIsValid(conn)) return(bail("Database connection is not valid."))
-#   if (!is.data.frame(df) || nrow(df) == 0) return(bail("No data provided."))
-#
-#   cols <- names(df)
-#   nk <- get_natural_keys(table)
-#   if (is.null(nk)) stop("Unknown table: ", table)
-#
-#   missing_keys <- setdiff(nk, cols)
-#   if (length(missing_keys) > 0) {
-#     stop("Missing natural-key columns: ", paste(missing_keys, collapse = ", "))
-#   }
-#
-#   if (anyNA(df[, nk, drop = FALSE])) {
-#     return(bail("Natural-key columns contain NA; cannot upsert."))
-#   }
-#
-#   ##
-#   ## Cache index check (skip on repeated calls)
-#   ##
-#   # if (!skip_index_check) {
-#   #   cache_key <- paste0(schema, ".", table)
-#   #   if (!exists(".upsert_index_cache", envir = .GlobalEnv)) {
-#   #     assign(".upsert_index_cache", new.env(parent = emptyenv()), envir = .GlobalEnv)
-#   #   }
-#   #   cache <- get(".upsert_index_cache", envir = .GlobalEnv)
-#   #
-#   #   if (!isTRUE(cache[[cache_key]])) {
-#   #     idx_exists <- DBI::dbGetQuery(conn, glue::glue_sql(
-#   #       "SELECT 1 FROM pg_indexes
-#   #        WHERE schemaname = {schema} AND tablename = {table}
-#   #        AND indexdef LIKE '%UNIQUE%' LIMIT 1",
-#   #       .con = conn
-#   #     ))
-#   #     if (nrow(idx_exists) == 0) {
-#   #       return(bail(paste0("No UNIQUE index for ", schema, ".", table)))
-#   #     }
-#   #     cache[[cache_key]] <- TRUE
-#   #   }
-#  # }
-#
-#   ##
-#   ## Pre-compute SQL components (avoid repeated quoting)
-#   ##
-#   sql_parts <- build_sql_components(conn, schema, table, cols, nk)
-#
-#   ##
-#   ## Batch processing for large datasets
-#   ##
-#   n_rows <- nrow(df)
-#
-#   if (n_rows > batch_size) {
-#     notif_id <- paste0("upsert_", table)
-#
-#     showNotification(
-#       sprintf("Processing %d rows in %d batches", n_rows, ceiling(n_rows / batch_size)),
-#       id = notif_id,
-#       duration = 3,
-#       type = "message"
-#     )
-#
-#     batches <- split(df, ceiling(seq_len(n_rows) / batch_size))
-#
-#     results <- tryCatch({
-#       vapply(seq_along(batches), function(i) {
-#         showNotification(
-#           sprintf("Batch %d/%d (%d rows)", i, length(batches), nrow(batches[[i]])),
-#           id = notif_id,
-#           duration = NULL,
-#           type = "message"
-#         )
-#         upsert_batch(conn, batches[[i]], table, sql_parts, use_copy, notify)
-#       }, logical(1))
-#     }, error = function(e) {
-#       showNotification(
-#         sprintf("Error during batch processing: %s", conditionMessage(e)),
-#         id = notif_id,
-#         duration = NULL,
-#         type = "error"
-#       )
-#       return(NULL)
-#     })
-#
-#     # Handle error case (NULL returned from tryCatch)
-#     if (is.null(results)) {
-#       return(invisible(FALSE))
-#     }
-#
-#     if (all(results)) {
-#       removeNotification(notif_id)
-#       showNotification(
-#         sprintf("All %d batches completed successfully", length(batches)),
-#         duration = 5,
-#         type = "message"
-#       )
-#       return(invisible(TRUE))
-#     } else {
-#       showNotification(
-#         sprintf("%d/%d batches failed", sum(!results), length(batches)),
-#         id = notif_id,
-#         duration = NULL,
-#         type = "error"
-#       )
-#       return(invisible(FALSE))
-#     }
-#   }
-#
-#   ## Single batch
-#   ok <- tryCatch({
-#     upsert_batch(conn, df, table, sql_parts, use_copy, notify)
-#   }, error = function(e) {
-#     showNotification(
-#       sprintf("Upsert failed: %s", conditionMessage(e)),
-#       duration = NULL,
-#       type = "error"
-#     )
-#     return(FALSE)
-#   })
-#
-#   if (ok) {
-#     showNotification(
-#       paste0(table, " upsert completed (", n_rows, " rows)."),
-#       duration = 5,
-#       type = "message"
-#     )
-#   }
-#
-#   invisible(ok)
-# }
+      create_sql <- sprintf(
+        "CREATE TEMP TABLE %s (%s) ON COMMIT DROP",
+        tmp_id,
+        paste(sprintf("%s %s",
+                      vapply(temp_cols, function(x) as.character(DBI::dbQuoteIdentifier(conn, x)), character(1)),
+                      vapply(df_temp, pg_type_map, character(1))
+        ), collapse = ", ")
+      )
+      DBI::dbExecute(conn, create_sql)
 
-## Pre-compute SQL components once
-#
-# build_sql_components <- function(conn, schema, table, cols, nk) {
-#   schema_id <- as.character(DBI::dbQuoteIdentifier(conn, schema))
-#   table_id <- as.character(DBI::dbQuoteIdentifier(conn, table))
-#
-#   cols_quoted <- vapply(cols, function(x) {
-#     as.character(DBI::dbQuoteIdentifier(conn, x))
-#   }, character(1), USE.NAMES = FALSE)
-#
-#   nk_quoted <- vapply(nk, function(x) {
-#     as.character(DBI::dbQuoteIdentifier(conn, x))
-#   }, character(1), USE.NAMES = FALSE)
-#
-#   cols_list <- paste(cols_quoted, collapse = ", ")
-#   nk_list <- paste(nk_quoted, collapse = ", ")
-#
-#   update_cols <- setdiff(cols, nk)
-#   if (length(update_cols) > 0) {
-#     update_quoted <- vapply(update_cols, function(x) {
-#       as.character(DBI::dbQuoteIdentifier(conn, x))
-#     }, character(1), USE.NAMES = FALSE)
-#     set_clause <- paste(
-#       vapply(update_quoted, function(col) paste0(col, " = EXCLUDED.", col), character(1)),
-#       collapse = ", "
-#     )
-#     conflict_action <- paste("DO UPDATE SET", set_clause)
-#   } else {
-#     conflict_action <- "DO NOTHING"
-#   }
-#
-#   list(
-#     schema_id = schema_id,
-#     table_id = table_id,
-#     cols = cols,
-#     cols_list = cols_list,
-#     nk_list = nk_list,
-#     conflict_action = conflict_action
-#   )
-# }
+      if (use_copy && requireNamespace("RPostgres", quietly = TRUE)) {
+        RPostgres::dbWriteTable(
+          conn, tmp_name, df_temp,
+          append = TRUE, row.names = FALSE, copy = TRUE
+        )
+      } else {
+        DBI::dbWriteTable(conn, tmp_name, df_temp, append = TRUE, row.names = FALSE)
+      }
 
+      DBI::dbExecute(conn, sprintf("ANALYZE %s", tmp_id))
 
-## Execute single batch with COPY optimization
-#
-# upsert_batch <- function(conn, df, table, sql_parts, use_copy, notify) {
-#   tryCatch({
-#     DBI::dbWithTransaction(conn, {
-#       tmp_name <- paste0("tmp_", substr(digest::digest(Sys.time()), 1, 8))
-#       tmp_id <- as.character(DBI::dbQuoteIdentifier(conn, tmp_name))
-#
-#       # Minimal temp table - UNLOGGED equivalent for temp tables
-#       create_sql <- sprintf(
-#         "CREATE TEMP TABLE %s (%s) ON COMMIT DROP",
-#         tmp_id,
-#         paste(sprintf("%s %s",
-#                       vapply(sql_parts$cols, function(x) as.character(DBI::dbQuoteIdentifier(conn, x)), character(1)),
-#                       vapply(df, pg_type_map, character(1))
-#         ), collapse = ", ")
-#       )
-#       DBI::dbExecute(conn, create_sql)
-#
-#       # Use COPY for bulk loading (much faster than INSERT)
-#       if (use_copy && requireNamespace("RPostgres", quietly = TRUE)) {
-#         RPostgres::dbWriteTable(
-#           conn, tmp_name, df,
-#           append = TRUE,
-#           row.names = FALSE,
-#           copy = TRUE  # Uses PostgreSQL COPY protocol
-#         )
-#       } else {
-#         DBI::dbWriteTable(conn, tmp_name, df, append = TRUE, row.names = FALSE)
-#       }
-#
-#       # Execute upsert
-#       upsert_sql <- sprintf(
-#         "INSERT INTO %s.%s (%s) SELECT %s FROM %s ON CONFLICT (%s) %s",
-#         sql_parts$schema_id, sql_parts$table_id,
-#         sql_parts$cols_list, sql_parts$cols_list, tmp_id,
-#         sql_parts$nk_list, sql_parts$conflict_action
-#       )
-#       DBI::dbExecute(conn, upsert_sql)
-#     })
-#     TRUE
-#   }, error = function(e) {
-#     showNotification(id = "error_batch" ,paste0("Batch failed for ", table, ":", conditionMessage(e)), duration = NULL, closeButton = T, type = "error")
-#     FALSE
-#   })
-# }
+      # Build ON CONFLICT upsert using the UNIQUE constraint name
+      constraint_name <- paste0(table, "_nk")
 
+      # Non-key, non-PK columns to update on conflict
+      update_cols <- setdiff(temp_cols, sql_parts$nk)
+      insert_cols_quoted <- vapply(temp_cols, function(x)
+        as.character(DBI::dbQuoteIdentifier(conn, x)), character(1), USE.NAMES = FALSE)
+      insert_cols_list <- paste(insert_cols_quoted, collapse = ", ")
+
+      if (length(update_cols) > 0) {
+        update_quoted <- vapply(update_cols, function(x)
+          as.character(DBI::dbQuoteIdentifier(conn, x)), character(1), USE.NAMES = FALSE)
+        set_clause <- paste(
+          vapply(update_quoted, function(col) paste0(col, " = EXCLUDED.", col), character(1)),
+          collapse = ", "
+        )
+        conflict_action <- paste("DO UPDATE SET", set_clause)
+      } else {
+        conflict_action <- "DO NOTHING"
+      }
+
+      upsert_sql <- sprintf(
+        "INSERT INTO %s.%s (%s)
+         SELECT %s FROM %s
+         ON CONFLICT ON CONSTRAINT %s
+         %s",
+        sql_parts$schema_id, sql_parts$table_id,
+        insert_cols_list,
+        insert_cols_list,
+        tmp_id,
+        DBI::dbQuoteIdentifier(conn, constraint_name),
+        conflict_action
+      )
+      n_upserted <- DBI::dbExecute(conn, upsert_sql)
+      message(sprintf("[upsert_batch_on_conflict] %s: ON CONFLICT upserted %d rows", table, n_upserted))
+    })
+    TRUE
+  }, error = function(e) {
+    showNotification(
+      id = "error_batch",
+      paste0("Batch failed for ", table, " (ON CONFLICT): ", conditionMessage(e)),
+      duration = NULL, closeButton = TRUE, type = "error"
+    )
+    FALSE
+  })
+}
 
 ## Map R types to PostgreSQL types
-
 pg_type_map <- function(col) {
   switch(class(col)[1],
          "integer" = "INTEGER",
@@ -765,57 +937,30 @@ pg_type_map <- function(col) {
 
 get_natural_keys <- function(table) {
   keys <- list(
-    # best_plate_all = c(
-    #   "study_accession", "experiment_accession",
-    #   "plateid", "plate", "sample_dilution_factor", "source"
-    # ),
-    # best_glance_all = c(
-    #   "study_accession", "experiment_accession",
-    #   "plateid", "plate", "sample_dilution_factor", "source", "antigen"
-    # ),
-    # best_tidy_all = c(
-    #   "study_accession", "experiment_accession",
-    #   "plateid", "plate", "sample_dilution_factor", "source", "antigen", "term"
-    # ),
-    # best_sample_se_all = c(
-    #   "study_accession", "experiment_accession",
-    #   "plateid", "plate", "sample_dilution_factor", "source", "antigen",
-    #   "patientid", "timeperiod", "sampleid", "dilution",
-    #    "uid"
-    # ),
-    # best_standard_all = c(
-    #   "study_accession", "experiment_accession",
-    #   "plateid", "plate", "sample_dilution_factor", "source", "antigen", "feature", "well"
-    # ), # dilution not included as it can be NA when geometric mean is used
-    # best_pred_all = c(
-    #   "study_accession", "experiment_accession",
-    #   "plateid", "plate", "sample_dilution_factor", "source", "antigen",
-    #    "id_match"
-    # )
-    best_plate_all = c(
+    best_plate_all = c("project_id",
       "study_accession", "experiment_accession",
-      "plateid", "plate", "nominal_sample_dilution", "source"
+      "plateid", "plate", "nominal_sample_dilution", "source", "wavelength"
     ),
-    best_glance_all = c(
+    best_glance_all = c("project_id",
       "study_accession", "experiment_accession",
-      "plateid", "plate", "nominal_sample_dilution", "source", "antigen"
+      "plateid", "plate", "nominal_sample_dilution", "source", "wavelength", "antigen", "feature"
     ),
-    best_tidy_all = c(
+    best_tidy_all = c("project_id",
       "study_accession", "experiment_accession",
-      "plateid", "plate", "nominal_sample_dilution", "source", "antigen", "term"
+      "plateid", "plate", "nominal_sample_dilution", "source", "wavelength", "antigen", "feature", "term"
     ),
-    best_sample_se_all = c(
+    best_sample_se_all = c( "project_id",
       "study_accession", "experiment_accession",
-      "plateid", "plate", "nominal_sample_dilution", "source", "antigen",
+      "plateid", "plate", "nominal_sample_dilution", "source", "wavelength", "antigen", "feature",
       "patientid", "timeperiod", "sampleid", "dilution"
     ),
-    best_standard_all = c(
+    best_standard_all = c("project_id",
       "study_accession", "experiment_accession",
-      "plateid", "plate", "nominal_sample_dilution", "source", "antigen", "feature", "well"
+      "plateid", "plate", "nominal_sample_dilution", "source", "wavelength", "antigen", "feature", "well"
     ), # dilution not included as it can be NA when geometric mean is used
-    best_pred_all = c(
+    best_pred_all = c("project_id",
       "study_accession", "experiment_accession",
-      "plateid", "plate", "nominal_sample_dilution", "source", "antigen"
+      "plateid", "plate", "nominal_sample_dilution", "source", "wavelength", "antigen", "feature", "x"
     )
   )
 
@@ -880,25 +1025,50 @@ select_antigen_plate <- function(loaded_data,
                                  source = source,
                                  antigen = antigen,
                                  plate = plate,
+                                 wavelength = WL_NONE,
                                  antigen_constraints = antigen_constraints){
   print("select antigen plate in batch\n")
   print("plate in\n")
   print(plate)
+  print(paste("wavelength in:", wavelength))
   print("standards structure\n")
   print(str(loaded_data$standards))
   print("antigens\n")
   print(unique(loaded_data$standards$antigen))
-  print("source\n")
-  print(unique(loaded_data$standards$source))
+  print("source_nom\n")
+  print(unique(loaded_data$standards$source_nom))
   print("plate_nom\n")
   print(unique(loaded_data$standards$plate_nom))
 
   print("plate\n")
   print(unique(loaded_data$standards$plate))
 
-  plate_standard  <- loaded_data$standards[loaded_data$standards$source == source &
-                                             loaded_data$standards$antigen == antigen &
-                                             loaded_data$standards$plate_nom == plate ,]
+  # Use source_nom for filtering if available, fall back to source
+  if ("source_nom" %in% names(loaded_data$standards)) {
+    plate_standard  <- loaded_data$standards[loaded_data$standards$source_nom == source &
+                                               loaded_data$standards$antigen == antigen &
+                                               loaded_data$standards$plate_nom == plate ,]
+  } else {
+    plate_standard  <- loaded_data$standards[loaded_data$standards$source == source &
+                                               loaded_data$standards$antigen == antigen &
+                                               loaded_data$standards$plate_nom == plate ,]
+  }
+  
+  # ── Filter by wavelength when data contains multiple wavelengths ──
+  if ("wavelength" %in% names(plate_standard) && 
+      !is.null(wavelength) && wavelength != WL_NONE) {
+    plate_standard$wavelength <- normalize_wavelength(plate_standard$wavelength)
+    wl_filter <- plate_standard$wavelength == normalize_wavelength(wavelength)
+    if (any(wl_filter)) {
+      plate_standard <- plate_standard[wl_filter, , drop = FALSE]
+    } else {
+      message(sprintf(
+        "[select_antigen_plate] WARNING: wavelength '%s' matched 0 rows; keeping all %d rows. Wavelengths in data: %s",
+        wavelength, nrow(plate_standard),
+        paste(unique(plate_standard$wavelength), collapse = ", ")
+      ))
+    }
+  }
   # Guard against empty plate_standard data
   if (is.null(plate_standard) || nrow(plate_standard) == 0) {
     warning(paste("No standard curve data found for:",
@@ -914,8 +1084,25 @@ select_antigen_plate <- function(loaded_data,
   plate_samples <- loaded_data$samples[loaded_data$samples$antigen == antigen &
                                          loaded_data$samples$plate_nom == plate,]
 
+  # ── Filter blanks and samples by wavelength when relevant ──
+  if (!is.null(wavelength) && wavelength != WL_NONE) {
+    if ("wavelength" %in% names(plate_blanks) && nrow(plate_blanks) > 0) {
+      plate_blanks$wavelength <- normalize_wavelength(plate_blanks$wavelength)
+      wl_b <- plate_blanks$wavelength == normalize_wavelength(wavelength)
+      if (any(wl_b)) plate_blanks <- plate_blanks[wl_b, , drop = FALSE]
+    }
+    if ("wavelength" %in% names(plate_samples) && nrow(plate_samples) > 0) {
+      plate_samples$wavelength <- normalize_wavelength(plate_samples$wavelength)
+      wl_s <- plate_samples$wavelength == normalize_wavelength(wavelength)
+      if (any(wl_s)) plate_samples <- plate_samples[wl_s, , drop = FALSE]
+    }
+  }
+
   # anything after - is removed (nominal sample dilutions)
   plate_c <- sub("-.*$", "", plate)
+
+  # Resolve response column for this data (mfi for bead array, absorbance for ELISA)
+  response_col <- resolve_response_col(plate_standard)
 
   antigen_settings <- obtain_lower_constraint(dat = plate_standard,
                                               antigen = antigen,
@@ -926,10 +1113,15 @@ select_antigen_plate <- function(loaded_data,
                                               plateid = unique(plate_standard$plateid),
 
                                               plate_blanks = plate_blanks,
-                                              antigen_constraints = antigen_constraints)
+                                              antigen_constraints = antigen_constraints,
+                                              response_col = response_col)
 
 
-  fixed_a_result <- test_fixed_lower_asymptote(antigen_settings)
+  fixed_a_result <- resolve_fixed_lower_asymptote(antigen_settings)
+  fixed_a_result <- validate_fixed_lower_asymptote(
+    fixed_a_result_raw = fixed_a_result,
+    verbose = TRUE
+  )
 
   std_error_blank <- get_blank_se(antigen_settings = antigen_settings)
 
@@ -944,7 +1136,7 @@ select_antigen_plate <- function(loaded_data,
 #### Fetch saved results from std_curver
 fetch_best_plate_all <- function(study_accession, experiment_accession, project_id, conn) {
   query <- glue("
-SELECT best_plate_all_id, study_accession, experiment_accession, feature, source, plateid, plate, nominal_sample_dilution, assay_response_variable, assay_independent_variable
+SELECT best_plate_all_id, project_id, study_accession, experiment_accession, feature, source, wavelength, plateid, plate, nominal_sample_dilution, assay_response_variable, assay_independent_variable
 	FROM madi_results.best_plate_all
 	WHERE project_id = {project_id}
 	AND study_accession = '{study_accession}'
@@ -955,7 +1147,8 @@ SELECT best_plate_all_id, study_accession, experiment_accession, feature, source
 }
 
 fetch_best_tidy_all <- function(study_accession,experiment_accession, project_id, conn) {
-  query <- glue("SELECT best_tidy_all_id, study_accession, experiment_accession, term, lower, upper, estimate, std_error, statistic, p_value, nominal_sample_dilution, antigen, plateid, plate, source
+  query <- glue("SELECT best_tidy_all_id, project_id, study_accession, experiment_accession, term, lower, upper, estimate, std_error, statistic, 
+  p_value, nominal_sample_dilution, antigen, feature, plateid, plate, source, wavelength
 	FROM madi_results.best_tidy_all
 	WHERE project_id = {project_id}
 	AND study_accession = '{study_accession}'
@@ -963,9 +1156,11 @@ fetch_best_tidy_all <- function(study_accession,experiment_accession, project_id
   best_tidy_all <- dbGetQuery(conn, query)
   return(best_tidy_all)
 }
+
 fetch_best_pred_all <- function(study_accession, experiment_accession, project_id, conn) {
-  query <- glue("SELECT best_pred_all_id, x, model, yhat, overall_se, predicted_concentration, se_x, pcov, study_accession, experiment_accession, nominal_sample_dilution, plateid, plate,
-  antigen, source, best_glance_all_id
+  query <- glue("SELECT best_pred_all_id, project_id, x, model, yhat, overall_se, predicted_concentration, se_x, pcov, study_accession, experiment_accession, 
+  nominal_sample_dilution, plateid, plate,
+  antigen, feature, source, wavelength, best_glance_all_id
 	FROM madi_results.best_pred_all
 	WHERE project_id = {project_id}
 	AND study_accession = '{study_accession}'
@@ -975,8 +1170,9 @@ fetch_best_pred_all <- function(study_accession, experiment_accession, project_i
 }
 
 fetch_best_standard_all <- function(study_accession,experiment_accession, project_id, conn) {
-  query <- glue("SELECT best_standard_all_id, study_accession, experiment_accession, feature, source, plateid, plate, stype, nominal_sample_dilution, sampleid, well,
-  dilution, antigen, assay_response, assay_response_variable, assay_independent_variable, concentration, g, best_glance_all_id
+  query <- glue("SELECT best_standard_all_id, project_id, study_accession, experiment_accession, feature, source, wavelength, plateid, plate, stype, nominal_sample_dilution
+  , sampleid, well, dilution, antigen, feature, assay_response, assay_response_variable, assay_independent_variable
+  , concentration, g, best_glance_all_id
 	FROM madi_results.best_standard_all
 	WHERE project_id = {project_id}
 	AND study_accession = '{study_accession}'
@@ -986,7 +1182,9 @@ fetch_best_standard_all <- function(study_accession,experiment_accession, projec
 }
 
 fetch_best_glance_all <- function(study_accession,experiment_accession, project_id, conn) {
-  query <- glue("SELECT best_glance_all_id, study_accession, experiment_accession, plateid, plate, nominal_sample_dilution, antigen, iter, status, crit, a, b, c, d, lloq, uloq, lloq_y, uloq_y, llod, ulod, inflect_x, inflect_y, std_error_blank, dydx_inflect, mindc, maxdc, minrdl, maxrdl, dfresidual, nobs, rsquare_fit, aic, bic, loglik, mse, cv, source, bkg_method, is_log_response, is_log_x, apply_prozone, formula, g
+  query <- glue("SELECT best_glance_all_id, project_id, study_accession, experiment_accession, plateid, plate, nominal_sample_dilution
+  , antigen, feature, iter, status, crit, a, b, c, d, lloq, uloq, lloq_y, uloq_y, llod, ulod, inflect_x, inflect_y, std_error_blank
+  , dydx_inflect, mindc, maxdc, minrdl, maxrdl, dfresidual, nobs, rsquare_fit, aic, bic, loglik, mse, cv, source, wavelength, bkg_method, is_log_response, is_log_x, apply_prozone, formula, g
 	FROM madi_results.best_glance_all
 	WHERE project_id = {project_id}
 	AND study_accession = '{study_accession}'
@@ -1018,12 +1216,12 @@ fetch_best_glance_all_summary <- function(study_accession, experiment_accession,
       GROUP BY study_accession
     )
     SELECT
-      g.best_glance_all_id, g.study_accession, g.experiment_accession,
-      g.plateid, g.plate, g.nominal_sample_dilution, g.antigen, g.iter,
+      g.best_glance_all_id, g.project_id, g.study_accession, g.experiment_accession,
+      g.plateid, g.plate, g.nominal_sample_dilution, g.antigen, g.feature, g.iter,
       g.status, g.crit, g.a, g.b, g.c, g.d, g.lloq, g.uloq, g.lloq_y,
       g.uloq_y, g.llod, g.ulod, g.inflect_x, g.inflect_y, g.std_error_blank,
       g.dydx_inflect, g.dfresidual, g.nobs, g.rsquare_fit, g.aic, g.bic,
-      g.loglik, g.mse, g.cv, g.source, g.bkg_method, g.is_log_response,
+      g.loglik, g.mse, g.cv, g.source, g.wavelength, g.bkg_method, g.is_log_response,
       g.is_log_x, g.apply_prozone, g.formula, g.g
     FROM madi_results.best_glance_all g
     CROSS JOIN params
@@ -1040,10 +1238,11 @@ fetch_best_glance_all_summary <- function(study_accession, experiment_accession,
 
 fetch_best_sample_se_all <- function(study_accession, experiment_accession, project_id, conn) {
   query <- glue("
-SELECT best_sample_se_all_id, raw_predicted_concentration, study_accession, experiment_accession, timeperiod, patientid, well, stype, sampleid,
-agroup, pctaggbeads, samplingerrors, antigen,
-antibody_n, plateid, plate, nominal_sample_dilution, assay_response_variable, assay_independent_variable, dilution, overall_se, raw_assay_response, assay_response,
-se_concentration, final_predicted_concentration, pcov, source, gate_class_loq, gate_class_lod,
+SELECT best_sample_se_all_id, raw_predicted_concentration, project_id, study_accession, experiment_accession, timeperiod, patientid, well, stype, sampleid,
+agroup, pctaggbeads, samplingerrors, antigen, feature,
+antibody_n, plateid, plate, nominal_sample_dilution, assay_response_variable, assay_independent_variable, dilution, overall_se, raw_assay_response, 
+assay_response,
+se_concentration, final_predicted_concentration, pcov, source, wavelength, gate_class_loq, gate_class_lod,
 gate_class_pcov, best_glance_all_id, feature, norm_assay_response
 	FROM madi_results.best_sample_se_all
 	WHERE project_id = {project_id}
@@ -1073,9 +1272,9 @@ fetch_best_pred_all_summary <- function(study_accession, experiment_accession, p
     )
     SELECT
       p.best_pred_all_id, p.x, p.model, p.yhat, p.overall_se,
-      p.predicted_concentration, p.se_x, p.pcov,
+      p.predicted_concentration, p.se_x, p.pcov, p.project_id,
       p.study_accession, p.experiment_accession, p.nominal_sample_dilution,
-      p.plateid, p.plate, p.antigen, p.source, p.best_glance_all_id,
+      p.plateid, p.plate, p.antigen, p.feature, p.source , p.wavelength, p.best_glance_all_id,
       g.is_log_response, g.is_log_x, g.bkg_method, g.apply_prozone
     FROM madi_results.best_pred_all p
     LEFT JOIN madi_results.best_glance_all g
@@ -1109,7 +1308,7 @@ fetch_best_standard_all_summary <- function(study_accession, experiment_accessio
     )
     SELECT
       s.best_standard_all_id, s.study_accession, s.experiment_accession,
-      s.feature, s.source, s.plateid, s.plate, s.stype, s.nominal_sample_dilution,
+      s.feature, s.source, s.wavelength, s.plateid, s.plate, s.stype, s.nominal_sample_dilution,
       s.sampleid, s.well, s.dilution, s.antigen, s.assay_response,
       s.assay_response_variable, s.assay_independent_variable,
       s.concentration, s.g, s.best_glance_all_id,
@@ -1152,7 +1351,7 @@ fetch_best_sample_se_all_summary <- function(study_accession, experiment_accessi
       ss.plateid, ss.plate, ss.nominal_sample_dilution,
       ss.assay_response_variable, ss.assay_independent_variable,
       ss.dilution, ss.overall_se, ss.assay_response, ss.se_concentration,
-      ss.final_predicted_concentration, ss.pcov, ss.source, ss.gate_class_loq, ss.gate_class_lod,
+      ss.final_predicted_concentration, ss.pcov, ss.source, ss.wavelength, ss.gate_class_loq, ss.gate_class_lod,
       ss.gate_class_pcov, ss.best_glance_all_id, ss.feature, ss.norm_assay_response,
       g.is_log_response, g.is_log_x, g.bkg_method, g.apply_prozone
     FROM madi_results.best_sample_se_all ss

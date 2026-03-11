@@ -119,12 +119,28 @@ normalize_acquisition_date <- function(x) {
       "%Y-%m-%d %H:%M",
       "%Y-%m-%dT%H:%M:%S",
       "%Y-%m-%dT%H:%M",
+      # 2-digit year formats (common in ELISA instruments)
+      "%y-%m-%d %H:%M:%S",
+      "%y-%m-%d %H:%M",
+      "%d-%m-%y %H:%M:%S",
+      "%d-%m-%y %H:%M",
+      "%m-%d-%y %H:%M:%S",
+      "%m-%d-%y %H:%M",
+      "%d/%m/%y %H:%M:%S",
+      "%d/%m/%y %H:%M",
+      "%m/%d/%y %H:%M:%S",
+      "%m/%d/%y %H:%M",
+      "%y/%m/%d %H:%M:%S",
+      "%y/%m/%d %H:%M",
       # Date-only (assume midnight)
       "%d-%b-%Y",
       "%m/%d/%Y",
       "%d/%m/%Y",
       "%Y-%m-%d",
-      "%d.%m.%Y"
+      "%d.%m.%Y",
+      "%y-%m-%d",
+      "%d-%m-%y",
+      "%m/%d/%y"
     )
 
     parsed <- NA
@@ -153,6 +169,140 @@ normalize_acquisition_date <- function(x) {
     format(parsed, "%d-%b-%Y, %I:%M %p")
   }, character(1), USE.NAMES = FALSE)
 }
+
+#' Standardize acquisition dates for PostgreSQL insertion
+#'
+#' Parses dates in any supported format (including non-English months,
+#' 2-digit years, and various international formats) and outputs them
+#' in ISO 8601 format "YYYY-MM-DD HH:MM:SS" which PostgreSQL always accepts.
+#'
+#' This should be called on acquisition_date columns BEFORE database insertion
+#' for both ELISA and bead array upload paths.
+#'
+#' @param x Character vector of date strings
+#' @return Character vector in "YYYY-MM-DD HH:MM:SS" format
+#'
+standardize_date_for_postgres <- function(x) {
+  vapply(x, function(val) {
+    if (is.na(val) || !nzchar(trimws(val))) return(NA_character_)
+
+    val <- trimws(val)
+
+    # ---- Map non-English month abbreviations to English ----
+    month_map <- c(
+      # Dutch
+      "jan" = "Jan", "feb" = "Feb", "mrt" = "Mar", "apr" = "Apr",
+      "mei" = "May", "jun" = "Jun", "jul" = "Jul", "aug" = "Aug",
+      "sep" = "Sep", "okt" = "Oct", "nov" = "Nov", "dec" = "Dec",
+      # German
+      "m\u00e4r" = "Mar", "mae" = "Mar", "mai" = "May", "dez" = "Dec",
+      # French
+      "f\u00e9v" = "Feb", "fev" = "Feb", "mar" = "Mar", "avr" = "Apr",
+      "jui" = "Jun", "juil" = "Jul", "ao\u00fb" = "Aug", "aou" = "Aug",
+      # Spanish
+      "ene" = "Jan", "abr" = "Apr", "ago" = "Aug", "dic" = "Dec",
+      # Italian
+      "gen" = "Jan", "mag" = "May", "giu" = "Jun", "lug" = "Jul",
+      "set" = "Sep", "ott" = "Oct",
+      # Portuguese
+      "out" = "Oct"
+    )
+
+    for (foreign in names(month_map)) {
+      pattern <- paste0("(?i)\\b", foreign, "\\b")
+      if (grepl(pattern, val, perl = TRUE)) {
+        val <- sub(pattern, month_map[[foreign]], val, perl = TRUE)
+        break
+      }
+    }
+
+    # Capitalize AM/PM
+    val <- gsub("\\bam\\b", "AM", val, ignore.case = TRUE)
+    val <- gsub("\\bpm\\b", "PM", val, ignore.case = TRUE)
+
+    # ---- Try parsing with many common format strings ----
+    formats <- c(
+      # DD-MMM-YYYY formats (from normalize_acquisition_date output)
+      "%d-%b-%Y, %I:%M %p",
+      "%d-%b-%Y, %H:%M",
+      "%d-%b-%Y %I:%M %p",
+      "%d-%b-%Y %H:%M",
+      "%d-%b-%Y %H:%M:%S",
+      # US: M/D/YYYY
+      "%m/%d/%Y %I:%M %p",
+      "%m/%d/%Y %I:%M:%S %p",
+      "%m/%d/%Y %H:%M",
+      "%m/%d/%Y %H:%M:%S",
+      # European: D/M/YYYY
+      "%d/%m/%Y %H:%M",
+      "%d/%m/%Y %H:%M:%S",
+      "%d/%m/%Y %I:%M %p",
+      # Dot-separated
+      "%d.%m.%Y %H:%M",
+      "%d.%m.%Y %H:%M:%S",
+      "%d.%m.%Y %I:%M %p",
+      # Dash-separated numeric 4-digit year
+      "%d-%m-%Y %H:%M",
+      "%d-%m-%Y %H:%M:%S",
+      "%d-%m-%Y %I:%M %p",
+      "%m-%d-%Y %I:%M %p",
+      "%m-%d-%Y %H:%M",
+      "%m-%d-%Y %H:%M:%S",
+      # ISO 4-digit year
+      "%Y-%m-%d %H:%M:%S",
+      "%Y-%m-%d %H:%M",
+      "%Y-%m-%dT%H:%M:%S",
+      "%Y-%m-%dT%H:%M",
+      # 2-digit year formats (common in ELISA instruments)
+      "%y-%m-%d %H:%M:%S",
+      "%y-%m-%d %H:%M",
+      "%d-%m-%y %H:%M:%S",
+      "%d-%m-%y %H:%M",
+      "%m-%d-%y %H:%M:%S",
+      "%m-%d-%y %H:%M",
+      "%d/%m/%y %H:%M:%S",
+      "%d/%m/%y %H:%M",
+      "%m/%d/%y %H:%M:%S",
+      "%m/%d/%y %H:%M",
+      "%y/%m/%d %H:%M:%S",
+      "%y/%m/%d %H:%M",
+      # Date-only (assume midnight)
+      "%d-%b-%Y",
+      "%m/%d/%Y",
+      "%d/%m/%Y",
+      "%Y-%m-%d",
+      "%d.%m.%Y",
+      "%y-%m-%d",
+      "%d-%m-%y",
+      "%m/%d/%y"
+    )
+
+    parsed <- NA
+    for (fmt in formats) {
+      attempt <- tryCatch(
+        as.POSIXct(val, format = fmt, tz = "UTC"),
+        error = function(e) NA
+      )
+      if (!is.na(attempt)) {
+        yr <- as.integer(format(attempt, "%Y"))
+        if (!is.na(yr) && yr >= 1990 && yr <= 2100) {
+          parsed <- attempt
+          break
+        }
+      }
+    }
+
+    if (is.na(parsed)) {
+      # Could not parse - return original and let PostgreSQL try
+      cat("    ⚠ Could not parse date for DB:", val, "\n")
+      return(val)
+    }
+
+    # Output ISO 8601 format that PostgreSQL always accepts
+    format(parsed, "%Y-%m-%d %H:%M:%S")
+  }, character(1), USE.NAMES = FALSE)
+}
+
 
 # Type column must be in correct format
 check_type_column <- function(df) {

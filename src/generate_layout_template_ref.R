@@ -678,16 +678,18 @@ build_plate_id_df <- function(header_list, study_accession, experiment_accession
 
   cat("Columns after processing:", paste(names(plate_id), collapse = ", "), "\n")
 
-  # Subset to required columns
   required_cols <- c("project_id", "study_name", "experiment_name", "number_of_wells",
                      "plate_number", "plateid", "plate_id", "plate_filename",
                      "acquisition_date", "reader_serial_number", "rp1_pmt_volts", "rp1_target")
-
+  
   missing <- setdiff(required_cols, names(plate_id))
   if (length(missing) > 0) {
-    stop("ERROR: Missing columns after processing: ", paste(missing, collapse = ", "))
+    cat("  ⚠ Missing columns in plate_id (filling with NA):", paste(missing, collapse = ", "), "\n")
+    for (mc in missing) {
+      plate_id[[mc]] <- NA_character_
+    }
   }
-
+  
   plate_id <- plate_id[, required_cols, drop = FALSE]
   cat("Final plate_id dimensions:", nrow(plate_id), "rows x", ncol(plate_id), "cols\n")
   cat("=====================================\n\n")

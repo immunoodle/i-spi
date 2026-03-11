@@ -34,6 +34,14 @@ observeEvent(list(
       response_var <- loaded_data$response_var
       indep_var <-  loaded_data$indep_var
 
+      # Guard: bail out if no standards data or response variable is empty
+      if (is.null(loaded_data$standards) || nrow(loaded_data$standards) == 0 ||
+          length(response_var) == 0 || is.na(response_var[1])) {
+        message("[std_curver_ui] No standards data or response variable for ",
+                selected_study, " / ", selected_experiment, " — skipping SE table computation.")
+        se_antigen_table <- NULL
+      } else {
+
       # se_std_response <- assay_se(loaded_data$standards,
       #                             dilution_col = "dilution",
       #                             response_col = response_var)
@@ -44,12 +52,13 @@ observeEvent(list(
         plate_col = "plate_nom",
         grouping_cols = c("study_accession", 
                           "experiment_accession", 
-                          "source", 
+                          "source_nom", 
                           "antigen",
                           "feature"),
         min_reps = 2,
         verbose = TRUE
       )
+      }
 
       study_params <- fetch_study_parameters(study_accession = selected_study,
                                              param_user = currentuser(),
@@ -375,17 +384,20 @@ observeEvent(list(
     output$sc_antigen_selector <- renderUI({
       req(loaded_data$standards$study_accession, loaded_data$standards$experiment_accession)
       updateSelectInput(session, "sc_antigen_select", selected = NULL)
+      
+      response_var <- loaded_data$response_var  # "absorbance" for ELISA, "mfi" for Luminex
 
       dat_antigen <- loaded_data$standards[loaded_data$standards$study_accession %in% selected_study &
                                           loaded_data$standards$experiment_accession %in% selected_experiment &
                                             loaded_data$standards$plate_nom %in% input$sc_plate_select, ]
-
-      dat_antigen <- dat_antigen[!is.na(dat_antigen$mfi),]
+      
+      # Use the correct response variable column name
+      dat_antigen <- dat_antigen[!is.na(dat_antigen[[response_var]]),]
+      
       req(nrow(dat_antigen) > 0)
       
-      ### eventually this will be replaced by a combined antigen|feature selector value.
       sc_feature_select(dat_antigen$feature)
-
+      
       selectInput("sc_antigen_select",
                   label = "Antigen",
                   choices = unique(dat_antigen$antigen))
@@ -403,11 +415,18 @@ observeEvent(list(
 
       req(nrow(dat_source) > 0)
 
+      # Use source_nom for the selector (includes wavelength for ELISA)
+      source_choices <- if ("source_nom" %in% names(dat_source)) {
+        unique(dat_source$source_nom)
+      } else {
+        unique(dat_source$source)
+      }
+
       radioButtons(
         "sc_source_select",
         label = "Source",
-        choices = unique(dat_source$source),
-        selected = unique(dat_source$source)[1]
+        choices = source_choices,
+        selected = source_choices[1]
       )
     })
 
@@ -415,13 +434,15 @@ observeEvent(list(
       req(input$sc_source_select,
           input$sc_antigen_select,
           input$sc_plate_select,
-          loaded_data)
-
+          loaded_data,
+          loaded_data$standards,
+          nrow(loaded_data$standards) > 0)
+      
       result <- select_antigen_plate(
         loaded_data = loaded_data,
         study_accession = selected_study,
         experiment_accession = selected_experiment,
-        source = input$sc_source_select,
+        source = input$sc_source_select,  # Now contains source_nom value
         antigen = input$sc_antigen_select,
         plate = input$sc_plate_select,
         antigen_constraints =
@@ -430,6 +451,7 @@ observeEvent(list(
           ]
       )
       req(result)
+      req(result$plate_standard, nrow(result$plate_standard) > 0)
       result
     })
 
@@ -668,6 +690,37 @@ observeEvent(list(
                                        fit_params = fit_params(),
                                        plot_data = plot_data(),
                                        verbose = verbose)
+      # ── Ensure response column is valid ──────────────────────────────
+      resolved <- ensure_response_column(
+        df           = best_fit$best_data,
+        response_var = response_var,
+        coerce_numeric = TRUE,
+        context      = "best_fit_reactive"
+      )
+      best_fit$best_data <- resolved$df
+      # If the column was found under a different name, update response_var
+      # for all downstream calls in this reactive
+      if (resolved$ok && resolved$response_var != response_var) {
+        message(sprintf(
+          "[best_fit reactive] response_var changed from '%s' to '%s'",
+          response_var, resolved$response_var
+        ))
+        response_var <- resolved$response_var
+      }
+      
+      # ── Ensure response column is numeric in best_data ──────────────
+      response_var <- loaded_data$response_var
+      if (!is.null(best_fit$best_data) && 
+          response_var %in% names(best_fit$best_data) &&
+          !is.numeric(best_fit$best_data[[response_var]])) {
+        message(sprintf(
+          "[best_fit reactive] Coercing '%s' from %s to numeric in best_data",
+          response_var, class(best_fit$best_data[[response_var]])[1]
+        ))
+        best_fit$best_data[[response_var]] <- suppressWarnings(
+          as.numeric(best_fit$best_data[[response_var]])
+        )
+      }
 
       # add the glance for the best fit
       best_fit <- fit_qc_glance(best_fit = best_fit,
@@ -904,7 +957,7 @@ observeEvent(input$run_batch_fit, ignoreInit = TRUE, {
       response_col = response_var,
       dilution_col = "dilution",
       plate_col = "plate_nom",
-      grouping_cols = c("study_accession", "experiment_accession", "source", "antigen"),
+      grouping_cols = c("study_accession", "experiment_accession", "source_nom", "antigen"),
       min_reps = 2,
       verbose = TRUE
     )
@@ -967,6 +1020,7 @@ observeEvent(input$run_batch_fit, ignoreInit = TRUE, {
 
     # Retrieve lookup of IDs using NK
     study_to_save <- unique(batch_outputs_processed$best_glance_all$study_accession)
+    project_to_save <- unique(batch_outputs_processed$best_glance_all$project_id)
 
     glance_lookup <- DBI::dbGetQuery(
       conn,
@@ -979,41 +1033,99 @@ observeEvent(input$run_batch_fit, ignoreInit = TRUE, {
       plate,
       nominal_sample_dilution,
       source,
-      antigen
+      wavelength,
+      antigen,
+      feature
     FROM madi_results.best_glance_all
-    WHERE study_accession = '{study_to_save}';
+    WHERE project_id = {project_to_save}
+      AND study_accession = '{study_to_save}';
   ")
     )
 
     glance_lookup$best_glance_all_id <- as.integer(glance_lookup$best_glance_all_id)
 
 
-    # natural key (nk) vector for the glance
+    # natural key (nk) vector for the glance → child table FK join
+    # feature + wavelength are included to prevent many-to-many joins
     keys <- c("study_accession", "experiment_accession", "plateid",
-              "plate", "nominal_sample_dilution", "source", "antigen")
+              "plate", "nominal_sample_dilution", "source", "wavelength",
+              "antigen", "feature")
 
+    # Normalize wavelength in glance_lookup (DB may return '__none__' already,
+    # but guard against any lingering NULLs from before migration)
+    glance_lookup$wavelength <- normalize_wavelength(glance_lookup$wavelength)
 
-    # attach the best_glance_all_id to the table
-    batch_outputs_processed$best_pred_all <-
-      dplyr::inner_join(
-        batch_outputs_processed$best_pred_all,
-        glance_lookup,
-        by = keys
-      )
+    message(sprintf("[save] glance_lookup: %d rows, keys: %s",
+                    nrow(glance_lookup), paste(keys, collapse = ", ")))
+    message(sprintf("[save] glance_lookup wavelengths: %s",
+                    paste(unique(glance_lookup$wavelength), collapse = ", ")))
 
-    batch_outputs_processed$best_sample_se_all <-
-      dplyr::inner_join(
-        batch_outputs_processed$best_sample_se_all,
-        glance_lookup,
-        by = keys
-      )
+    # ── Diagnostic assertions ──
+    for (tbl_name in c("best_pred_all", "best_sample_se_all", "best_standard_all")) {
+      tbl <- batch_outputs_processed[[tbl_name]]
+      if (!is.null(tbl) && nrow(tbl) > 0) {
+        missing_keys <- setdiff(keys, names(tbl))
+        if (length(missing_keys) > 0) {
+          warning(sprintf("[save] %s is missing join key columns: %s",
+                          tbl_name, paste(missing_keys, collapse = ", ")))
+        }
+        # Show wavelength values in child tables for FK join diagnosis
+        if ("wavelength" %in% names(tbl)) {
+          message(sprintf("[save] %s wavelengths (%d rows): %s",
+                          tbl_name, nrow(tbl),
+                          paste(unique(tbl$wavelength), collapse = ", ")))
+        }
+      } else {
+        message(sprintf("[save] %s is NULL or empty (0 rows) — nothing to FK-join.",
+                        tbl_name))
+      }
+    }
 
-    batch_outputs_processed$best_standard_all <-
-      dplyr::inner_join(
-        batch_outputs_processed$best_standard_all,
-        glance_lookup,
-        by = keys
-      )
+    # attach the best_glance_all_id to each child table (guarded)
+    if (!is.null(batch_outputs_processed$best_pred_all) && nrow(batch_outputs_processed$best_pred_all) > 0) {
+      n_before <- nrow(batch_outputs_processed$best_pred_all)
+      batch_outputs_processed$best_pred_all <-
+        dplyr::inner_join(
+          batch_outputs_processed$best_pred_all,
+          glance_lookup,
+          by = keys
+        )
+      n_after <- nrow(batch_outputs_processed$best_pred_all)
+      message(sprintf("[save] best_pred_all FK join: %d -> %d rows", n_before, n_after))
+      if (n_after == 0 && n_before > 0) {
+        message("[save] WARNING: FK join dropped ALL best_pred_all rows — likely wavelength mismatch between glance and pred tables.")
+      }
+    }
+
+    if (!is.null(batch_outputs_processed$best_sample_se_all) && nrow(batch_outputs_processed$best_sample_se_all) > 0) {
+      n_before <- nrow(batch_outputs_processed$best_sample_se_all)
+      batch_outputs_processed$best_sample_se_all <-
+        dplyr::inner_join(
+          batch_outputs_processed$best_sample_se_all,
+          glance_lookup,
+          by = keys
+        )
+      n_after <- nrow(batch_outputs_processed$best_sample_se_all)
+      message(sprintf("[save] best_sample_se_all FK join: %d -> %d rows", n_before, n_after))
+      if (n_after == 0 && n_before > 0) {
+        message("[save] WARNING: FK join dropped ALL best_sample_se_all rows — likely wavelength mismatch between glance and sample tables.")
+      }
+    }
+
+    if (!is.null(batch_outputs_processed$best_standard_all) && nrow(batch_outputs_processed$best_standard_all) > 0) {
+      n_before <- nrow(batch_outputs_processed$best_standard_all)
+      batch_outputs_processed$best_standard_all <-
+        dplyr::inner_join(
+          batch_outputs_processed$best_standard_all,
+          glance_lookup,
+          by = keys
+        )
+      n_after <- nrow(batch_outputs_processed$best_standard_all)
+      message(sprintf("[save] best_standard_all FK join: %d -> %d rows", n_before, n_after))
+      if (n_after == 0 && n_before > 0) {
+        message("[save] WARNING: FK join dropped ALL best_standard_all rows — likely wavelength mismatch between glance and standard tables.")
+      }
+    }
 
 
     upsert_best_curve(
@@ -1048,51 +1160,65 @@ observeEvent(input$run_batch_fit, ignoreInit = TRUE, {
                     div(class = "big-notification", "Saving predicted standards..."),
                     duration = NULL, closeButton = TRUE)
 
-    upsert_best_curve(
-      conn   = conn,
-      df     = batch_outputs_processed$best_pred_all,
-      schema = "madi_results",
-      table  = "best_pred_all",
-      notify = shiny_notify(session)
-    )
-
-
-    showNotification(id = "batch_sc_fit_notify",
-                    div(class = "big-notification", "Best Predicted standards saved"),
-                    duration = NULL, closeButton = TRUE)
+    if (!is.null(batch_outputs_processed$best_pred_all) && nrow(batch_outputs_processed$best_pred_all) > 0) {
+      upsert_best_curve(
+        conn   = conn,
+        df     = batch_outputs_processed$best_pred_all,
+        schema = "madi_results",
+        table  = "best_pred_all",
+        notify = shiny_notify(session)
+      )
+      showNotification(id = "batch_sc_fit_notify",
+                      div(class = "big-notification", "Best Predicted standards saved"),
+                      duration = NULL, closeButton = TRUE)
+    } else {
+      showNotification(id = "batch_sc_fit_notify",
+                      div(class = "big-notification", "WARNING: best_pred_all is empty — no predicted standards to save. Check FK join."),
+                      duration = NULL, closeButton = TRUE, type = "warning")
+    }
 
 
     showNotification(id = "batch_sc_fit_notify",
                     div(class = "big-notification", "Saving Predicted samples..."),
                     duration = NULL, closeButton = TRUE)
 
-    upsert_best_curve(
-      conn   = conn,
-      df     = batch_outputs_processed$best_sample_se_all,
-      schema = "madi_results",
-      table  = "best_sample_se_all",
-      notify = shiny_notify(session)
-    )
-
-    showNotification(id = "batch_sc_fit_notify",
-                    div(class = "big-notification", "Best Predicted Samples saved"),
-                    duration = NULL, closeButton = TRUE)
+    if (!is.null(batch_outputs_processed$best_sample_se_all) && nrow(batch_outputs_processed$best_sample_se_all) > 0) {
+      upsert_best_curve(
+        conn   = conn,
+        df     = batch_outputs_processed$best_sample_se_all,
+        schema = "madi_results",
+        table  = "best_sample_se_all",
+        notify = shiny_notify(session)
+      )
+      showNotification(id = "batch_sc_fit_notify",
+                      div(class = "big-notification", "Best Predicted Samples saved"),
+                      duration = NULL, closeButton = TRUE)
+    } else {
+      showNotification(id = "batch_sc_fit_notify",
+                      div(class = "big-notification", "WARNING: best_sample_se_all is empty — no predicted samples to save. Check FK join."),
+                      duration = NULL, closeButton = TRUE, type = "warning")
+    }
 
     showNotification(id = "batch_sc_fit_notify",
                     div(class = "big-notification", "Saving Best Standards..."),
                     duration = NULL, closeButton = TRUE)
 
-    upsert_best_curve(
-      conn   = conn,
-      df     = batch_outputs_processed$best_standard_all,
-      schema = "madi_results",
-      table  = "best_standard_all",
-      notify = shiny_notify(session)
-    )
-
-    showNotification(id = "batch_sc_fit_notify",
-                    div(class = "big-notification", "Best Standards saved"),
-                    duration = NULL, closeButton = TRUE)
+    if (!is.null(batch_outputs_processed$best_standard_all) && nrow(batch_outputs_processed$best_standard_all) > 0) {
+      upsert_best_curve(
+        conn   = conn,
+        df     = batch_outputs_processed$best_standard_all,
+        schema = "madi_results",
+        table  = "best_standard_all",
+        notify = shiny_notify(session)
+      )
+      showNotification(id = "batch_sc_fit_notify",
+                      div(class = "big-notification", "Best Standards saved"),
+                      duration = NULL, closeButton = TRUE)
+    } else {
+      showNotification(id = "batch_sc_fit_notify",
+                      div(class = "big-notification", "WARNING: best_standard_all is empty — no standards to save. Check FK join."),
+                      duration = NULL, closeButton = TRUE, type = "warning")
+    }
 
 
 

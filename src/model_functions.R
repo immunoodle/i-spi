@@ -1,8 +1,7 @@
-# ============================================================
-#  model_functions.R  — corrected
-# ============================================================
+# ---- model_functions.R  — corrected ----
 
-# ── Scalar model forward functions ──────────────────────────
+
+# ---- Scalar model forward functions ----
 Y4 <- function(x, a, b, c, d) {
   d + (a - d) / (1 + exp((x - c) / b))
 }
@@ -60,7 +59,7 @@ d2xYgomp4 <- function(x, a, b, c, d) {
   b^2 * (d - a) * e2 * (e2 - 1) * exp(-e2)
 }
 
-# ── Inverse functions ────────────────────────────────────────
+# ---- Inverse functions ----
 inv_Y4 <- function(y, a, b, c, d, tol = 1e-6) {
   y_min <- min(a, d) + tol
   y_max <- max(a, d) - tol
@@ -102,7 +101,7 @@ inv_Yd5_fixed <- function(y, fixed_a, b, c, d, g) {
   c - (1 / b) * (log(((y - fixed_a) / (d - fixed_a))^(-g) - 1) - log(g))
 }
 
-# ── dx/dy helpers (used in propagate_error_analytic) ────────
+# ---- dx/dy helpers (used in propagate_error_analytic) ----
 dxdyiY4    <- function(y, a, b, c, d) {
   ratio <- (a - d) / (y - d); b * ratio / ((ratio - 1) * (y - d))
 }
@@ -122,7 +121,7 @@ dxdyiYd5   <- function(y, a, b, c, d, g) {
   (1 / b) * g * ratio^(-g) / ((ratio^(-g) - 1) * (y - a))
 }
 
-# ── Full gradient functions (free a) — return ALL partials ───
+# ---- Full gradient functions (free a) — return ALL partials ----
 #    grad_theta is a named vector over ALL free parameters.
 #    grad_y is the scalar ∂x/∂y.
 
@@ -181,7 +180,7 @@ grad_Yd5 <- function(y, a, b, c, d, g) {
   list(grad_theta = c(a = da, b = db, c = dc, d = dd, g = dg), grad_y = dy)
 }
 
-# ── Fixed-a gradient functions (only b,c,d partials) ────────
+# ---- Fixed-a gradient functions (only b,c,d partials) ----
 #    Used only when fixed_a is a true external constraint (not from coef).
 
 grad_inv_Y4_fixed <- function(y, fixed_a, b, c, d) {
@@ -243,7 +242,7 @@ grad_inv_Yd5_fixed <- function(y, fixed_a, b, c, d, g) {
   c(b = db, c = dc, d = dd, g = dg)
 }
 
-# ── Fixed-a grad_y functions ─────────────────────────────────
+# ---- Fixed-a grad_y functions ----
 grad_y_Y4_fixed <- function(y, fixed_a, b, d) {
   y <- as.numeric(y); fixed_a <- as.numeric(fixed_a)
   b <- as.numeric(b); d <- as.numeric(d)
@@ -284,8 +283,7 @@ grad_y_Yd5_fixed <- function(y, fixed_a, b, d, g) {
   g / (b * (d - fixed_a)) * ratio^(-g - 1) / V
 }
 
-# ═══════════════════════════════════════════════════════════════
-#  make_inv_and_grad_fixed
+# ---- make_inv_and_grad_fixed ----
 #
 #  KEY DESIGN:
 #    fixed_a is a TRUE external scalar  → use _fixed functions
@@ -297,7 +295,6 @@ grad_y_Yd5_fixed <- function(y, fixed_a, b, d, g) {
 #  The caller (propagate_error_dataframe) must pass
 #    fixed_a = NULL  when 'a' is free,
 #    fixed_a = <scalar>  when 'a' is a true fixed constant.
-# ═══════════════════════════════════════════════════════════════
 make_inv_and_grad_fixed <- function(model, y, fixed_a) {
 
   # Strip any accidental names from scalar inputs
@@ -463,8 +460,21 @@ make_inv_and_grad_fixed <- function(model, y, fixed_a) {
 # d is r_asy (right asymptote)
 # g is g
 
-## Select the model formulas; the left asymptote can be constrained or not
+## ---- Select the model formulas; the left asymptote can be constrained or not ----
 select_model_formulas <- function(fixed_constraint, response_variable, is_log_response) {
+  
+  if (!is.null(fixed_constraint)) {
+    if (!is.numeric(fixed_constraint) ||
+        !is.finite(fixed_constraint) ||
+        fixed_constraint <= 0) {
+      message(sprintf(
+        "[select_model_formulas] fixed_constraint = %s is invalid (<=0 or non-finite). Using free-a formulas.",
+        if (is.numeric(fixed_constraint)) format(fixed_constraint) else "non-numeric"
+      ))
+      fixed_constraint <- NULL
+    }
+  }
+  
   if (!is.null(fixed_constraint)){
     if (is_log_response) {
       .eps = 0.00005
@@ -543,19 +553,40 @@ select_model_formulas <- function(fixed_constraint, response_variable, is_log_re
   return(standard_curve_formulas)
 }
 
-Y5_safe_constraint <- function(data, y_min = 1, y_max, Y5_formula, Y5_free_vars, is_log_response, is_log_concentration, antigen_settings) {
+# ---- safe_constraints ----
+Y5_safe_constraint <- function(data, 
+                               y_min = 1, 
+                               y_max, 
+                               Y5_formula, 
+                               Y5_free_vars, 
+                               is_log_response, 
+                               is_log_concentration, 
+                               antigen_settings,
+                               constraint_profile = NULL) {
   .eps <- 1e-5
-  .slope_max <- 2
-  .slope_min <- 0.1
-  .g_min <- 0.5
-  .g_max <- 5.0
+  
+  # Build profile if not supplied (backward compatible)
+  if (is.null(constraint_profile)) {
+    constraint_profile <- adaptive_constraint_profile(
+      data, response_variable = names(data)[1],  # fallback
+      is_log_response = is_log_response,
+      antigen_settings = antigen_settings
+    )
+  }
+  
+  .slope_max <- constraint_profile$slope_max
+  .slope_min <- constraint_profile$slope_min
+  .g_min     <- constraint_profile$g_min
+  .g_max     <- constraint_profile$g_max
 
-  mid_bounds <- .y_mid_bounds(y_min, y_max)
-  mid_low <- as.numeric(mid_bounds["low"])
-  mid_high <- as.numeric(mid_bounds["high"])
+  # mid_bounds <- .y_mid_bounds(y_min, y_max)
+  # mid_low <- as.numeric(mid_bounds["low"])
+  # mid_high <- as.numeric(mid_bounds["high"])
 
   # extract parameter names from formula
   formula_vars <- all.vars(Y5_formula)
+  
+  # ── Lower asymptote a ──
   a_lower <- antigen_settings$l_asy_min_constraint
   a_upper <- antigen_settings$l_asy_max_constraint
   if (is_log_response) {
@@ -563,17 +594,32 @@ Y5_safe_constraint <- function(data, y_min = 1, y_max, Y5_formula, Y5_free_vars,
     a_upper <- log10(a_upper + .eps)
   }
 
-  d_lower <- mid_high / 2
-  d_upper <- 2 * mid_high
+  # ── Upper asymptote d — adaptive ──
+  dr <- constraint_profile$dynamic_range
+  margin <- constraint_profile$d_margin_frac
+  
+  # For low-response data, allow d to go as low as midpoint of range
+  d_lower <- y_min + dr * (0.5 - margin)
+  d_lower <- max(d_lower, y_min + .eps)  # never below observed min
+  
+  # Upper bound: proportional headroom above observed max
+  d_upper <- y_max + dr * margin
+  # Safety: ensure d_upper > d_lower
+  if (d_upper <= d_lower) d_upper <- d_lower + abs(dr) * 0.5 + .eps
 
-  midpoint_concentration <- (min(data$concentration) + max(data$concentration))/2
-  conc_range <- max(data$concentration) - min(data$concentration)
-  c_lower <- midpoint_concentration - (0.5 * conc_range)  # Wider
-  c_upper <- midpoint_concentration + (0.5 * conc_range)  # Wi
-
-  b_lower <- 0.1 #.eps
+  # ── Inflection point c — wider search for low-response ──
+  midpoint_concentration <- mean(range(data$concentration, na.rm = TRUE))
+  conc_range <- diff(range(data$concentration, na.rm = TRUE))
+  pad <- constraint_profile$conc_pad_frac
+  
+  c_lower <- midpoint_concentration - pad * conc_range
+  c_upper <- midpoint_concentration + pad * conc_range
+  
+  # ── Slope b ──
+  b_lower <- .slope_min
   b_upper <- .slope_max
-
+  
+  # ── Asymmetry g ──
   g_lower <- .g_min
   g_upper <- .g_max
 
@@ -589,37 +635,59 @@ Y5_safe_constraint <- function(data, y_min = 1, y_max, Y5_formula, Y5_free_vars,
 
 }
 
-Yd5_safe_constraint <- function(data, y_min=1, y_max, Yd5_formula, Yd5_free_vars, is_log_response, is_log_concentration, antigen_settings) {
+Yd5_safe_constraint <- function(data, y_min=1, y_max, Yd5_formula, Yd5_free_vars, is_log_response, is_log_concentration, antigen_settings,
+                                constraint_profile = NULL) {
   .eps <- 1e-5
-  .slope_max <- 2
-  .g_min <- 0.5
-  .g_max <- 5
-
-  mid_bounds <- .y_mid_bounds(y_min, y_max)
-  mid_low <- as.numeric(mid_bounds["low"])
-  mid_high <- as.numeric(mid_bounds["high"])
+  # Build profile if not supplied (backward compatible)
+  if (is.null(constraint_profile)) {
+    constraint_profile <- adaptive_constraint_profile(
+      data, response_variable = names(data)[1],  # fallback
+      is_log_response = is_log_response,
+      antigen_settings = antigen_settings
+    )
+  }
+  
+  .slope_max <- constraint_profile$slope_max
+  .slope_min <- constraint_profile$slope_min
+  .g_min     <- constraint_profile$g_min
+  .g_max     <- constraint_profile$g_max
 
   formula_vars <- all.vars(Yd5_formula)
 
+  # ── Lower asymptote a ──
   a_lower <- antigen_settings$l_asy_min_constraint
   a_upper <- antigen_settings$l_asy_max_constraint
   if (is_log_response) {
-    a_lower <- log10(a_lower + .eps)
-    a_upper <- log10(a_upper + .eps)
+    a_lower <- log10(max(a_lower, .eps) + .eps)
+    a_upper <- log10(max(a_upper, .eps) + .eps)
   }
-
-  d_lower <- mid_high / 2
-  d_upper <- 2 * mid_high
-
-  b_lower <- .eps
+  
+  # ── Upper asymptote d — adaptive ──
+  dr <- constraint_profile$dynamic_range
+  margin <- constraint_profile$d_margin_frac
+  
+  # For low-response data, allow d to go as low as midpoint of range
+  d_lower <- y_min + dr * (0.5 - margin)
+  d_lower <- max(d_lower, y_min + .eps)  # never below observed min
+  
+  # Upper bound: proportional headroom above observed max
+  d_upper <- y_max + dr * margin
+  # Safety: ensure d_upper > d_lower
+  if (d_upper <= d_lower) d_upper <- d_lower + abs(dr) * 0.5 + .eps
+  
+  # ── Inflection point c — wider search for low-response ──
+  midpoint_concentration <- mean(range(data$concentration, na.rm = TRUE))
+  conc_range <- diff(range(data$concentration, na.rm = TRUE))
+  pad <- constraint_profile$conc_pad_frac
+  
+  c_lower <- midpoint_concentration - pad * conc_range
+  c_upper <- midpoint_concentration + pad * conc_range
+  
+  # ── Slope b ──
+  b_lower <- .slope_min
   b_upper <- .slope_max
-
-  midpoint_concentration <- (min(data$concentration) + max(data$concentration))/2
-  conc_range <- max(data$concentration) - min(data$concentration)
-  c_lower <- midpoint_concentration - 0.7 * conc_range
-  c_upper <- midpoint_concentration + 0.7 * conc_range
-
-  # g must be != 0; avoid very small or negative values that make base <= 0 for negative g
+  
+  # ── Asymmetry g ──
   g_lower <- .g_min
   g_upper <- .g_max
 
@@ -634,35 +702,56 @@ Yd5_safe_constraint <- function(data, y_min=1, y_max, Yd5_formula, Yd5_free_vars
   return(.make_bounds(Yd5_free_vars, lower_vals = lower, upper_vals = upper))
 }
 
-Y4_safe_constraint <- function(data, y_min=1, y_max, Y4_formula, Y4_free_vars, is_log_response, is_log_concentration, antigen_settings) {
+Y4_safe_constraint <- function(data, y_min=1, y_max, Y4_formula, Y4_free_vars, is_log_response, is_log_concentration, antigen_settings,
+                               constraint_profile = NULL) {
   .eps <- 1e-5
-  .slope_max <-  2
-
-  mid_bounds <- .y_mid_bounds(y_min, y_max)
-  mid_low <- as.numeric(mid_bounds["low"])
-  mid_high <- as.numeric(mid_bounds["high"])
+  
+  # Build profile if not supplied (backward compatible)
+  if (is.null(constraint_profile)) {
+    constraint_profile <- adaptive_constraint_profile(
+      data, response_variable = names(data)[1],  # fallback
+      is_log_response = is_log_response,
+      antigen_settings = antigen_settings
+    )
+  }
+  
+  .slope_max <- constraint_profile$slope_max
+  .slope_min <- constraint_profile$slope_min
 
   formula_vars <- all.vars(Y4_formula)
 
+  # ── Lower asymptote a ──
   a_lower <- antigen_settings$l_asy_min_constraint
   a_upper <- antigen_settings$l_asy_max_constraint
   if (is_log_response) {
-    a_lower <- log10(a_lower + .eps)
-    a_upper <- log10(a_upper + .eps)
+    a_lower <- log10(max(a_lower, .eps) + .eps)
+    a_upper <- log10(max(a_upper, .eps) + .eps)
   }
-
-  # Constrain midpoint (a + d)/2 to middle90 by bounding a and d so midpoint can lie there.
-  # We'll choose ranges so that a in [eps, 2*mid_high] and d in [2*mid_low - a_upper, y_max*2]
-  d_lower <- mid_high /2  #.eps
-  d_upper <- 2 * mid_high
-
-  b_lower <-  .eps
-  b_upper <-   .slope_max
-
-  midpoint_concentration <- (min(data$concentration) + max(data$concentration))/2
-  conc_range <- max(data$concentration) - min(data$concentration)
-  c_lower <- midpoint_concentration - 0.7 * conc_range
-  c_upper <- midpoint_concentration + 0.7 * conc_range
+  
+  # ── Upper asymptote d — adaptive ──
+  dr <- constraint_profile$dynamic_range
+  margin <- constraint_profile$d_margin_frac
+  
+  # For low-response data, allow d to go as low as midpoint of range
+  d_lower <- y_min + dr * (0.5 - margin)
+  d_lower <- max(d_lower, y_min + .eps)  # never below observed min
+  
+  # Upper bound: proportional headroom above observed max
+  d_upper <- y_max + dr * margin
+  # Safety: ensure d_upper > d_lower
+  if (d_upper <= d_lower) d_upper <- d_lower + abs(dr) * 0.5 + .eps
+  
+  # ── Inflection point c — wider search for low-response ──
+  midpoint_concentration <- mean(range(data$concentration, na.rm = TRUE))
+  conc_range <- diff(range(data$concentration, na.rm = TRUE))
+  pad <- constraint_profile$conc_pad_frac
+  
+  c_lower <- midpoint_concentration - pad * conc_range
+  c_upper <- midpoint_concentration + pad * conc_range
+  
+  # ── Slope b ──
+  b_lower <- .slope_min
+  b_upper <- .slope_max
 
   if ("a" %in% formula_vars) {
     lower <- c(a = a_lower, b = b_lower, c = c_lower, d = d_lower)
@@ -675,36 +764,57 @@ Y4_safe_constraint <- function(data, y_min=1, y_max, Y4_formula, Y4_free_vars, i
   return(.make_bounds(Y4_free_vars, lower_vals = lower, upper_vals = upper))
 }
 
-Yd4_safe_constraint <- function(data, y_min=1, y_max, Yd4_formula, Yd4_free_vars, is_log_response, is_log_concentration, antigen_settings) {
+Yd4_safe_constraint <- function(data, y_min=1, y_max, Yd4_formula, Yd4_free_vars, is_log_response, is_log_concentration, antigen_settings,
+                                constraint_profile = NULL) {
   .eps <- 1e-5
-  .slope_max <- 2
-
-  mid_bounds <- .y_mid_bounds(y_min, y_max)
-  mid_low <- as.numeric(mid_bounds["low"])
-  mid_high <- as.numeric(mid_bounds["high"])
+  
+  # Build profile if not supplied (backward compatible)
+  if (is.null(constraint_profile)) {
+    constraint_profile <- adaptive_constraint_profile(
+      data, response_variable = names(data)[1],  # fallback
+      is_log_response = is_log_response,
+      antigen_settings = antigen_settings
+    )
+  }
+  
+  .slope_max <- constraint_profile$slope_max
+  .slope_min <- constraint_profile$slope_min
 
   formula_vars <- all.vars(Yd4_formula)
-
+  
+  # ── Lower asymptote a ──
   a_lower <- antigen_settings$l_asy_min_constraint
   a_upper <- antigen_settings$l_asy_max_constraint
   if (is_log_response) {
-    a_lower <- log10(a_lower + .eps)
-    a_upper <- log10(a_upper + .eps)
+    a_lower <- log10(max(a_lower, .eps) + .eps)
+    a_upper <- log10(max(a_upper, .eps) + .eps)
   }
-
-  # Constrain midpoint (a + d)/2 to middle90 by bounding a and d so midpoint can lie there.
-  # We'll choose ranges so that a in [eps, 2*mid_high] and d in [2*mid_low - a_upper, y_max*2]
-  d_lower <- mid_high /2  #.eps
-  d_upper <- 2 * mid_high
-
-  b_lower <-  .eps
-  b_upper <-   .slope_max
-
-  midpoint_concentration <- (min(data$concentration) + max(data$concentration))/2
-  conc_range <- max(data$concentration) - min(data$concentration)
-  c_lower <- midpoint_concentration - 0.7 * conc_range
-  c_upper <- midpoint_concentration + 0.7 * conc_range
-
+  
+  # ── Upper asymptote d — adaptive ──
+  dr <- constraint_profile$dynamic_range
+  margin <- constraint_profile$d_margin_frac
+  
+  # For low-response data, allow d to go as low as midpoint of range
+  d_lower <- y_min + dr * (0.5 - margin)
+  d_lower <- max(d_lower, y_min + .eps)  # never below observed min
+  
+  # Upper bound: proportional headroom above observed max
+  d_upper <- y_max + dr * margin
+  # Safety: ensure d_upper > d_lower
+  if (d_upper <= d_lower) d_upper <- d_lower + abs(dr) * 0.5 + .eps
+  
+  # ── Inflection point c — wider search for low-response ──
+  midpoint_concentration <- mean(range(data$concentration, na.rm = TRUE))
+  conc_range <- diff(range(data$concentration, na.rm = TRUE))
+  pad <- constraint_profile$conc_pad_frac
+  
+  c_lower <- midpoint_concentration - pad * conc_range
+  c_upper <- midpoint_concentration + pad * conc_range
+  
+  # ── Slope b ──
+  b_lower <- .slope_min
+  b_upper <- .slope_max
+  
   if ("a" %in% formula_vars) {
     lower <- c(a = a_lower, b = b_lower, c = c_lower, d = d_lower)
     upper <- c(a = a_upper, b = b_upper, c = c_upper, d = d_upper)
@@ -716,36 +826,57 @@ Yd4_safe_constraint <- function(data, y_min=1, y_max, Yd4_formula, Yd4_free_vars
   return(.make_bounds(Yd4_free_vars, lower_vals = lower, upper_vals = upper))
 }
 
-Ygomp4_safe_constraint <- function(data, y_min=1, y_max, Ygomp4_formula, Ygomp4_free_vars, is_log_response, is_log_concentration, antigen_settings) {
+Ygomp4_safe_constraint <- function(data, y_min=1, y_max, Ygomp4_formula, Ygomp4_free_vars, is_log_response, is_log_concentration, antigen_settings,
+                                   constraint_profile = NULL) {
   .eps <- 1e-5
-  .slope_max <-  2
-
-  mid_bounds <- .y_mid_bounds(y_min, y_max)
-  mid_low <- as.numeric(mid_bounds["low"])
-  mid_high <- as.numeric(mid_bounds["high"])
+  
+  # Build profile if not supplied (backward compatible)
+  if (is.null(constraint_profile)) {
+    constraint_profile <- adaptive_constraint_profile(
+      data, response_variable = names(data)[1],  # fallback
+      is_log_response = is_log_response,
+      antigen_settings = antigen_settings
+    )
+  }
+  
+  .slope_max <- constraint_profile$slope_max
+  .slope_min <- constraint_profile$slope_min
 
   formula_vars <- all.vars(Ygomp4_formula)
 
+  
+  # ── Lower asymptote a ──
   a_lower <- antigen_settings$l_asy_min_constraint
   a_upper <- antigen_settings$l_asy_max_constraint
   if (is_log_response) {
-    a_lower <- log10(a_lower + .eps)
-    a_upper <- log10(a_upper + .eps)
+    a_lower <- log10(max(a_lower, .eps) + .eps)
+    a_upper <- log10(max(a_upper, .eps) + .eps)
   }
-
-  # Constrain midpoint (a + d)/2 to middle90 by bounding a and d so midpoint can lie there.
-  # We'll choose ranges so that a in [eps, 2*mid_high] and d in [2*mid_low - a_upper, y_max*2]
-  d_lower <- mid_high /2  #.eps
-  d_upper <- 2 * mid_high
-
-  b_lower <-  .eps
-  b_upper <-   .slope_max
-
-  midpoint_concentration <- (min(data$concentration) + max(data$concentration))/2
-  conc_range <- max(data$concentration) - min(data$concentration)
-  # # Allow EC50 anywhere in the data range, or slightly beyond
-  c_lower <- midpoint_concentration - 0.7 * conc_range
-  c_upper <- midpoint_concentration + 0.7 * conc_range
+  
+  # ── Upper asymptote d — adaptive ──
+  dr <- constraint_profile$dynamic_range
+  margin <- constraint_profile$d_margin_frac
+  
+  # For low-response data, allow d to go as low as midpoint of range
+  d_lower <- y_min + dr * (0.5 - margin)
+  d_lower <- max(d_lower, y_min + .eps)  # never below observed min
+  
+  # Upper bound: proportional headroom above observed max
+  d_upper <- y_max + dr * margin
+  # Safety: ensure d_upper > d_lower
+  if (d_upper <= d_lower) d_upper <- d_lower + abs(dr) * 0.5 + .eps
+  
+  # ── Inflection point c — wider search for low-response ──
+  midpoint_concentration <- mean(range(data$concentration, na.rm = TRUE))
+  conc_range <- diff(range(data$concentration, na.rm = TRUE))
+  pad <- constraint_profile$conc_pad_frac
+  
+  c_lower <- midpoint_concentration - pad * conc_range
+  c_upper <- midpoint_concentration + pad * conc_range
+  
+  # ── Slope b ──
+  b_lower <- .slope_min
+  b_upper <- .slope_max
 
   if ("a" %in% formula_vars) {
     lower <- c(a = a_lower, b = b_lower, c = c_lower, d = d_lower)
@@ -755,4 +886,92 @@ Ygomp4_safe_constraint <- function(data, y_min=1, y_max, Ygomp4_formula, Ygomp4_
     upper <- c(b = b_upper, c = c_upper, d = d_upper)
   }
   return(.make_bounds(Ygomp4_free_vars, lower_vals = lower, upper_vals = upper))
+}
+
+
+# ---- Build a constraint profile from the actual observed data ----
+#'
+#' Inspects response range, dynamic range ratio, and scale to choose
+#' appropriate constraint parameters.  Returns a named list consumed
+#' by every *_safe_constraint function.
+#'
+#' @param data       data.frame with at least `response_variable` and `concentration`
+#' @param response_variable  character column name
+#' @param is_log_response    logical — TRUE when data has already been log10-transformed
+#' @param antigen_settings   list with l_asy_min_constraint, l_asy_max_constraint, etc.
+#'
+#' @return named list:
+#'   \item{y_min, y_max}{observed extremes}
+#'   \item{dynamic_range}{y_max - y_min}
+#'   \item{scale_class}{"high" (MFI-like), "medium", or "low" (OD/absorbance)}
+#'   \item{slope_max}{adapted upper bound for b}
+#'   \item{slope_min}{adapted lower bound for b}
+#'   \item{g_min, g_max}{adapted asymmetry bounds}
+#'   \item{conc_pad_frac}{how far beyond concentration range to allow c}
+#'   \item{d_margin_frac}{fraction of y_max for d bounds}
+adaptive_constraint_profile <- function(data,
+                                        response_variable,
+                                        is_log_response,
+                                        antigen_settings) {
+  
+  y_vals <- data[[response_variable]]
+  y_vals <- y_vals[is.finite(y_vals)]
+  y_min  <- min(y_vals)
+  y_max  <- max(y_vals)
+  dynamic_range <- y_max - y_min
+  
+  conc_vals  <- data$concentration[is.finite(data$concentration)]
+  conc_range <- diff(range(conc_vals))
+  
+  # Classify the response scale
+  # After log10 transform: log10(10000) = 4, log10(1) = 0, log10(0.1) = -1
+  if (is_log_response) {
+    # On log10 scale: "high" means original values >> 100
+    scale_class <- if (y_max > 2.5) {
+      "high"        # Luminex MFI ≈ 300–30,000
+    } else if (y_max > 0.5) {
+      "medium"      # moderate range
+    } else {
+      "low"         # OD/absorbance < ~3, or very weak signals
+    }
+  } else {
+    scale_class <- if (y_max > 1000) "high" else if (y_max > 10) "medium" else "low"
+  }
+  
+  # Adapt slope bounds to dynamic range
+  # Narrow dynamic range needs gentler slopes to avoid near-singular Jacobians
+  slope_max <- switch(scale_class,
+                      high   = 2.0,
+                      medium = 3.0,    # allow steeper relative to range
+                      low    = 5.0     # very compressed range needs more flexibility
+  )
+  slope_min <- switch(scale_class,
+                      high   = 0.1,
+                      medium = 0.05,
+                      low    = 0.01    # permit very shallow slopes
+  )
+  
+  # Asymmetry parameter g
+  g_min <- switch(scale_class, high = 0.5, medium = 0.3, low = 0.1)
+  g_max <- switch(scale_class, high = 5.0, medium = 7.0, low = 10.0)
+  
+  # How far beyond data range to allow the inflection point c
+  conc_pad_frac <- switch(scale_class, high = 0.5, medium = 0.7, low = 1.0)
+  
+  # Upper asymptote d: margin above/below y_max
+  d_margin_frac <- switch(scale_class, high = 0.5, medium = 0.3, low = 0.15)
+  
+  list(
+    y_min          = y_min,
+    y_max          = y_max,
+    dynamic_range  = dynamic_range,
+    conc_range     = conc_range,
+    scale_class    = scale_class,
+    slope_max      = slope_max,
+    slope_min      = slope_min,
+    g_min          = g_min,
+    g_max          = g_max,
+    conc_pad_frac  = conc_pad_frac,
+    d_margin_frac  = d_margin_frac
+  )
 }

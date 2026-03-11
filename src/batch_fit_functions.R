@@ -7,33 +7,52 @@ build_antigen_list <- function(exp_list, loaded_data_list, study_accession, verb
     standards <- loaded_data$standards
     print("standards antigen_list")
     print(names(standards))
-    valid_combos <- unique(standards[, c("experiment_accession","plate", "source", "plate_nom")])
+    # Use source_nom instead of source for unique combos
+    source_col <- if ("source_nom" %in% names(standards)) "source_nom" else "source"
+    
+    # ── Include wavelength in combo grouping so ELISA plates with
+    #    multiple wavelengths produce separate entries ──────────────
+    has_wavelength <- "wavelength" %in% names(standards)
+    if (has_wavelength) {
+      # Normalize before grouping so NA / "" / NA_character_ all become WL_NONE
+      standards$wavelength <- normalize_wavelength(standards$wavelength)
+      combo_cols <- c("experiment_accession", "plate", source_col, "plate_nom", "wavelength")
+    } else {
+      combo_cols <- c("experiment_accession", "plate", source_col, "plate_nom")
+    }
+    
+    valid_combos <- unique(standards[, combo_cols, drop = FALSE])
     print(valid_combos)
     for (i in seq_len(nrow(valid_combos))) {
       current_combo <- valid_combos[i, ]
-      exp_standards <- standards[standards$experiment_accession == current_combo$experiment_accession &
-                                  # standards$plate == current_combo$plate &
-                                   standards$source == current_combo$source &
-                                   standards$plate_nom == current_combo$plate_nom, ]
-                                   #standards$nominal_sample_dilution == current_combo$nominal_sample_dilution, ]
+      
+      combo_filter <- standards$experiment_accession == current_combo$experiment_accession &
+                        standards[[source_col]] == current_combo[[source_col]] &
+                        standards$plate_nom == current_combo$plate_nom
+      if (has_wavelength) {
+        combo_filter <- combo_filter & standards$wavelength == current_combo$wavelength
+      }
+      exp_standards <- standards[combo_filter, ]
 
       antigens <- unique(exp_standards$antigen)
       antigens <- antigens[!is.na(antigens) & antigens != ""]
 
+      current_wl <- if (has_wavelength) current_combo$wavelength else WL_NONE
+
       if (length(antigens) > 0) {
         id <- paste0(experiment_accession, "_",
                      current_combo$plate_nom, "_",
-                     # current_combo$plate, "_",
-                     # current_combo$nominal_sample_dilution, "_",
-                     current_combo$source)
+                     current_combo[[source_col]], "_",
+                     current_wl)
         antigen_list[[id]] <- list(
           antigens = unique(exp_standards$antigen),
           study_accession = study_accession,
           experiment_accession = experiment_accession,
           plate = current_combo$plate,
-         # nominal_sample_dilution = current_combo$nominal_sample_dilution,
           plate_nom = current_combo$plate_nom,
-          source = current_combo$source
+          source = current_combo[[source_col]],        # source_nom value
+          source_original = if ("source" %in% names(current_combo)) current_combo$source else NA_character_,
+          wavelength = current_wl
         )
 
         antigen_list_ids <- c(antigen_list_ids, id)
@@ -68,7 +87,8 @@ build_antigen_plate_list <- function(antigen_list_result, loaded_data_list, verb
         info$plate_nom, "|",
         info$source, "|",
        #info$nominal_sample_dilution, "|",
-        antigen
+        antigen, "|",
+        info$wavelength
       )
 
       antigen_plate_list[[current_unique_id]] <- select_antigen_plate(
@@ -78,6 +98,7 @@ build_antigen_plate_list <- function(antigen_list_result, loaded_data_list, verb
         source = info$source,
         antigen = antigen,
         plate = info$plate_nom,
+        wavelength = info$wavelength,
        # nominal_sample_dilution = info$nominal_sample_dilution,
         antigen_constraints = antigen_constraints
       )
@@ -156,7 +177,7 @@ fit_experiment_plate_batch <- function(prepped_data_list_res,
 
     # Split the name string into components
     components <- strsplit(prep_dat_name, "\\|")[[1]]
-    field_names <- c("Study", "Experiment", "Plate - Sample Dilution(s)", "Dilution","Source", "Antigen")
+    field_names <- c("Study", "Experiment", "Plate - Sample Dilution(s)", "Source", "Antigen", "Wavelength")
     # Create labeled lines
     labeled_lines <- paste0("<b>", field_names, ":</b> ", components, collapse = "<br>")
 
@@ -170,23 +191,39 @@ fit_experiment_plate_batch <- function(prepped_data_list_res,
     )
 
     if (verbose) print(prep_dat_name)
-    plate_prepped_data <- prepped_data_list[[prep_dat_name]]
-    formulas <- formula_list[[prep_dat_name]]
-    response_variable <- unique(antigen_plate_list[[prep_dat_name]]$plate_standard$assay_response_variable)
+    
     independent_variable <- unique(antigen_plate_list[[prep_dat_name]]$plate_standard$assay_independent_variable)
     fixed_a_result <- antigen_plate_list[[prep_dat_name]]$fixed_a_result
     antigen_settings <- antigen_plate_list[[prep_dat_name]]$antigen_settings
+    formulas <- formula_list[[prep_dat_name]]
     if (verbose) print(independent_variable)
-    plate_model_constraints_list[[prep_dat_name]] <- obtain_model_constraints(data = plate_prepped_data$data,
-                                                                              formulas = formulas,
-                                                                              independent_variable = independent_variable,
-                                                                              response_variable = response_variable,
-                                                                              is_log_response = TRUE,
-                                                                              is_log_concentration = TRUE,
-                                                                              antigen_settings = antigen_settings,
-                                                                              max_response = max(plate_prepped_data$data[[response_variable]], na.rm = TRUE),
-                                                                              min_response = min(plate_prepped_data$data[[response_variable]], na.rm = TRUE),
-                                                                              verbose = verbose)
+    
+    plate_prepped_data <- prepped_data_list[[prep_dat_name]]
+    response_variable  <- unique(antigen_plate_list[[prep_dat_name]]$plate_standard$assay_response_variable)
+    
+    # Compute data range for diagnostics
+    y_range <- range(plate_prepped_data$data[[response_variable]], na.rm = TRUE)
+    
+    if (verbose) {
+      message(sprintf(
+        "\n[batch] %s — response range: [%.4f, %.4f], dynamic_range: %.4f",
+        prep_dat_name, y_range[1], y_range[2], diff(y_range)
+      ))
+    }
+    
+    # obtain_model_constraints now builds and attaches the profile automatically
+    plate_model_constraints_list[[prep_dat_name]] <- obtain_model_constraints(
+      data = plate_prepped_data$data,
+      formulas = formulas,
+      independent_variable = independent_variable,
+      response_variable = response_variable,
+      is_log_response = TRUE,
+      is_log_concentration = TRUE,
+      antigen_settings = antigen_settings,
+      max_response = y_range[2],
+      min_response = y_range[1],
+      verbose = verbose
+    )
 
 
     plate_start_lists[[prep_dat_name]] <- make_start_lists(model_constraints = plate_model_constraints_list[[prep_dat_name]],
@@ -252,22 +289,27 @@ fit_experiment_plate_batch <- function(prepped_data_list_res,
         se_table = se_antigen_table,
         study_accession = unique(current_plate$plate_standard$study_accession),
         experiment_accession = unique(current_plate$plate_standard$experiment_accession),
-        source = unique(current_plate$plate_standard$source),
+        source = if ("source_nom" %in% names(current_plate$plate_standard)) unique(current_plate$plate_standard$source_nom) else unique(current_plate$plate_standard$source),
         antigen = unique(current_plate$plate_standard$antigen),
         feature = unique(current_plate$plate_standard$feature)
       )
     } else {
       NA_real_
     }
+    
+    # Use response_var from data (not hardcoded "mfi") for ELISA compatibility
+    current_response_var <- unique(current_plate$plate_standard$assay_response_variable)
+    if (length(current_response_var) == 0 || is.na(current_response_var)) current_response_var <- "mfi"
+    
     candidate_best_fit_list[[prep_dat_name]]  <- predict_and_propagate_error(best_fit = candidate_best_fit_list[[prep_dat_name]],
-                                                                             response_var = "mfi",
+                                                                             response_var = current_response_var,
                                                                              antigen_plate = antigen_plate_list[[prep_dat_name]],
                                                                              study_params = study_params,
                                                                              se_std_response = current_se,
                                                                              verbose = verbose)
 
     candidate_best_fit_list[[prep_dat_name]] <- gate_samples(best_fit = candidate_best_fit_list[[prep_dat_name]],
-                                                             response_variable = "mfi",
+                                                             response_variable = current_response_var,
                                                              pcov_threshold = antigen_settings$pcov_threshold, verbose = verbose
     )
 
@@ -279,62 +321,135 @@ fit_experiment_plate_batch <- function(prepped_data_list_res,
 }
 
 create_batch_fit_outputs <- function(batch_fit_res, antigen_plate_list_res) {
-
-  best_tidy_all <- do.call(
-    rbind,
-    lapply(batch_fit_res, function(x) x$best_tidy)
-  )
+  
+  antigen_plate_list <- antigen_plate_list_res$antigen_plate_list
+  
+  # Helper: extract the single feature value from plate standard data
+  get_feature_for <- function(nm) {
+    plate_info <- antigen_plate_list[[nm]]
+    if (!is.null(plate_info$plate_standard) && "feature" %in% names(plate_info$plate_standard)) {
+      feat <- unique(plate_info$plate_standard$feature)
+      feat <- feat[!is.na(feat) & feat != ""]
+      if (length(feat) >= 1) return(feat[1])
+    }
+    NA_character_
+  }
+  
+  # Helper: ensure feature column exists on a data frame
+  ensure_feature <- function(df, nm) {
+    if (!is.null(df) && is.data.frame(df) && !"feature" %in% names(df)) {
+      df$feature <- get_feature_for(nm)
+    }
+    df
+  }
+  
+  best_tidy_all <- do.call(rbind, lapply(names(batch_fit_res), function(nm) {
+    bt <- batch_fit_res[[nm]]$best_tidy
+    if (is.null(bt)) return(NULL)
+    ensure_feature(bt, nm)
+  }))
   rownames(best_tidy_all) <- NULL
-
-
+  
   best_glance_all <- dplyr::bind_rows(
-    lapply(batch_fit_res, function(x) {
-      bg <- x$best_glance
+    lapply(names(batch_fit_res), function(nm) {
+      bg <- batch_fit_res[[nm]]$best_glance
       if (is.null(bg)) return(NULL)
-
       bg$g <- if ("g" %in% names(bg)) dplyr::coalesce(bg$g, 1) else 1
+      bg <- ensure_feature(bg, nm)
+      if (!"wavelength" %in% names(bg)) bg$wavelength <- WL_NONE
+      bg$wavelength <- normalize_wavelength(bg$wavelength)
       bg
     })
   )
-
+  
   best_pred_all <- dplyr::bind_rows(
-    lapply(batch_fit_res, function(x) x$best_pred)
+    lapply(names(batch_fit_res), function(nm) {
+      bp <- batch_fit_res[[nm]]$best_pred
+      if (is.null(bp)) return(NULL)
+      bp <- ensure_feature(bp, nm)
+      if (!"wavelength" %in% names(bp)) bp$wavelength <- WL_NONE
+      bp$wavelength <- normalize_wavelength(bp$wavelength)
+      bp
+    })
   )
-
+  
   best_sample_se_all <- dplyr::bind_rows(
-    lapply(batch_fit_res, function(x) x$sample_se)
+    lapply(names(batch_fit_res), function(nm) {
+      ss <- batch_fit_res[[nm]]$sample_se
+      if (is.null(ss)) return(NULL)
+      ss <- ensure_feature(ss, nm)
+      if (!"wavelength" %in% names(ss)) ss$wavelength <- WL_NONE
+      ss$wavelength <- normalize_wavelength(ss$wavelength)
+      ss
+    })
   )
-
-
+  
   best_standard_all <- dplyr::bind_rows(
-    lapply(batch_fit_res, function(x) {
-      bg <- x$best_data
+    lapply(names(batch_fit_res), function(nm) {
+      bg <- batch_fit_res[[nm]]$best_data
       if (is.null(bg)) return(NULL)
       bg$g <- if ("g" %in% names(bg)) dplyr::coalesce(bg$g, 1) else 1
+      bg <- ensure_feature(bg, nm)
+      if (!"wavelength" %in% names(bg)) bg$wavelength <- WL_NONE
+      bg$wavelength <- normalize_wavelength(bg$wavelength)
       bg
     })
   )
-
-  best_plate_all <- dplyr::distinct(best_standard_all[ , c("study_accession","experiment_accession","feature","source","plateid","plate","nominal_sample_dilution","assay_response_variable",
-                                                           "assay_independent_variable")])
-
+  
+  # Build best_plate_all
+  plate_cols <- c("project_id","study_accession", "experiment_accession", "feature", "source",
+                  "plateid", "plate", "nominal_sample_dilution",
+                  "assay_response_variable", "assay_independent_variable",
+                  "wavelength")
+  available_plate_cols <- intersect(plate_cols, names(best_standard_all))
+  best_plate_all <- dplyr::distinct(best_standard_all[, available_plate_cols, drop = FALSE])
+  
+  # ── Diagnostic: output table row counts and wavelength values ──
+  for (tbl_nm in c("best_tidy_all", "best_glance_all", "best_pred_all",
+                    "best_sample_se_all", "best_standard_all", "best_plate_all")) {
+    tbl <- get(tbl_nm)
+    n <- if (is.data.frame(tbl)) nrow(tbl) else 0
+    wl <- if (is.data.frame(tbl) && "wavelength" %in% names(tbl))
+      paste(unique(tbl$wavelength), collapse = ", ") else "NO_COL"
+    message(sprintf("[create_batch_fit_outputs] %s: %d rows, wavelengths: %s",
+                    tbl_nm, n, wl))
+  }
+  
   return(list(
-    best_tidy_all     = best_tidy_all,
-    best_glance_all   = best_glance_all,
-    best_pred_all     = best_pred_all,
+    best_tidy_all      = best_tidy_all,
+    best_glance_all    = best_glance_all,
+    best_pred_all      = best_pred_all,
     best_sample_se_all = best_sample_se_all,
-    best_standard_all = best_standard_all,
-    best_plate_all    = best_plate_all,
+    best_standard_all  = best_standard_all,
+    best_plate_all     = best_plate_all,
     antigen_plate_list = antigen_plate_list_res
-    )
-    )
+  ))
 }
 
 # add unique identifiers and rename the response variable to be generic for saving
 # as well as project_id
 process_batch_outputs <- function(batch_outputs, response_var, project_id) {
-
-  # Guard: ensure cv_x is present; fill NA if somehow missing
+  
+  # Ensure wavelength column exists in all output tables and normalize values
+  ensure_wavelength <- function(df) {
+    if (!is.null(df) && is.data.frame(df)) {
+      if (!"wavelength" %in% names(df)) {
+        df$wavelength <- WL_NONE
+      } else {
+        df$wavelength <- normalize_wavelength(df$wavelength)
+      }
+    }
+    df
+  }
+  
+  batch_outputs$best_tidy_all      <- ensure_wavelength(batch_outputs$best_tidy_all)
+  batch_outputs$best_glance_all    <- ensure_wavelength(batch_outputs$best_glance_all)
+  batch_outputs$best_pred_all      <- ensure_wavelength(batch_outputs$best_pred_all)
+  batch_outputs$best_sample_se_all <- ensure_wavelength(batch_outputs$best_sample_se_all)
+  batch_outputs$best_standard_all  <- ensure_wavelength(batch_outputs$best_standard_all)
+  batch_outputs$best_plate_all     <- ensure_wavelength(batch_outputs$best_plate_all)
+  
+  # Ensure cv_x is present; fill NA if somehow missing
   ensure_cv_x <- function(df, context = "") {
     if (!"cv_x" %in% names(df)) {
       message(sprintf("[process_batch_outputs] cv_x missing from %s — filling NA.", context))
@@ -345,63 +460,100 @@ process_batch_outputs <- function(batch_outputs, response_var, project_id) {
     df
   }
 
+  
 
-  batch_outputs$best_pred_all       <- ensure_cv_x(batch_outputs$best_pred_all,
-                                                   "best_pred_all")
-  batch_outputs$best_sample_se_all  <- ensure_cv_x(batch_outputs$best_sample_se_all,
-                                                   "best_sample_se_all")
+  batch_outputs$best_pred_all       <- if (!is.null(batch_outputs$best_pred_all) && nrow(batch_outputs$best_pred_all) > 0) {
+    ensure_cv_x(batch_outputs$best_pred_all, "best_pred_all")
+  } else {
+    message("[process_batch_outputs] best_pred_all is NULL or empty — skipping cv_x.")
+    batch_outputs$best_pred_all
+  }
 
-
-  #batch_outputs <<- batch_outputs
-
+  batch_outputs$best_sample_se_all  <- if (!is.null(batch_outputs$best_sample_se_all) && nrow(batch_outputs$best_sample_se_all) > 0) {
+    ensure_cv_x(batch_outputs$best_sample_se_all, "best_sample_se_all")
+  } else {
+    message("[process_batch_outputs] best_sample_se_all is NULL or empty — skipping cv_x.")
+    batch_outputs$best_sample_se_all
+  }
+  normalize_output_columns <- function(df, context = "") {
+    if (!is.null(df) && is.data.frame(df)) {
+      old_names <- names(df)
+      new_names <- tolower(old_names)
+      
+      # Log any columns that were actually renamed
+      changed <- old_names != new_names
+      if (any(changed)) {
+        message(sprintf(
+          "[process_batch_outputs] Lowercased %d column(s) in %s: %s",
+          sum(changed), context,
+          paste(
+            sprintf("%s -> %s", old_names[changed], new_names[changed]),
+            collapse = ", "
+          )
+        ))
+      }
+      
+      names(df) <- new_names
+      
+      # Remove obsolete 'sample_dilution_factor' column if present
+      if ("sample_dilution_factor" %in% names(df)) {
+        message(sprintf(
+          "[process_batch_outputs] Removing obsolete 'sample_dilution_factor' from %s",
+          context
+        ))
+        df$sample_dilution_factor <- NULL
+      }
+    }
+    df
+  }
+  
+  batch_outputs$best_tidy_all      <- normalize_output_columns(batch_outputs$best_tidy_all,      "best_tidy_all")
+  batch_outputs$best_glance_all    <- normalize_output_columns(batch_outputs$best_glance_all,    "best_glance_all")
+  batch_outputs$best_pred_all      <- normalize_output_columns(batch_outputs$best_pred_all,      "best_pred_all")
+  batch_outputs$best_sample_se_all <- normalize_output_columns(batch_outputs$best_sample_se_all, "best_sample_se_all")
+  batch_outputs$best_standard_all  <- normalize_output_columns(batch_outputs$best_standard_all,  "best_standard_all")
+  batch_outputs$best_plate_all     <- normalize_output_columns(batch_outputs$best_plate_all,     "best_plate_all")
+  
   # ensure those out of range are null not inf for database storing.
-  batch_outputs$best_sample_se_all <-
-    batch_outputs$best_sample_se_all %>%
-    mutate(raw_predicted_concentration =
-             if_else(is.finite(raw_predicted_concentration),
-                     raw_predicted_concentration,
-                     NA_real_))
-#
-#   batch_outputs$best_pred_all <- batch_outputs$best_pred_all %>%
-#     dplyr::group_by(
-#       study_accession,
-#       experiment_accession,
-#       plateid,
-#       plate,
-#       nominal_sample_dilution,
-#       source,
-#       antigen
-#     ) %>%
-#     dplyr::mutate(id_match = dplyr::row_number()) %>%
-#     dplyr::ungroup()
+  if (!is.null(batch_outputs$best_sample_se_all) && nrow(batch_outputs$best_sample_se_all) > 0) {
+    batch_outputs$best_sample_se_all <-
+      batch_outputs$best_sample_se_all %>%
+      mutate(raw_predicted_concentration =
+               if_else(is.finite(raw_predicted_concentration),
+                       raw_predicted_concentration,
+                       NA_real_))
 
+    batch_outputs$best_sample_se_all <- batch_outputs$best_sample_se_all %>%
+      dplyr::rename(assay_response = all_of(response_var)) %>%
+      dplyr::distinct()
+  } else {
+    message("[process_batch_outputs] best_sample_se_all is NULL or empty — skipping rename/mutate.")
+  }
 
-  # batch_outputs$best_sample_se_all <- batch_outputs$best_sample_se_all %>%
-  #   dplyr::rename(assay_response = all_of(response_var)) %>%
-  #   dplyr::group_by(
-  #     study_accession, experiment_accession,
-  #     plateid, plate, nominal_sample_dilution, source, antigen,
-  #     patientid, timeperiod, sampleid, dilution
-  #   ) %>%
-  #   dplyr::mutate(uid = dplyr::row_number()) %>%
-  #   dplyr::ungroup()
-  batch_outputs$best_sample_se_all <- batch_outputs$best_sample_se_all %>%
-    dplyr::rename(assay_response = all_of(response_var)) %>%
-    dplyr::distinct()
-    # dplyr::group_by(
-    #   study_accession, experiment_accession,
-    #   plateid, plate, nominal_sample_dilution, source, antigen,
-    #   patientid, timeperiod, sampleid, dilution
-    # ) %>%
-    # dplyr::ungroup() %>%
-   # dplyr::distinct()
-  # batch_outputs$best_sample_se_all <- batch_outputs$best_sample_se_all %>%
-  #   dplyr::rename(assay_response = all_of(response_var)) %>%
-  #   dplyr::mutate(uid = dplyr::row_number())
-
-  batch_outputs$best_standard_all <- batch_outputs$best_standard_all %>%
-    dplyr::rename(assay_response = all_of(response_var)) %>%
-    dplyr::distinct()
+  if (!is.null(batch_outputs$best_standard_all) && nrow(batch_outputs$best_standard_all) > 0) {
+    batch_outputs$best_standard_all <- batch_outputs$best_standard_all %>%
+      dplyr::rename(assay_response = all_of(response_var)) %>%
+      dplyr::distinct()
+  } else {
+    message("[process_batch_outputs] best_standard_all is NULL or empty — skipping rename/mutate.")
+  }
+  
+  
+  # ── Ensure feature column exists in all output tables ──
+  ensure_feature_col <- function(df, context = "") {
+    if (!is.null(df) && is.data.frame(df) && !"feature" %in% names(df)) {
+      message(sprintf("[process_batch_outputs] 'feature' missing from %s — filling sentinel.", context))
+      df$feature <- FEAT_NONE
+    }
+    df
+  }
+  
+  batch_outputs$best_tidy_all      <- ensure_feature_col(batch_outputs$best_tidy_all,      "best_tidy_all")
+  batch_outputs$best_glance_all    <- ensure_feature_col(batch_outputs$best_glance_all,    "best_glance_all")
+  batch_outputs$best_pred_all      <- ensure_feature_col(batch_outputs$best_pred_all,      "best_pred_all")
+  batch_outputs$best_sample_se_all <- ensure_feature_col(batch_outputs$best_sample_se_all, "best_sample_se_all")
+  batch_outputs$best_standard_all  <- ensure_feature_col(batch_outputs$best_standard_all,  "best_standard_all")
+  batch_outputs$best_plate_all     <- ensure_feature_col(batch_outputs$best_plate_all,     "best_plate_all")
 
 
   # add project_id
@@ -413,9 +565,22 @@ process_batch_outputs <- function(batch_outputs, response_var, project_id) {
   batch_outputs$best_plate_all$project_id <- as.numeric(project_id)
 
 
+  # ── Strip internal routing columns that do not exist in the DB ──
+  internal_cols <- c("plate_nom", "source_nom", "source_original")
+
   batch_outputs <- lapply(batch_outputs, function(x) {
     if (is.data.frame(x)) {
-      x[, !names(x) %in% "plate_nom", drop = FALSE]
+      drop <- intersect(names(x), internal_cols)
+      if (length(drop) > 0) {
+        message(sprintf("[process_batch_outputs] Stripping internal columns: %s",
+                        paste(drop, collapse = ", ")))
+        x <- x[, !names(x) %in% internal_cols, drop = FALSE]
+      }
+      # Normalize feature: NA/empty → '__none__' sentinel for consistent NK matching
+      if ("feature" %in% names(x)) {
+        x$feature <- normalize_feature(x$feature)
+      }
+      x
     } else x
   })
 
