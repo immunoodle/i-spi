@@ -1698,7 +1698,6 @@ fit_qc_glance <- function(best_fit,
     gsub("I\\((.*)\\)", "\\1", paste(deparse(formula(fit)), collapse = " ")),
     error = function(e) NA_character_
   )
-<<<<<<< HEAD
   
   n_obs        <- length(resid_vals)
   mse          <- if (n_obs > 0) mean(resid_vals^2, na.rm = TRUE) else NA_real_
@@ -1763,6 +1762,7 @@ fit_qc_glance <- function(best_fit,
     base_df$is_log_x        <- as.logical(antigen_fit_options$is_log_concentration %||% NA)
     base_df$apply_prozone   <- as.logical(antigen_fit_options$apply_prozone %||% NA)
     base_df$formula         <- model_formula
+    base_df$last_concentration_calc_method <- "interpolated"
     
     base_df
   }, error = function(e) {
@@ -1791,46 +1791,41 @@ fit_qc_glance <- function(best_fit,
   }
   
   best_fit$best_glance <- attach_grouping_keys(glance_df, best_data, context = "fit_qc_glance")
-=======
-  n_obs        <- length(residuals(fit))
-  mse          <- mean(resid(fit)^2, na.rm = TRUE)
-  mean_obs_mfi <- mean(response,     na.rm = TRUE)
-  cv           <- (sqrt(mse) / mean_obs_mfi) * 100
 
-  # ------------------------------------------------------------------
-  # Assemble glance_df  (qc_glance already contains the 6 FDA columns)
-  # ------------------------------------------------------------------
-  glance_df <- data.frame(
-    study_accession        = unique(best_data$study_accession),
-    experiment_accession   = unique(best_data$experiment_accession),
-    plateid                = unique(best_data$plateid),
-    plate                  = unique(best_data$plate),
-    nominal_sample_dilution = unique(best_data$nominal_sample_dilution),
-    antigen                = unique(best_data$antigen),
-    iter                   = iter,
-    status                 = converged,
-    crit                   = crit,
-    coef_df,
-    qc_glance, # includes LLOQ/ULOQ FDA2018 + Blank_mean/SD
-    dfresidual = df_resid,
-    nobs = n_obs,
-    rsquare_fit = r_squared,
-    aic = aic,
-    bic = bic,
-    loglik = logLik_val,
-    mse = mse,
-    cv = cv,
-    source = unique(best_data$source),
-    bkg_method =  antigen_fit_options$blank_option, #blank_option,
-    is_log_response = antigen_fit_options$is_log_response,
-    is_log_x = antigen_fit_options$is_log_concentration,
-    apply_prozone  = antigen_fit_options$apply_prozone,
-    formula = model_formula,
-    last_concentration_calc_method = "interpolated"
-    )
+  # # ------------------------------------------------------------------
+  # # Assemble glance_df  (qc_glance already contains the 6 FDA columns)
+  # # ------------------------------------------------------------------
+  # glance_df <- data.frame(
+  #   study_accession        = unique(best_data$study_accession),
+  #   experiment_accession   = unique(best_data$experiment_accession),
+  #   plateid                = unique(best_data$plateid),
+  #   plate                  = unique(best_data$plate),
+  #   nominal_sample_dilution = unique(best_data$nominal_sample_dilution),
+  #   antigen                = unique(best_data$antigen),
+  #   iter                   = iter,
+  #   status                 = converged,
+  #   crit                   = crit,
+  #   coef_df,
+  #   qc_glance, # includes LLOQ/ULOQ FDA2018 + Blank_mean/SD
+  #   dfresidual = df_resid,
+  #   nobs = n_obs,
+  #   rsquare_fit = r_squared,
+  #   aic = aic,
+  #   bic = bic,
+  #   loglik = logLik_val,
+  #   mse = mse,
+  #   cv = cv,
+  #   source = unique(best_data$source),
+  #   bkg_method =  antigen_fit_options$blank_option, #blank_option,
+  #   is_log_response = antigen_fit_options$is_log_response,
+  #   is_log_x = antigen_fit_options$is_log_concentration,
+  #   apply_prozone  = antigen_fit_options$apply_prozone,
+  #   formula = model_formula,
+  #   last_concentration_calc_method = "interpolated"
+  #   )
+  # 
+  # best_fit$best_glance <- glance_df
 
-  best_fit$best_glance <- glance_df
->>>>>>> b35de0435c49ef9858f4d0e1d29b2e34488d7aad
   return(best_fit)
 }
 
@@ -3596,13 +3591,8 @@ lookup_antigen_se <- function(se_table,
 }
 
 
-<<<<<<< HEAD
+
 # ---- predict_and_propagate_error: The best fit must contain best_pred and antigen_plate containing plate_samples ----
-=======
-
-
-## The best fit must contain best_pred and antigen_plate containing plate_samples
->>>>>>> b35de0435c49ef9858f4d0e1d29b2e34488d7aad
 predict_and_propagate_error <- function(best_fit,
                                         response_var,
                                         antigen_plate,
