@@ -5,7 +5,7 @@ source("global.R", local = TRUE)
 
 # Set to 1 for local and do not push in prod
 # Sys.setenv(LOCAL_DEV = "1")
-# local_email_user <- "seamus.owen.stein@dartmouth.edu"
+# # local_email_user <- "seamus.owen.stein@dartmouth.edu"
 # local_email_user <- "mscotzens@gmail.com"
 
 # Source authentication configuration (Step 1)
@@ -1004,7 +1004,9 @@ server <- function(input, output, session) {
       source("batch_layout_functions.R", local = TRUE)
       source("import_lumifile.R", local = TRUE)
       source("xPonentReader.R", local = TRUE)
-      source("segment_reader.R", local = TRUE)
+      source("elisa_reader.R", local = TRUE)
+      source("elisa_diagnostic.R", local = TRUE)
+      # source("segment_reader.R", local = TRUE)
 
       source("plate_norm_server.R", local = TRUE)
       source("bead_count_analysis_ui.R", local = TRUE)

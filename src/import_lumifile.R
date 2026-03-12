@@ -490,62 +490,8 @@ output$readxMapData <- renderUI({
         ),
         br()
         ,
-        # ============================================================
-        # ASSAY TYPE SELECTOR
-        # ============================================================
-        fluidRow(
-          column(9,
-                 shinyWidgets::radioGroupButtons(
-                   inputId = "assay_type_selector",
-                   label = "Select Assay Type",
-                   choices = c("Bead Array", "ELISA", "Post-gating Flow Cytometry"),
-                   selected = "Bead Array",
-                   justified = TRUE,
-                   checkIcon = list(
-                     yes = icon("check", lib = "font-awesome")
-                   )
-                 )
-          )
-        ),
-        # ============================================================
-        # ELISA PLACEHOLDER
-        # ============================================================
-        conditionalPanel(
-          condition = "input.assay_type_selector == 'ELISA'",
-          fluidRow(
-            column(12,
-                   div(
-                     style = "text-align: center; padding: 80px 40px; color: #777; background-color: #f9f9fa; border: 2px dashed #ccc; border-radius: 10px; margin: 20px 0;",
-                     icon("flask", style = "font-size: 64px; margin-bottom: 20px; color: #aaa;"),
-                     h3("ELISA Data Import", style = "color: #555;"),
-                     p("ELISA data import is currently under development.", style = "font-size: 16px;"),
-                     p("This feature will be available in a future release.", style = "font-size: 14px; color: #999;")
-                   )
-            )
-          )
-        ),
-        # ============================================================
-        # POST-GATING FLOW CYTOMETRY PLACEHOLDER
-        # ============================================================
-        conditionalPanel(
-          condition = "input.assay_type_selector == 'Post-gating Flow Cytometry'",
-          fluidRow(
-            column(12,
-                   div(
-                     style = "text-align: center; padding: 80px 40px; color: #777; background-color: #f9f9fa; border: 2px dashed #ccc; border-radius: 10px; margin: 20px 0;",
-                     icon("filter", style = "font-size: 64px; margin-bottom: 20px; color: #aaa;"),
-                     h3("Post-gating Flow Cytometry Data Import", style = "color: #555;"),
-                     p("Post-gating Flow Cytometry data import is currently under development.", style = "font-size: 16px;"),
-                     p("This feature will be available in a future release.", style = "font-size: 14px; color: #999;")
-                   )
-            )
-          )
-        ),
-        # ============================================================
-        # BEAD ARRAY CONTENT (existing workflow, refactored)
-        # ============================================================
-        conditionalPanel(
-          condition = "input.assay_type_selector == 'Bead Array'",
+        # ---- Name the Experiment ----
+
         fluidRow(
           column(5,
                  tagList(
@@ -560,28 +506,158 @@ output$readxMapData <- renderUI({
                                   "To create a new experiment, type in this box (up to 15 characters)."
                        )
                      ),
-                # conditionalPanel(
-                #  condition = "input.readxMap_study_accession != 'Click here'",
-                   selectizeInput("readxMap_experiment_accession_import",
-                                  label = NULL,
-                                  # "Choose Existing Experiment Name OR Create a New Experiment Name (by typing up to 15 characters)",
-                                  # choices <- c("Click OR Create New" = "Click here"),
-                                  choices <- experiment_choices_rv(),
-                                  selected = "Click here",
-                                  multiple = FALSE,
-                                  options = list(create = TRUE,
-                                  onType = I("function(str) {
+                     # conditionalPanel(
+                     #  condition = "input.readxMap_study_accession != 'Click here'",
+                     selectizeInput("readxMap_experiment_accession_import",
+                                    label = NULL,
+                                    # "Choose Existing Experiment Name OR Create a New Experiment Name (by typing up to 15 characters)",
+                                    # choices <- c("Click OR Create New" = "Click here"),
+                                    choices <- experiment_choices_rv(),
+                                    selected = "Click here",
+                                    multiple = FALSE,
+                                    options = list(create = TRUE,
+                                                   onType = I("function(str) {
                                                 if (str.length > 15) {
                                                   this.setTextboxValue(str.substring(0, 15));
                                                 }
                                               }")), width = '700px'
+                     )
+                     # )
                    )
-               # )
-               )
-             )
+                 )
           )
         )
         ,
+        # ---- ASSAY TYPE SELECTOR ----
+        fluidRow(
+          column(9,
+                 shinyWidgets::radioGroupButtons(
+                   inputId = "assay_type_selector",
+                   label = "Select Assay Type",
+                   choices = c("Bead Array", "ELISA", "Post-gating Flow Cytometry"),
+                   selected = "Bead Array",
+                   justified = TRUE,
+                   checkIcon = list(
+                     yes = icon("check", lib = "font-awesome")
+                   )
+                 )
+          )
+        ),
+        # ---- ELISA IMPORT SECTION ----
+        conditionalPanel(
+          condition = "input.assay_type_selector == 'ELISA'",
+          fluidRow(
+            column(3,
+                   wellPanel(
+                     h4("ELISA File Upload"),
+                     p("Upload ELISA Excel files containing 'results' and 'plate_map' sheets."),
+                     
+                     # Step 1: Upload ELISA files
+                     fileInput("upload_elisa_experiment_files",
+                               label = "Select ELISA data file(s)",
+                               accept = c(".xlsx", ".xls"),
+                               multiple = TRUE),
+                     
+                     conditionalPanel(
+                       condition = "output.hasElisaData",
+                       hr(),
+                       h4("Layout Template Options"),
+                       
+                       numericInput("elisa_n_wells_on_plate",
+                                    "Number of wells per plate",
+                                    value = 96, min = 96, max = 384, step = 288),
+                       
+                       textInput("elisa_description_delimiter",
+                                 "Description Delimiter",
+                                 value = "_"),
+                       
+                       # Optional elements
+                       tags$div(
+                         class = "element-controls",
+                         tags$span(style = "font-weight: 600;", "Include Optional Elements:"),
+                         checkboxGroupButtons(
+                           inputId = "elisa_optional_elements",
+                           label = NULL,
+                           choices = c("SampleGroupA", "SampleGroupB"),
+                           selected = c("SampleGroupA", "SampleGroupB"),
+                           status = "outline-primary",
+                           checkIcon = list(
+                             yes = icon("check"),
+                             no = icon("times")
+                           )
+                         )
+                       ),
+                       
+                       conditionalPanel(
+                         condition = "output.hasElisaData",
+                         uiOutput("elisa_order_input_ui"),
+                         uiOutput("elisa_bcsorder_input_ui")
+                       ),
+                       
+                       hr(),
+                       downloadButton("elisa_blank_layout_file", "Generate ELISA Layout Template",
+                                      class = "btn-info btn-block"),
+                       
+                       hr(),
+                       fileInput("upload_elisa_layout_file",
+                                 label = "Upload completed ELISA layout file",
+                                 accept = c(".xlsx", ".xls"),
+                                 multiple = FALSE)
+                     )
+                   )
+            ),
+            column(9,
+                   # Description warnings
+                   uiOutput("elisa_description_warning_ui"),
+                   
+                   # File summary
+                   conditionalPanel(
+                     condition = "output.hasElisaData",
+                     wellPanel(
+                       h4("ELISA Data Summary"),
+                       verbatimTextOutput("elisa_file_summary")
+                     )
+                   ),
+                   
+                   # Validation status
+                   uiOutput("elisa_validation_status"),
+                   
+                   # View layout sheets (reuses batch view pattern)
+                   conditionalPanel(
+                     condition = "output.hasElisaLayoutSheets",
+                     wellPanel(
+                       h4("Layout File Contents"),
+                       fluidRow(
+                         column(2, actionButton("view_elisa_plate_id", "Plate ID", class = "btn-sm btn-default")),
+                         column(2, actionButton("view_elisa_plates_map", "Plates Map", class = "btn-sm btn-default")),
+                         column(2, actionButton("view_elisa_subject_groups", "Subjects", class = "btn-sm btn-default")),
+                         column(2, actionButton("view_elisa_timepoint", "Timepoint", class = "btn-sm btn-default")),
+                         column(2, actionButton("view_elisa_antigen_list", "Antigens", class = "btn-sm btn-default")),
+                         column(2, actionButton("view_elisa_metadata", "ELISA Metadata", class = "btn-sm btn-default"))
+                       )
+                     )
+                   )
+            )
+          )
+        ),
+        # ---- POST-GATING FLOW CYTOMETRY PLACEHOLDER ----
+        conditionalPanel(
+          condition = "input.assay_type_selector == 'Post-gating Flow Cytometry'",
+          fluidRow(
+            column(12,
+                   div(
+                     style = "text-align: center; padding: 80px 40px; color: #777; background-color: #f9f9fa; border: 2px dashed #ccc; border-radius: 10px; margin: 20px 0;",
+                     icon("filter", style = "font-size: 64px; margin-bottom: 20px; color: #aaa;"),
+                     h3("Post-gating Flow Cytometry Data Import", style = "color: #555;"),
+                     p("Post-gating Flow Cytometry data import is currently under development.", style = "font-size: 16px;"),
+                     p("This feature will be available in a future release.", style = "font-size: 14px; color: #999;")
+                   )
+            )
+          )
+        ),
+        # ---- BEAD ARRAY CONTENT (existing workflow, refactored) ----
+        conditionalPanel(
+          condition = "input.assay_type_selector == 'Bead Array'",
         fluidRow(
           column(9,
                  conditionalPanel(
@@ -611,9 +687,7 @@ output$readxMapData <- renderUI({
                    ),
                    conditionalPanel(
                      condition = "input.xPonentFile == 'xPONENT'",
-                     # ============================================================
-                     # xPONENT BATCH UPLOAD (NEW - mirrors Raw File workflow)
-                     # ============================================================
+                     # ---- xPONENT BATCH UPLOAD (NEW - mirrors Raw File workflow) ----
                      tags$div(
                        style = "display: flex; flex-wrap: wrap; align-items: center; gap: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;",
                        tags$div(
@@ -1769,6 +1843,11 @@ observeEvent(input$split_opt_plates, {
 })
 
 observeEvent(input$savexMapButton, {
+
+  # Standardize acquisition_date to ISO format for PostgreSQL
+  if ("acquisition_date" %in% names(theads)) {
+    theads$acquisition_date <- standardize_date_for_postgres(theads$acquisition_date)
+  }
 
   DBI::dbAppendTable(conn, Id(schema = "madi_results", table = "xmap_header"), theads)
   DBI::dbAppendTable(conn, Id(schema = "madi_results", table = "xmap_standard"), standard_data)
@@ -3059,6 +3138,10 @@ observeEvent(input$upload_batch_button, {
   # Insert header
   if (!is.null(header_data) && nrow(header_data) > 0) {
     cat("  Inserting header...\n")
+    # Standardize acquisition_date to ISO format for PostgreSQL
+    if ("acquisition_date" %in% names(header_data)) {
+      header_data$acquisition_date <- standardize_date_for_postgres(header_data$acquisition_date)
+    }
     header_result <- insert_to_table(
       conn, "madi_results", "xmap_header", header_data, "header",
       required_cols = c("project_id", "study_accession", "plate_id")

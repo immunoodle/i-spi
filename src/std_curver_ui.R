@@ -1,6 +1,4 @@
-# -----------------------------------------------------------------
-# concentration_calc_df — session-scoped so batch observers can use it
-# -----------------------------------------------------------------
+# ---- concentration_calc_df — session-scoped so batch observers can use it ----
 concentration_calc_df <- reactive({
   req(
     input$sc_plate_select,
@@ -59,110 +57,6 @@ concentration_calc_df <- reactive({
   
   calc_df
 })
-# concentration_calc_df <- reactive({
-#   req(
-#     input$sc_plate_select,
-#     input$readxMap_study_accession    != "Click here",
-#     input$readxMap_experiment_accession != "Click here"
-#   )
-#   
-#   concentrationUIRefresher()
-#   
-#   calc_df <- get_existing_concentration_calc(
-#     conn                 = conn,
-#     project_id           = userWorkSpaceID(),
-#     study_accession      = input$readxMap_study_accession,
-#     experiment_accession = input$readxMap_experiment_accession,
-#     plate_nom            = input$sc_plate_select
-#   )
-#   
-#   # Overlay in-memory "pending" states for MCMC
-#   pending <- mcmc_pending_scopes()
-#   if (length(pending) > 0) {
-#     for (entry in pending) {
-#       match_rows <- (
-#         calc_df$scope                     == entry[["scope"]] &
-#           calc_df$concentration_calc_method == entry[["method"]]
-#       )
-#       if (any(match_rows)) calc_df$job_status[match_rows] <- "pending"
-#     }
-#   }
-#   
-#   # ── ADD THIS: Overlay in-memory "pending" states for interpolated ────────
-#   interp_pending <- interp_pending_scopes()
-#   if (length(interp_pending) > 0) {
-#     for (entry in interp_pending) {
-#       match_rows <- (
-#         calc_df$scope                     == entry[["scope"]] &
-#           calc_df$concentration_calc_method == entry[["method"]]
-#       )
-#       if (any(match_rows)) calc_df$job_status[match_rows] <- "pending"
-#     }
-#   }
-#   # ─────────────────────────────────────────────────────────────────────────
-#   
-#   # When mcmc_robust is active at a scope, show interpolated as completed
-#   mcmc_active_scopes <- unique(
-#     calc_df$scope[
-#       calc_df$concentration_calc_method == "mcmc_robust" &
-#         calc_df$job_status                != "not begun"
-#     ]
-#   )
-#   calc_df$job_status <- ifelse(
-#     calc_df$concentration_calc_method == "interpolated" &
-#       calc_df$scope %in% mcmc_active_scopes,
-#     "completed",
-#     calc_df$job_status
-#   )
-#   
-#   calc_df
-# })
-# concentration_calc_df <- reactive({
-#   req(
-#     input$sc_plate_select,
-#     input$readxMap_study_accession    != "Click here",
-#     input$readxMap_experiment_accession != "Click here"
-#   )
-#   
-#   concentrationUIRefresher()   # invalidate when UI needs a refresh
-#   
-#   calc_df <- get_existing_concentration_calc(
-#     conn                 = conn,
-#     project_id           = userWorkSpaceID(),
-#     study_accession      = input$readxMap_study_accession,
-#     experiment_accession = input$readxMap_experiment_accession,
-#     plate_nom            = input$sc_plate_select
-#   )
-#   
-#   # Overlay in-memory "pending" states (futures that haven't persisted yet)
-#   pending <- mcmc_pending_scopes()
-#   if (length(pending) > 0) {
-#     for (entry in pending) {
-#       match_rows <- (
-#         calc_df$scope                     == entry[["scope"]] &
-#           calc_df$concentration_calc_method == entry[["method"]]
-#       )
-#       if (any(match_rows)) calc_df$job_status[match_rows] <- "pending"
-#     }
-#   }
-#   
-#   # When mcmc_robust is active at a scope, show interpolated as completed
-#   mcmc_active_scopes <- unique(
-#     calc_df$scope[
-#       calc_df$concentration_calc_method == "mcmc_robust" &
-#         calc_df$job_status                != "not begun"
-#     ]
-#   )
-#   calc_df$job_status <- ifelse(
-#     calc_df$concentration_calc_method == "interpolated" &
-#       calc_df$scope %in% mcmc_active_scopes,
-#     "completed",
-#     calc_df$job_status
-#   )
-#   
-#   calc_df
-# })
-
 
 # ============================================================================
 # Navigation Observer
@@ -210,10 +104,25 @@ observeEvent(
       response_col   = response_var,
       dilution_col   = "dilution",
       plate_col      = "plate",
-      grouping_cols  = c("study_accession", "experiment_accession", "source", "antigen"),
+      grouping_cols  = c("project_id", "study_accession", "experiment_accession", "source", "antigen"),
       #method         = "pooled_within",
       verbose        = TRUE
     )
+    
+    #se_antigen_table_v <<- se_antigen_table
+    
+    dil_series_se_table <- compute_dil_series_se(standards_data = loaded_data$standards, 
+                                                response_col  = response_var,
+                                                dilution_col  = "dilution",
+                                                plate_col     = "plate_nom",
+                                                grouping_cols = c("project_id",
+                                                                  "study_accession",
+                                                                  "experiment_accession",
+                                                                  "source_nom",
+                                                                  "antigen",
+                                                                  "feature"),
+                                                min_reps = 2,
+                                                verbose  = FALSE) 
     
     study_params <- fetch_study_parameters(
       study_accession = selected_study,
@@ -511,13 +420,63 @@ observeEvent(
       req(loaded_data$standards$study_accession,
           loaded_data$standards$experiment_accession,
           nrow(loaded_data$standards) > 0)
+
+      updateSelectInput(session, "sc_plate_select", selected = NULL)  # Reset the plateSelection
+      req(nrow(loaded_data$standards) > 0)
+
+     unique_plates <- unique(loaded_data$standards$plate_nom)
+
+      selectInput("sc_plate_select",
+                  label = "Plate - Sample Dilution(s)",
+                  choices = unique_plates)
+    })
+
+    output$sc_antigen_selector <- renderUI({
+      req(loaded_data$standards$study_accession, loaded_data$standards$experiment_accession)
+      updateSelectInput(session, "sc_antigen_select", selected = NULL)
       
-      updateSelectInput(session, "sc_plate_select", selected = NULL)
+      response_var <- loaded_data$response_var  # "absorbance" for ELISA, "mfi" for Luminex
+
+      dat_antigen <- loaded_data$standards[loaded_data$standards$study_accession %in% selected_study &
+                                          loaded_data$standards$experiment_accession %in% selected_experiment &
+                                            loaded_data$standards$plate_nom %in% input$sc_plate_select, ]
       
-      selectInput(
-        "sc_plate_select",
-        label   = "Plate - Sample Dilution(s)",
-        choices = unique(loaded_data$standards$plate_nom)
+      # Use the correct response variable column name
+      dat_antigen <- dat_antigen[!is.na(dat_antigen[[response_var]]),]
+      
+      req(nrow(dat_antigen) > 0)
+      
+      sc_feature_select(dat_antigen$feature)
+      
+      selectInput("sc_antigen_select",
+                  label = "Antigen",
+                  choices = unique(dat_antigen$antigen))
+    })
+
+    output$sc_source_selector <- renderUI({
+      req(loaded_data$standards, input$sc_plate_select, input$sc_antigen_select)
+
+      dat_source <- loaded_data$standards[
+          loaded_data$standards$study_accession %in% selected_study &
+          loaded_data$standards$experiment_accession %in% selected_experiment &
+          loaded_data$standards$plate_nom %in% input$sc_plate_select &
+          loaded_data$standards$antigen %in% input$sc_antigen_select, ]
+
+
+      req(nrow(dat_source) > 0)
+
+      # Use source_nom for the selector (includes wavelength for ELISA)
+      source_choices <- if ("source_nom" %in% names(dat_source)) {
+        unique(dat_source$source_nom)
+      } else {
+        unique(dat_source$source)
+      }
+
+      radioButtons(
+        "sc_source_select",
+        label = "Source",
+        choices = source_choices,
+        selected = source_choices[1]
       )
     })
     
@@ -610,9 +569,14 @@ observeEvent(
     # Curve-fitting reactives
     # ------------------------------------------------------------------
     antigen_plate <- reactive({
-      req(loaded_data, loaded_data$antigen_constraints,
-          input$sc_source_select, input$sc_antigen_select, input$sc_plate_select)
-      
+      req(input$sc_source_select,
+          input$sc_antigen_select,
+          input$sc_plate_select,
+          loaded_data,
+          loaded_data$antigen_constraints,
+          loaded_data$standards,
+          nrow(loaded_data$standards) > 0)
+
       antigen_constraints <- loaded_data$antigen_constraints[
         loaded_data$antigen_constraints$antigen %in% input$sc_antigen_select, ,
         drop = FALSE]
@@ -628,6 +592,7 @@ observeEvent(
         antigen_constraints  = antigen_constraints
       )
       req(result)
+      req(result$plate_standard, nrow(result$plate_standard) > 0)
       result
     })
     
@@ -761,7 +726,7 @@ observeEvent(
         antigen = input$sc_antigen_select,
         feature = sc_feature_select()
       )
-      
+  
       bf <- select_model_fit_AIC(
         fit_summary   = summary,
         fit_robust_lm = fit,
@@ -769,16 +734,100 @@ observeEvent(
         plot_data     = pdata_plot,
         verbose       = verbose
       )
+      # ── Ensure response column is valid ──────────────────────────────
+      resolved <- ensure_response_column(
+        df           = bf$best_data,
+        response_var = response_var,
+        coerce_numeric = TRUE,
+        context      = "bf_reactive"
+      )
+      
+      bf$best_data <- resolved$df
+      
+      # If the column was found under a different name, update response_var
+      # for all downstream calls in this reactive
+      if (resolved$ok && resolved$response_var != response_var) {
+        message(sprintf(
+          "[bf reactive] response_var changed from '%s' to '%s'",
+          response_var, resolved$response_var
+        ))
+        response_var <- resolved$response_var
+      }
+      
+      # ── Ensure response column is numeric in best_data ──────────────
+      response_var <- loaded_data$response_var
+      if (!is.null(bf$best_data) && 
+          response_var %in% names(bf$best_data) &&
+          !is.numeric(bf$best_data[[response_var]])) {
+        message(sprintf(
+          "[bf reactive] Coercing '%s' from %s to numeric in best_data",
+          response_var, class(bf$best_data[[response_var]])[1]
+        ))
+        bf$best_data[[response_var]] <- suppressWarnings(
+          as.numeric(bf$best_data[[response_var]])
+        )
+      }
+      
+      dil_series_df_filtered <- tryCatch({
+        # Filter to the specific antigen + plate + source being fitted
+        mask <- (
+          dil_series_se_table$plate_nom  == input$sc_plate_select  &
+            dil_series_se_table$source_nom == input$sc_source_select &
+            dil_series_se_table$antigen    == input$sc_antigen_select
+        )
+        sub <- dil_series_se_table[mask, , drop = FALSE]
+        if (nrow(sub) == 0L) {
+          if (verbose) message("[best_fit] dil_series_se_table: no rows after antigen filter — skipping accuracy")
+          NULL
+        } else {
+          sub
+        }
+      }, error = function(e) {
+        message("[best_fit] dil_series_se_table filter error: ", e$message)
+        NULL
+      })
+        
+        dil_series_acc <- if (!is.null(dil_series_df_filtered)) {
+          tryCatch(
+            compute_dil_series_accuracy(
+              best_fit                   = bf,
+              dil_series_df              = dil_series_df_filtered,
+              response_col               = response_var,
+              independent_variable       = loaded_data$indep_var,
+              dilution_col               = "dilution",
+              fixed_a_result             = plate$fixed_a_result,
+              is_log_response            = study_params$is_log_response,
+              is_log_concentration       = study_params$is_log_independent,
+              undiluted_sc_concentration = plate$antigen_settings$standard_curve_concentration,
+              cv_threshold               = 15, # pCoV threshold 
+              lloq_cv_threshold          = 25,  # if it is the lowest dilution factor/highest concentration use this. 
+              accuracy_lo                = 80,
+              accuracy_hi                = 120,
+              verbose                    = verbose
+            ),
+            error = function(e) {
+              message("[best_fit] compute_dil_series_accuracy error: ", e$message)
+              dil_series_df_filtered   # return unmodified if accuracy fails
+            }
+          )
+        } else {
+          NULL
+        }
+        
+      #dil_series_acc_v <<- dil_series_acc
       
       bf <- fit_qc_glance(
         best_fit             = bf,
-        response_variable    = loaded_data$response_var,
+        response_variable    = response_var,
         independent_variable = loaded_data$indep_var,
         fixed_a_result       = plate$fixed_a_result,
         antigen_settings     = plate$antigen_settings,
         antigen_fit_options  = pdata$antigen_fit_options,
+        dil_series_se_plate_source = dil_series_acc,
         verbose              = verbose
       )
+      
+
       
       bf <- tidy.nlsLM(
         best_fit            = bf,
@@ -788,10 +837,10 @@ observeEvent(
         antigen_fit_options = pdata$antigen_fit_options,
         verbose             = verbose
       )
-      
+        
       bf <- predict_and_propagate_error(
         best_fit        = bf,
-        response_var    = loaded_data$response_var,
+        response_var    = response_var,
         antigen_plate   = plate,
         study_params    = study_params,
         se_std_response = current_se,
@@ -1248,6 +1297,7 @@ lapply(c("study", "experiment", "plate"), function(s) {
       project_id           = proj,
       conn                 = conn    # ← main session connection
     )
+
   )
   
   if (scope == "plate") {
@@ -1268,12 +1318,25 @@ lapply(c("study", "experiment", "plate"), function(s) {
     response_col   = response_var,
     dilution_col   = "dilution",
     plate_col      = "plate",
-    grouping_cols  = c("study_accession", "experiment_accession",
-                       "source", "antigen"),
-    #method         = "pooled_within",
+    grouping_cols  = c("project_id","study_accession", "experiment_accession",
+                       "source_nom", "antigen", "feature"),
     verbose        = FALSE
   )
   
+  dil_series_se_table_batch <- compute_dil_series_se(
+    standards_data = all_standards,
+    response_col   = response_var,
+    dilution_col   = "dilution",
+    plate_col      = "plate_nom",
+    grouping_cols  = c("project_id",
+                       "study_accession",
+                       "experiment_accession",
+                       "source_nom",
+                       "antigen",
+                       "feature"),
+    min_reps = 2,
+    verbose  = FALSE
+  )
   study_params_batch <- fetch_study_parameters(
     study_accession = study,
     param_user      = current_user,
@@ -1295,8 +1358,6 @@ lapply(c("study", "experiment", "plate"), function(s) {
   
   db_conn_args <- get_db_connection_args()
   
-  
-  
   # ── FUTURE: Only fitting + DB writes (mirrors .launch_mcmc step 5) ──
   future_promise <- future::future({
     bg_conn <- do.call(get_db_connection_from_args, db_conn_args)
@@ -1309,7 +1370,9 @@ lapply(c("study", "experiment", "plate"), function(s) {
       model_names            = model_names,
       study_params           = study_params_batch,
       se_antigen_table       = se_antigen_table_batch,
+      dil_series_se_table    = dil_series_se_table_batch, 
       prog_file              = prog_file,
+      dil_series_response_col = response_var,
       verbose                = FALSE
     )
     
@@ -1325,25 +1388,113 @@ lapply(c("study", "experiment", "plate"), function(s) {
       paste0("Interpolated: saving best_glance_all...\nScope: ", scope_label),
       prog_file), error = function(e) NULL)
     
+    message("[debug] best_glance_all columns: ", 
+            paste(names(batch_outputs$best_glance_all), collapse = ", "))
+    
+    # Right before upsert_best_curve(conn = bg_conn, df = batch_outputs$best_glance_all, ...)
+    lloq_check_cols <- grep("lloq_fda2018|uloq_fda2018", names(batch_outputs$best_glance_all), value = TRUE)
+    message("[debug] lloq cols present in best_glance_all: ", 
+            if (length(lloq_check_cols) == 0) "NONE" else paste(lloq_check_cols, collapse = ", "))
+    
+    if (length(lloq_check_cols) > 0) {
+      message("[debug] lloq values (first 3 rows):")
+      print(batch_outputs$best_glance_all[1:min(3, nrow(batch_outputs$best_glance_all)), 
+                                          lloq_check_cols, drop = FALSE])
+      message("[debug] lloq NA counts:")
+      print(colSums(is.na(batch_outputs$best_glance_all[, lloq_check_cols, drop = FALSE])))
+    }
+    
+    ## debug in future needs to save 
+    # saveRDS(batch_outputs$best_glance_all, "best_glance_debug.rds")
+    
+
     upsert_best_curve(
       conn = bg_conn, df = batch_outputs$best_glance_all,
       schema = "madi_results", table = "best_glance_all",
       notify = NULL, shiny_mode = FALSE
     )
     
+    
+    study_to_save <- unique(batch_outputs$best_glance_all$study_accession)
+    project_to_save <- unique(batch_outputs$best_glance_all$project_id)
+    
     # Scoped glance lookup
     exp_list_sql <- paste0("'", paste(exp_list, collapse = "','"), "'")
     glance_lookup <- DBI::dbGetQuery(bg_conn, glue::glue(
-      "SELECT best_glance_all_id, study_accession, experiment_accession,
-              plateid, plate, nominal_sample_dilution, source, antigen
+      "SELECT best_glance_all_id, project_id, study_accession, experiment_accession,
+              plateid, plate, nominal_sample_dilution, source, antigen, feature, wavelength
        FROM madi_results.best_glance_all
-       WHERE study_accession = '{unique(batch_outputs$best_glance_all$study_accession)}'
+       WHERE project_id = {project_to_save} 
+         AND study_accession = '{study_to_save}'
          AND experiment_accession IN ({exp_list_sql});"
     ))
     glance_lookup$best_glance_all_id <- as.integer(glance_lookup$best_glance_all_id)
     
-    keys <- c("study_accession", "experiment_accession", "plateid",
-              "plate", "nominal_sample_dilution", "source", "antigen")
+    # natural key (nk) vector for the glance → child table FK join
+    # feature + wavelength are included to prevent many-to-many joins
+    keys <- c("project_id","study_accession", "experiment_accession", "plateid",
+              "plate", "nominal_sample_dilution", "source", "antigen", "feature", "wavelength")
+    
+    # Normalize wavelength in glance_lookup (DB may return '__none__' already,
+    # but guard against any lingering NULLs from before migration)
+    glance_lookup$wavelength <- normalize_wavelength(glance_lookup$wavelength)
+    
+    message(sprintf("[save] glance_lookup: %d rows, keys: %s",
+                    nrow(glance_lookup), paste(keys, collapse = ", ")))
+    message(sprintf("[save] glance_lookup wavelengths: %s",
+                    paste(unique(glance_lookup$wavelength), collapse = ", ")))
+    
+    message(sprintf("[save] glance_lookup: %d rows, keys: %s",
+                    nrow(glance_lookup), paste(keys, collapse = ", ")))
+    message(sprintf("[save] glance_lookup wavelengths: %s",
+                    paste(unique(glance_lookup$wavelength), collapse = ", ")))
+    
+    
+    # attach the best_glance_all_id to each child table (guarded)
+    if (!is.null(batch_outputs$best_pred_all) && nrow(batch_outputs$best_pred_all) > 0) {
+      n_before <- nrow(batch_outputs$best_pred_all)
+      batch_outputs$best_pred_all <-
+        dplyr::inner_join(
+          batch_outputs$best_pred_all,
+          glance_lookup,
+          by = keys
+        )
+      n_after <- nrow(batch_outputs$best_pred_all)
+      message(sprintf("[save] best_pred_all FK join: %d -> %d rows", n_before, n_after))
+      if (n_after == 0 && n_before > 0) {
+        message("[save] WARNING: FK join dropped ALL best_pred_all rows — likely wavelength mismatch between glance and pred tables.")
+      }
+    }
+    
+    if (!is.null(batch_outputs$best_sample_se_all) && nrow(batch_outputs$best_sample_se_all) > 0) {
+      n_before <- nrow(batch_outputs$best_sample_se_all)
+      batch_outputs$best_sample_se_all <-
+        dplyr::inner_join(
+          batch_outputs$best_sample_se_all,
+          glance_lookup,
+          by = keys
+        )
+      n_after <- nrow(batch_outputs$best_sample_se_all)
+      message(sprintf("[save] best_sample_se_all FK join: %d -> %d rows", n_before, n_after))
+      if (n_after == 0 && n_before > 0) {
+        message("[save] WARNING: FK join dropped ALL best_sample_se_all rows — likely wavelength mismatch between glance and sample tables.")
+      }
+    }
+    
+    if (!is.null(batch_outputs$best_standard_all) && nrow(batch_outputs$best_standard_all) > 0) {
+      n_before <- nrow(batch_outputs$best_standard_all)
+      batch_outputs$best_standard_all <-
+        dplyr::inner_join(
+          batch_outputs$best_standard_all,
+          glance_lookup,
+          by = keys
+        )
+      n_after <- nrow(batch_outputs$best_standard_all)
+      message(sprintf("[save] best_standard_all FK join: %d -> %d rows", n_before, n_after))
+      if (n_after == 0 && n_before > 0) {
+        message("[save] WARNING: FK join dropped ALL best_standard_all rows — likely wavelength mismatch between glance and standard tables.")
+      }
+    }
     
     for (tbl_name in c("best_pred_all", "best_sample_se_all", "best_standard_all")) {
       batch_outputs[[tbl_name]] <- dplyr::inner_join(
@@ -1426,343 +1577,6 @@ lapply(c("study", "experiment", "plate"), function(s) {
   
   NULL
 }
-# .run_interpolated <- function(scope, study, experiment, plate, proj,
-#                               current_user, scope_label, session) {
-#   
-#   message("Future plan: ", class(future::plan())[1], " at ", Sys.time())
-#   
-#   is_batch_processing(TRUE)
-#   
-#   # ── 1. Progress file — write immediately ────────────────────────
-#   prog_file <- tempfile(pattern = "interp_progress_", fileext = ".txt")
-#   writeLines(
-#     paste0("Starting Interpolated...\nScope: ", scope_label),
-#     prog_file
-#   )
-#   interp_progress_file(prog_file)
-#   interp_progress_msg(paste0("Starting Interpolated...\nScope: ", scope_label))
-#   
-#   # ── 2. Register pending scope ────────────────────────────────────
-#   interp_pending_scopes(c(
-#     interp_pending_scopes(),
-#     list(c(scope = scope, method = "interpolated"))
-#   ))
-#   
-#   # ── 3. Trigger UI refresh so badge shows "pending" immediately ───
-#   concentrationUIRefresher(concentrationUIRefresher() + 1)
-#   
-#   # ── 4. Notification ──────────────────────────────────────────────
-#   showNotification(
-#     id = "batch_sc_fit_notify",
-#     div(
-#       class = "big-notification",
-#       paste0("Starting interpolated for ", scope_label, "...")
-#     ),
-#     duration = 10
-#   )
-#   
-#   # ── 5. Progress poller ───────────────────────────────────────────
-#   progress_poller <- reactivePoll(
-#     intervalMillis = 2000,
-#     session        = session,
-#     checkFunc      = function() {
-#       pf <- interp_progress_file()
-#       if (is.null(pf) || !file.exists(pf)) return(0)
-#       file.info(pf)$mtime
-#     },
-#     valueFunc      = function() {
-#       pf <- interp_progress_file()
-#       if (is.null(pf) || !file.exists(pf)) return(NULL)
-#       tryCatch(paste(readLines(pf), collapse = "\n"), error = function(e) NULL)
-#     }
-#   )
-#   
-#   # ── 6. Observer feeds poll → reactiveVal ────────────────────────
-#   progress_observer <- observe({
-#     msg <- progress_poller()
-#     if (!is.null(msg) && nzchar(msg))  {
-#       interp_progress_msg(msg)
-#       # concentrationUIRefresher(concentrationUIRefresher() + 1) 
-#       
-#     }
-#   })
-#   
-#   # ── 7. Snapshot only what is needed outside the future ──────────
-#   db_conn_args <- get_db_connection_args()
-#   model_names  <- c("Y5", "Yd5", "Y4", "Yd4", "Ygomp4")
-#   
-#   # ── 8. Cleanup helper — closes over progress_observer ───────────
-#   .cleanup_interp <- function(label, type = "message", duration = 10) {
-#     progress_observer$destroy()
-#     pf <- interp_progress_file()
-#     if (!is.null(pf) && file.exists(pf)) file.remove(pf)
-#     interp_progress_file(NULL)
-#     interp_progress_msg(NULL)
-#     .remove_pending(interp_pending_scopes, scope, "interpolated")
-#     showNotification(label, type = type, duration = duration)
-#     concentrationUIRefresher(concentrationUIRefresher() + 1)
-#     is_batch_processing(FALSE)
-#   }
-#   
-#   # ── 9. Launch future ─────────────────────────────────────────────
-#   future_promise <- future::future({
-#     
-#     # Write immediately so tooltip shows before any heavy work
-#     tryCatch(
-#       writeLines(
-#         paste0(
-#           "Interpolated: connecting to database...\n",
-#           "Scope: ", scope_label
-#         ),
-#         prog_file
-#       ),
-#       error = function(e) NULL
-#     )
-#     
-#     bg_conn <- do.call(get_db_connection_from_args, db_conn_args)
-#     on.exit(DBI::dbDisconnect(bg_conn), add = TRUE)
-#     
-#     # ── Loading data phase ───────────────────────────────────────
-#     tryCatch(
-#       writeLines(
-#         paste0("Interpolated: loading data...\nScope: ", scope_label),
-#         prog_file
-#       ),
-#       error = function(e) NULL
-#     )
-#     
-#     headers <- fetch_db_header_experiments(
-#       study_accession = study,
-#       conn            = bg_conn
-#     )
-#     
-#     exp_list <- switch(scope,
-#                        "study"      = unique(headers$experiment_accession),
-#                        "experiment" = ,
-#                        "plate"      = experiment
-#     )
-#     
-#     loaded_data_list <- lapply(
-#       stats::setNames(exp_list, exp_list),
-#       function(exp) pull_data(
-#         study_accession      = study,
-#         experiment_accession = exp,
-#         project_id           = proj,
-#         conn                 = bg_conn
-#       )
-#     )
-#     
-#     # Filter to specific plate if plate scope
-#     if (scope == "plate") {
-#       loaded_data_list <- lapply(loaded_data_list, function(x) {
-#         for (tbl in c("plates", "standards", "samples", "blanks")) {
-#           if (!is.null(x[[tbl]]) && nrow(x[[tbl]]) > 0)
-#             x[[tbl]] <- x[[tbl]][x[[tbl]]$plate_nom == plate, , drop = FALSE]
-#         }
-#         x
-#       })
-#     }
-#     
-#     # ── Study params phase ───────────────────────────────────────
-#     tryCatch(
-#       writeLines(
-#         paste0("Interpolated: loading study parameters...\nScope: ", scope_label),
-#         prog_file
-#       ),
-#       error = function(e) NULL
-#     )
-#     
-#     study_params_batch <- fetch_study_parameters(
-#       study_accession = study,
-#       param_user      = current_user,
-#       param_group     = "standard_curve_options",
-#       project_id      = proj,
-#       conn            = bg_conn
-#     )
-#     
-#     # ── SE table phase ───────────────────────────────────────────
-#     tryCatch(
-#       writeLines(
-#         paste0("Interpolated: computing SE table...\nScope: ", scope_label),
-#         prog_file
-#       ),
-#       error = function(e) NULL
-#     )
-#     
-#     response_var   <- loaded_data_list[[exp_list[1]]]$response_var
-#     all_standards  <- do.call(rbind, lapply(loaded_data_list, `[[`, "standards"))
-#     
-#     se_antigen_table_batch <- compute_antigen_se_table(
-#       standards_data = all_standards,
-#       response_col   = response_var,
-#       dilution_col   = "dilution",
-#       plate_col      = "plate",
-#       grouping_cols  = c("study_accession", "experiment_accession",
-#                          "source", "antigen"),
-#       method         = "pooled_within",
-#       verbose        = FALSE
-#     )
-#     
-#     # ── Build structures phase ───────────────────────────────────
-#     tryCatch(
-#       writeLines(
-#         paste0("Interpolated: building antigen list...\nScope: ", scope_label),
-#         prog_file
-#       ),
-#       error = function(e) NULL
-#     )
-#     
-#     # Exact call pattern confirmed from std_curver_ui.R [1]
-#     antigen_list_res       <- build_antigen_list(exp_list, loaded_data_list, study)
-#     antigen_plate_list_res <- build_antigen_plate_list(antigen_list_res, loaded_data_list)
-#     
-#     tryCatch(
-#       writeLines(
-#         paste0("Interpolated: preparing model data...\nScope: ", scope_label),
-#         prog_file
-#       ),
-#       error = function(e) NULL
-#     )
-#     
-#     prepped_data_list_res <- prep_plate_data_batch(
-#       antigen_plate_list_res,
-#       study_params_batch,
-#       verbose = FALSE
-#     )
-#     
-#     # Mirror exactly what std_curver_ui.R does after prep [1]
-#     antigen_plate_list_res$antigen_plate_list_ids <-
-#       prepped_data_list_res$antigen_plate_name_list
-#     
-#     n_total <- length(prepped_data_list_res$antigen_plate_name_list)
-#     
-#     # ── Fitting phase ────────────────────────────────────────────
-#     tryCatch(
-#       writeLines(
-#         paste0(
-#           "Interpolated: starting batch fitting...\n",
-#           "Total: ", n_total, " antigens\n",
-#           "Scope: ", scope_label
-#         ),
-#         prog_file
-#       ),
-#       error = function(e) NULL
-#     )
-#     
-#     # fit_experiment_plate_batch confirmed in batch_fit_functions.R [5]
-#     batch_fit_res <- fit_experiment_plate_batch(
-#       prepped_data_list_res  = prepped_data_list_res,
-#       antigen_plate_list_res = antigen_plate_list_res,
-#       model_names            = model_names,
-#       study_params           = study_params_batch,
-#       se_antigen_table       = se_antigen_table_batch,
-#       prog_file              = prog_file,
-#       verbose                = FALSE
-#     )
-#     
-#     # ── Build outputs phase ──────────────────────────────────────
-#     tryCatch(
-#       writeLines(
-#         paste0("Interpolated: building outputs...\nScope: ", scope_label),
-#         prog_file
-#       ),
-#       error = function(e) NULL
-#     )
-#     
-#     # create_batch_fit_outputs confirmed in batch_fit_functions.R [5]
-#     batch_outputs <- create_batch_fit_outputs(
-#       batch_fit_res,
-#       antigen_plate_list_res
-#     )
-#     
-#     # process_batch_outputs confirmed in batch_fit_functions.R [5]
-#     batch_outputs <- process_batch_outputs(
-#       batch_outputs = batch_outputs,
-#       response_var  = response_var,
-#       project_id    = proj
-#     )
-#     
-#     # ── Save to DB phase ─────────────────────────────────────────
-#     tryCatch(
-#       writeLines(
-#         paste0("Interpolated: saving results...\nScope: ", scope_label),
-#         prog_file
-#       ),
-#       error = function(e) NULL
-#     )
-#     
-#     upsert_best_curve(
-#       conn   = bg_conn,
-#       df     = batch_outputs$best_glance_all,
-#       schema = "madi_results",
-#       table  = "best_glance_all",
-#       notify = NULL,
-#       shiny_mode = FALSE
-#     )
-#     
-#     study_to_save <- unique(batch_outputs$best_glance_all$study_accession)
-#     
-#     glance_lookup <- DBI::dbGetQuery(bg_conn, glue::glue(
-#       "SELECT best_glance_all_id, study_accession, experiment_accession,
-#               plateid, plate, nominal_sample_dilution, source, antigen
-#        FROM madi_results.best_glance_all
-#        WHERE study_accession = '{study_to_save}';"
-#     ))
-#     glance_lookup$best_glance_all_id <- as.integer(glance_lookup$best_glance_all_id)
-#     
-#     keys <- c("study_accession", "experiment_accession", "plateid",
-#               "plate", "nominal_sample_dilution", "source", "antigen")
-#     
-#     for (tbl_name in c("best_pred_all", "best_sample_se_all", "best_standard_all")) {
-#       batch_outputs[[tbl_name]] <- dplyr::inner_join(
-#         batch_outputs[[tbl_name]], glance_lookup, by = keys
-#       )
-#     }
-#     
-#     for (pair in list(
-#       list(df = "best_plate_all",      table = "best_plate_all"),
-#       list(df = "best_tidy_all",       table = "best_tidy_all"),
-#       list(df = "best_pred_all",       table = "best_pred_all"),
-#       list(df = "best_sample_se_all",  table = "best_sample_se_all"),
-#       list(df = "best_standard_all",   table = "best_standard_all")
-#     )) {
-#       upsert_best_curve(
-#         conn   = bg_conn,
-#         df     = batch_outputs[[pair$df]],
-#         schema = "madi_results",
-#         table  = pair$table,
-#         notify = NULL,
-#         shiny_mode = FALSE
-#       )
-#     }
-#     
-#     list(ok = TRUE, n_curves = n_total, scope_label = scope_label)
-#     
-#   }, seed = TRUE)
-#   
-#   # ── 10. Promise handlers ─────────────────────────────────────────
-#   promises::then(
-#     future_promise,
-#     onFulfilled = function(result) {
-#       .cleanup_interp(
-#         paste0("Interpolated completed for ", result$scope_label,
-#                " (", result$n_curves, " curves).")
-#       )
-#     },
-#     onRejected = function(err) {
-#       .cleanup_interp(
-#         paste0("Interpolated error: ", conditionMessage(err)),
-#         type     = "error",
-#         duration = 15
-#       )
-#       message("Interpolated future rejected: ", conditionMessage(err))
-#     }
-#   )
-#   
-#   NULL
-# }
-
-
 
 # ============================================================================
 # .launch_mcmc — async helper (future + promises + progress polling)

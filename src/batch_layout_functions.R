@@ -3195,3 +3195,41 @@ write_workbook_sheets_v2 <- function(wb, workbook, bold_style, italic_style) {
 
   return(wb)
 }
+
+process_uploaded_files <- function(upload_df) {
+  # Define temp directory for this batch
+  tmpdir <- file.path(tempdir(), "uploaded_batch")
+  
+  # CRITICAL FIX: Clear the directory if it exists to remove old files
+  if (dir.exists(tmpdir)) {
+    cat("  → Clearing old temp directory:", tmpdir, "\n")
+    old_files <- list.files(tmpdir, full.names = TRUE)
+    if (length(old_files) > 0) {
+      cat("  → Removing", length(old_files), "old files\n")
+      file.remove(old_files)
+    }
+  } else {
+    cat("  → Creating temp directory:", tmpdir, "\n")
+    dir.create(tmpdir)
+  }
+  
+  # Copy new files to temp directory
+  cat("  → Copying", nrow(upload_df), "new files to temp directory\n")
+  for (i in 1:nrow(upload_df)) {
+    file.copy(upload_df$datapath[i],
+              file.path(tmpdir, upload_df$name[i]),
+              overwrite = TRUE)
+  }
+  
+  # Verify what files are in the directory
+  files_in_dir <- list.files(tmpdir, pattern = "plate", full.names = FALSE)
+  cat("  → Files in temp directory:", paste(files_in_dir, collapse = ", "), "\n")
+  
+  # Read and combine all Excel files
+  result <- read_bind_xlsx(folder = tmpdir, x = "plate")
+  
+  cat("  → Combined data dimensions:", nrow(result), "rows x", ncol(result), "cols\n")
+  
+  return(result)
+}
+
