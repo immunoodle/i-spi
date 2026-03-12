@@ -104,10 +104,25 @@ observeEvent(
       response_col   = response_var,
       dilution_col   = "dilution",
       plate_col      = "plate",
-      grouping_cols  = c("study_accession", "experiment_accession", "source", "antigen"),
+      grouping_cols  = c("project_id", "study_accession", "experiment_accession", "source", "antigen"),
       #method         = "pooled_within",
       verbose        = TRUE
     )
+    
+    #se_antigen_table_v <<- se_antigen_table
+    
+    dil_series_se_table <- compute_dil_series_se(standards_data = loaded_data$standards, 
+                                                response_col  = response_var,
+                                                dilution_col  = "dilution",
+                                                plate_col     = "plate_nom",
+                                                grouping_cols = c("project_id",
+                                                                  "study_accession",
+                                                                  "experiment_accession",
+                                                                  "source_nom",
+                                                                  "antigen",
+                                                                  "feature"),
+                                                min_reps = 2,
+                                                verbose  = FALSE) 
     
     study_params <- fetch_study_parameters(
       study_accession = selected_study,
@@ -753,6 +768,54 @@ observeEvent(
         )
       }
       
+      dil_series_df_filtered <- tryCatch({
+        # Filter to the specific antigen + plate + source being fitted
+        mask <- (
+          dil_series_se_table$plate_nom  == input$sc_plate_select  &
+            dil_series_se_table$source_nom == input$sc_source_select &
+            dil_series_se_table$antigen    == input$sc_antigen_select
+        )
+        sub <- dil_series_se_table[mask, , drop = FALSE]
+        if (nrow(sub) == 0L) {
+          if (verbose) message("[best_fit] dil_series_se_table: no rows after antigen filter — skipping accuracy")
+          NULL
+        } else {
+          sub
+        }
+      }, error = function(e) {
+        message("[best_fit] dil_series_se_table filter error: ", e$message)
+        NULL
+      })
+        
+        dil_series_acc <- if (!is.null(dil_series_df_filtered)) {
+          tryCatch(
+            compute_dil_series_accuracy(
+              best_fit                   = bf,
+              dil_series_df              = dil_series_df_filtered,
+              response_col               = response_var,
+              independent_variable       = loaded_data$indep_var,
+              dilution_col               = "dilution",
+              fixed_a_result             = plate$fixed_a_result,
+              is_log_response            = study_params$is_log_response,
+              is_log_concentration       = study_params$is_log_independent,
+              undiluted_sc_concentration = plate$antigen_settings$standard_curve_concentration,
+              cv_threshold               = 15, # pCoV threshold 
+              lloq_cv_threshold          = 25,  # if it is the lowest dilution factor/highest concentration use this. 
+              accuracy_lo                = 80,
+              accuracy_hi                = 120,
+              verbose                    = verbose
+            ),
+            error = function(e) {
+              message("[best_fit] compute_dil_series_accuracy error: ", e$message)
+              dil_series_df_filtered   # return unmodified if accuracy fails
+            }
+          )
+        } else {
+          NULL
+        }
+        
+      #dil_series_acc_v <<- dil_series_acc
+      
       bf <- fit_qc_glance(
         best_fit             = bf,
         response_variable    = response_var,
@@ -760,8 +823,11 @@ observeEvent(
         fixed_a_result       = plate$fixed_a_result,
         antigen_settings     = plate$antigen_settings,
         antigen_fit_options  = pdata$antigen_fit_options,
+        dil_series_se_plate_source = dil_series_acc,
         verbose              = verbose
       )
+      
+
       
       bf <- tidy.nlsLM(
         best_fit            = bf,
@@ -1257,6 +1323,20 @@ lapply(c("study", "experiment", "plate"), function(s) {
     verbose        = FALSE
   )
   
+  dil_series_se_table_batch <- compute_dil_series_se(
+    standards_data = all_standards,
+    response_col   = response_var,
+    dilution_col   = "dilution",
+    plate_col      = "plate_nom",
+    grouping_cols  = c("project_id",
+                       "study_accession",
+                       "experiment_accession",
+                       "source_nom",
+                       "antigen",
+                       "feature"),
+    min_reps = 2,
+    verbose  = FALSE
+  )
   study_params_batch <- fetch_study_parameters(
     study_accession = study,
     param_user      = current_user,
@@ -1290,7 +1370,9 @@ lapply(c("study", "experiment", "plate"), function(s) {
       model_names            = model_names,
       study_params           = study_params_batch,
       se_antigen_table       = se_antigen_table_batch,
+      dil_series_se_table    = dil_series_se_table_batch, 
       prog_file              = prog_file,
+      dil_series_response_col = response_var,
       verbose                = FALSE
     )
     
@@ -1306,14 +1388,35 @@ lapply(c("study", "experiment", "plate"), function(s) {
       paste0("Interpolated: saving best_glance_all...\nScope: ", scope_label),
       prog_file), error = function(e) NULL)
     
+    message("[debug] best_glance_all columns: ", 
+            paste(names(batch_outputs$best_glance_all), collapse = ", "))
+    
+    # Right before upsert_best_curve(conn = bg_conn, df = batch_outputs$best_glance_all, ...)
+    lloq_check_cols <- grep("lloq_fda2018|uloq_fda2018", names(batch_outputs$best_glance_all), value = TRUE)
+    message("[debug] lloq cols present in best_glance_all: ", 
+            if (length(lloq_check_cols) == 0) "NONE" else paste(lloq_check_cols, collapse = ", "))
+    
+    if (length(lloq_check_cols) > 0) {
+      message("[debug] lloq values (first 3 rows):")
+      print(batch_outputs$best_glance_all[1:min(3, nrow(batch_outputs$best_glance_all)), 
+                                          lloq_check_cols, drop = FALSE])
+      message("[debug] lloq NA counts:")
+      print(colSums(is.na(batch_outputs$best_glance_all[, lloq_check_cols, drop = FALSE])))
+    }
+    
+    ## debug in future needs to save 
+    # saveRDS(batch_outputs$best_glance_all, "best_glance_debug.rds")
+    
+
     upsert_best_curve(
       conn = bg_conn, df = batch_outputs$best_glance_all,
       schema = "madi_results", table = "best_glance_all",
       notify = NULL, shiny_mode = FALSE
     )
     
-    study_to_save <- unique(batch_outputs_processed$best_glance_all$study_accession)
-    project_to_save <- unique(batch_outputs_processed$best_glance_all$project_id)
+    
+    study_to_save <- unique(batch_outputs$best_glance_all$study_accession)
+    project_to_save <- unique(batch_outputs$best_glance_all$project_id)
     
     # Scoped glance lookup
     exp_list_sql <- paste0("'", paste(exp_list, collapse = "','"), "'")
@@ -1348,45 +1451,45 @@ lapply(c("study", "experiment", "plate"), function(s) {
     
     
     # attach the best_glance_all_id to each child table (guarded)
-    if (!is.null(batch_outputs_processed$best_pred_all) && nrow(batch_outputs_processed$best_pred_all) > 0) {
-      n_before <- nrow(batch_outputs_processed$best_pred_all)
-      batch_outputs_processed$best_pred_all <-
+    if (!is.null(batch_outputs$best_pred_all) && nrow(batch_outputs$best_pred_all) > 0) {
+      n_before <- nrow(batch_outputs$best_pred_all)
+      batch_outputs$best_pred_all <-
         dplyr::inner_join(
-          batch_outputs_processed$best_pred_all,
+          batch_outputs$best_pred_all,
           glance_lookup,
           by = keys
         )
-      n_after <- nrow(batch_outputs_processed$best_pred_all)
+      n_after <- nrow(batch_outputs$best_pred_all)
       message(sprintf("[save] best_pred_all FK join: %d -> %d rows", n_before, n_after))
       if (n_after == 0 && n_before > 0) {
         message("[save] WARNING: FK join dropped ALL best_pred_all rows — likely wavelength mismatch between glance and pred tables.")
       }
     }
     
-    if (!is.null(batch_outputs_processed$best_sample_se_all) && nrow(batch_outputs_processed$best_sample_se_all) > 0) {
-      n_before <- nrow(batch_outputs_processed$best_sample_se_all)
-      batch_outputs_processed$best_sample_se_all <-
+    if (!is.null(batch_outputs$best_sample_se_all) && nrow(batch_outputs$best_sample_se_all) > 0) {
+      n_before <- nrow(batch_outputs$best_sample_se_all)
+      batch_outputs$best_sample_se_all <-
         dplyr::inner_join(
-          batch_outputs_processed$best_sample_se_all,
+          batch_outputs$best_sample_se_all,
           glance_lookup,
           by = keys
         )
-      n_after <- nrow(batch_outputs_processed$best_sample_se_all)
+      n_after <- nrow(batch_outputs$best_sample_se_all)
       message(sprintf("[save] best_sample_se_all FK join: %d -> %d rows", n_before, n_after))
       if (n_after == 0 && n_before > 0) {
         message("[save] WARNING: FK join dropped ALL best_sample_se_all rows — likely wavelength mismatch between glance and sample tables.")
       }
     }
     
-    if (!is.null(batch_outputs_processed$best_standard_all) && nrow(batch_outputs_processed$best_standard_all) > 0) {
-      n_before <- nrow(batch_outputs_processed$best_standard_all)
-      batch_outputs_processed$best_standard_all <-
+    if (!is.null(batch_outputs$best_standard_all) && nrow(batch_outputs$best_standard_all) > 0) {
+      n_before <- nrow(batch_outputs$best_standard_all)
+      batch_outputs$best_standard_all <-
         dplyr::inner_join(
-          batch_outputs_processed$best_standard_all,
+          batch_outputs$best_standard_all,
           glance_lookup,
           by = keys
         )
-      n_after <- nrow(batch_outputs_processed$best_standard_all)
+      n_after <- nrow(batch_outputs$best_standard_all)
       message(sprintf("[save] best_standard_all FK join: %d -> %d rows", n_before, n_after))
       if (n_after == 0 && n_before > 0) {
         message("[save] WARNING: FK join dropped ALL best_standard_all rows — likely wavelength mismatch between glance and standard tables.")

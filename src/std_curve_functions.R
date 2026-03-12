@@ -1075,29 +1075,1121 @@ dispatch_dydx <- function(model_name, x, theta) {
 #
 # Arguments mirror the relevant subset of fit_fda2018_loq(); see that
 # function's header for full protocol description.
-.compute_fda2018_scalars <- function(fit,
-                                     best_data,
-                                     model_name,
-                                     plate_blanks,
-                                     response_variable,
-                                     independent_variable,
-                                     fixed_a_result    = NULL,
-                                     is_log_response   = FALSE,
-                                     cv_threshold      = 20,
-                                     lloq_cv_threshold = 25,
-                                     accuracy_lo       = 80,
-                                     accuracy_hi       = 120,
-                                     verbose           = TRUE) {
+# .compute_fda2018_scalars <- function(fit,
+#                                      best_data,
+#                                      best_fit,
+#                                      response_variable,
+#                                      independent_variable,
+#                                      antigen_settings,
+#                                      antigen_fit_options,
+#                                      dil_series_se_plate_source,
+#                                      verbose = TRUE) {
+#   
+#   na_scalars <- list(
+#     lloq_fda2018_concentration = NA_real_,
+#     lloq_fda2018_response      = NA_real_,
+#     uloq_fda2018_concentration = NA_real_,
+#     uloq_fda2018_response      = NA_real_,
+#     lloq_cv         = NA_real_,
+#     uloq_cv         = NA_real_,
+#     lloq_accuracy   = NA_real_,
+#     uloq_accuracy   = NA_real_,
+#     n_passing_std   = NA_integer_,
+#     n_total_std     = NA_integer_,
+#     pct_passing_std = NA_real_,
+#     fda2018_status  = "FAILED",
+#     blank_mean      = NA_real_,
+#     blank_sd        = NA_real_,
+#     llod            = NA_real_,
+#     ulod            = NA_real_,
+#     inflect_x       = NA_real_,
+#     inflect_y       = NA_real_,
+#     mindc           = NA_real_,
+#     maxdc           = NA_real_,
+#     minrdl          = NA_real_,
+#     maxrdl          = NA_real_,
+#     dydx_inflect    = NA_real_
+#   )
+#   
+#   # ── Guard clauses ──
+#   if (is.null(fit) || is.null(best_data) || nrow(best_data) == 0) {
+#     if (verbose) message("[FDA2018] NULL fit or empty best_data -> returning NA scalars")
+#     return(na_scalars)
+#   }
+#   
+#   if (!response_variable %in% names(best_data)) {
+#     if (verbose) message("[FDA2018] response_variable '", response_variable, "' not in best_data")
+#     return(na_scalars)
+#   }
+#   
+#   if (!independent_variable %in% names(best_data)) {
+#     if (verbose) message("[FDA2018] independent_variable '", independent_variable, "' not in best_data")
+#     return(na_scalars)
+#   }
+#   
+#   has_finite_response <- any(is.finite(best_data[[response_variable]]))
+#   has_finite_indep    <- any(is.finite(best_data[[independent_variable]]))
+#   if (!has_finite_response || !has_finite_indep) {
+#     if (verbose) message("[FDA2018] No finite response or independent values")
+#     return(na_scalars)
+#   }
+#   
+#   # ══════════════════════════════════════════════════════════════════════
+#   # ── Blanks ──
+#   # ══════════════════════════════════════════════════════════════════════
+#   
+#   plate_blanks <- tryCatch({
+#     if ("stype" %in% names(best_data)) {
+#       best_data[best_data$stype == "B", , drop = FALSE]
+#     } else {
+#       data.frame()
+#     }
+#   }, error = function(e) data.frame())
+#   
+#   blank_responses <- if (nrow(plate_blanks) > 0 && response_variable %in% names(plate_blanks)) {
+#     plate_blanks[[response_variable]]
+#   } else {
+#     numeric(0)
+#   }
+#   
+#   Blank_mean <- if (length(blank_responses) > 0) mean(blank_responses, na.rm = TRUE) else NA_real_
+#   Blank_sd   <- if (length(blank_responses) > 1) sd(blank_responses, na.rm = TRUE)   else NA_real_
+#   
+#   # ══════════════════════════════════════════════════════════════════════
+#   # ── Extract model_name and fixed_a_result ──
+#   # ══════════════════════════════════════════════════════════════════════
+#   
+#   model_name <- tryCatch({
+#     best_fit$best_model_name
+#   }, error = function(e) NA_character_)
+#   
+#   fixed_a_result <- tryCatch({
+#     fa <- antigen_settings$l_asy_min_constraint
+#     if (!is.null(fa) && is.finite(fa) && fa > 0 &&
+#         isTRUE(antigen_settings$l_asy_min_constraint == antigen_settings$l_asy_max_constraint)) {
+#       if (isTRUE(antigen_fit_options$is_log_response) && fa > 0) {
+#         log10(fa + 0.000005)
+#       } else {
+#         fa
+#       }
+#     } else {
+#       NULL
+#     }
+#   }, error = function(e) NULL)
+#   
+#   # ══════════════════════════════════════════════════════════════════════
+#   # ── Inflection Point (generate_inflection_point) ──
+#   # ══════════════════════════════════════════════════════════════════════
+#   
+#   inflection <- tryCatch({
+#     generate_inflection_point(
+#       model_name           = model_name,
+#       fit                  = fit,
+#       fixed_a_result       = fixed_a_result,
+#       independent_variable = independent_variable,
+#       verbose              = verbose
+#     )
+#   }, error = function(e) {
+#     if (verbose) message("[FDA2018] generate_inflection_point error: ", conditionMessage(e))
+#     list(inflect_x = NA_real_, inflect_y = NA_real_)
+#   })
+#   
+#   inflect_x <- if (!is.null(inflection$inflect_x) && length(inflection$inflect_x) > 0) {
+#     as.numeric(inflection$inflect_x)
+#   } else {
+#     NA_real_
+#   }
+#   
+#   inflect_y <- if (!is.null(inflection$inflect_y) && length(inflection$inflect_y) > 0) {
+#     as.numeric(inflection$inflect_y)
+#   } else {
+#     NA_real_
+#   }
+#   
+#   # ══════════════════════════════════════════════════════════════════════
+#   # ── LODs (generate_lods) ──
+#   # ══════════════════════════════════════════════════════════════════════
+#   
+#   std_error_blank <- tryCatch({
+#     antigen_settings$std_error_blank %||% {
+#       if (nrow(plate_blanks) > 1 && response_variable %in% names(plate_blanks)) {
+#         sd(plate_blanks[[response_variable]], na.rm = TRUE) /
+#           sqrt(sum(!is.na(plate_blanks[[response_variable]])))
+#       } else {
+#         0
+#       }
+#     }
+#   }, error = function(e) 0)
+#   
+#   lods <- tryCatch({
+#     generate_lods(
+#       best_fit        = best_fit,
+#       fixed_a_result  = fixed_a_result,
+#       std_error_blank = std_error_blank,
+#       verbose         = verbose
+#     )
+#   }, error = function(e) {
+#     if (verbose) message("[FDA2018] generate_lods error: ", conditionMessage(e))
+#     list(llod = NA_real_, ulod = NA_real_)
+#   })
+#   
+#   llod <- as.numeric(lods$llod)
+#   ulod <- as.numeric(lods$ulod)
+#   
+#   # ══════════════════════════════════════════════════════════════════════
+#   # ── Sensitivity (dy/dx at inflection via dispatch_dydx) ──
+#   # ══════════════════════════════════════════════════════════════════════
+#   
+#   dydx_inflect <- tryCatch({
+#     if (!is.na(inflect_x) && !is.na(model_name)) {
+#       all_params <- if (!is.null(fixed_a_result)) {
+#         c(a = fixed_a_result, coef(fit))
+#       } else {
+#         coef(fit)
+#       }
+#       dispatch_dydx(model_name, inflect_x, all_params)
+#     } else {
+#       NA_real_
+#     }
+#   }, error = function(e) {
+#     # Fallback: numerical differentiation
+#     tryCatch({
+#       if (!is.na(inflect_x)) {
+#         h <- abs(inflect_x) * 1e-5
+#         if (h == 0) h <- 1e-8
+#         y_plus  <- predict(fit, newdata = setNames(data.frame(inflect_x + h), independent_variable))
+#         y_minus <- predict(fit, newdata = setNames(data.frame(inflect_x - h), independent_variable))
+#         as.numeric((y_plus - y_minus) / (2 * h))
+#       } else {
+#         NA_real_
+#       }
+#     }, error = function(e2) NA_real_)
+#   })
+#   
+#   # ══════════════════════════════════════════════════════════════════════
+#   # ── MDC / RDL (generate_mdc_rdl) ──
+#   # ══════════════════════════════════════════════════════════════════════
+#   
+#   mdc_rdl <- tryCatch({
+#     generate_mdc_rdl(
+#       best_fit = list(
+#         best_fit    = fit,
+#         best_data   = best_data,
+#         best_glance = list(llod = llod, ulod = ulod)
+#       ),
+#       lods = list(llod = llod, ulod = ulod),
+#       independent_variable = independent_variable,
+#       verbose              = verbose
+#     )
+#   }, error = function(e) {
+#     if (verbose) message("[FDA2018] generate_mdc_rdl error: ", conditionMessage(e))
+#     list(mindc = NA_real_, maxdc = NA_real_, minrdl = NA_real_, maxrdl = NA_real_)
+#   })
+#   
+#   # ══════════════════════════════════════════════════════════════════════
+#   # ── FDA 2018 LOQ Computation (CV + Accuracy on Standards) ──
+#   # ══════════════════════════════════════════════════════════════════════
+#   
+#   cv_threshold  <- 20
+#   acc_low       <- 80
+#   acc_high      <- 120
+#   lloq_cv_threshold <- 25
+#   
+#   # Identify standard samples
+#   std_data <- tryCatch({
+#     best_data[!is.na(best_data[[independent_variable]]) &
+#                 is.finite(best_data[[independent_variable]]) &
+#                 best_data[[independent_variable]] > 0, ]
+#   }, error = function(e) data.frame())
+#   
+#   if (nrow(std_data) == 0) {
+#     if (verbose) message("[FDA2018] No valid standard data for LOQ computation")
+#     return(list(
+#       lloq_fda2018_concentration = NA_real_,
+#       lloq_fda2018_response      = NA_real_,
+#       uloq_fda2018_concentration = NA_real_,
+#       uloq_fda2018_response      = NA_real_,
+#       lloq_cv = NA_real_, uloq_cv = NA_real_,
+#       lloq_accuracy = NA_real_, uloq_accuracy = NA_real_,
+#       n_passing_std = 0L, n_total_std = 0L,
+#       pct_passing_std = 0, fda2018_status = "NO_PASSING_LEVELS",
+#       blank_mean = Blank_mean, blank_sd = Blank_sd,
+#       llod = llod, ulod = ulod,
+#       inflect_x = inflect_x, inflect_y = inflect_y,
+#       mindc = mdc_rdl$mindc %||% NA_real_,
+#       maxdc = mdc_rdl$maxdc %||% NA_real_,
+#       minrdl = mdc_rdl$minrdl %||% NA_real_,
+#       maxrdl = mdc_rdl$maxrdl %||% NA_real_,
+#       dydx_inflect = dydx_inflect
+#     ))
+#   }
+#   
+#   # Back-calculate concentrations from the fit
+#   std_data$predicted_response <- tryCatch({
+#     predict(fit, newdata = std_data)
+#   }, error = function(e) rep(NA_real_, nrow(std_data)))
+#   
+#   std_data$nominal_conc <- std_data[[independent_variable]]
+#   
+#   # Compute CV% and accuracy per concentration level
+#   loq_table <- tryCatch({
+#     agg <- aggregate(
+#       predicted_response ~ nominal_conc,
+#       data = std_data,
+#       FUN = function(x) {
+#         x <- x[is.finite(x)]
+#         c(mean = mean(x), sd = sd(x), n = length(x))
+#       }
+#     )
+#     result_df <- data.frame(
+#       nominal_conc  = agg$nominal_conc,
+#       mean_response = agg$predicted_response[, "mean"],
+#       sd_response   = agg$predicted_response[, "sd"],
+#       n_reps        = agg$predicted_response[, "n"]
+#     )
+#     result_df$cv_pct <- (result_df$sd_response / abs(result_df$mean_response)) * 100
+#     
+#     # Accuracy: back-calculate concentration from mean response
+#     result_df$backcalc_conc <- tryCatch({
+#       sapply(result_df$mean_response, function(resp) {
+#         tryCatch({
+#           inv <- get_inverse_prediction(
+#             fit = fit,
+#             response_value = resp,
+#             independent_variable = independent_variable,
+#             verbose = FALSE
+#           )
+#           as.numeric(inv$x_est)
+#         }, error = function(e) NA_real_)
+#       })
+#     }, error = function(e) rep(NA_real_, nrow(result_df)))
+#     
+#     result_df$pct_recovery <- (result_df$backcalc_conc / result_df$nominal_conc) * 100
+#     result_df
+#   }, error = function(e) {
+#     if (verbose) message("[FDA2018] LOQ table construction failed: ", conditionMessage(e))
+#     data.frame(nominal_conc = numeric(0), cv_pct = numeric(0),
+#                pct_recovery = numeric(0))
+#   })
+#   
+#   if (nrow(loq_table) == 0) {
+#     if (verbose) message("[FDA2018] Empty LOQ table")
+#     return(list(
+#       lloq_fda2018_concentration = NA_real_,
+#       lloq_fda2018_response      = NA_real_,
+#       uloq_fda2018_concentration = NA_real_,
+#       uloq_fda2018_response      = NA_real_,
+#       lloq_cv = NA_real_, uloq_cv = NA_real_,
+#       lloq_accuracy = NA_real_, uloq_accuracy = NA_real_,
+#       n_passing_std = 0L, n_total_std = 0L,
+#       pct_passing_std = 0, fda2018_status = "NO_PASSING_LEVELS",
+#       Blank_mean = Blank_mean, Blank_sd = Blank_sd,
+#       llod = llod, ulod = ulod,
+#       inflect_x = inflect_x, inflect_y = inflect_y,
+#       mindc = mdc_rdl$mindc %||% NA_real_,
+#       maxdc = mdc_rdl$maxdc %||% NA_real_,
+#       minrdl = mdc_rdl$minrdl %||% NA_real_,
+#       maxrdl = mdc_rdl$maxrdl %||% NA_real_,
+#       dydx_inflect = dydx_inflect
+#     ))
+#   }
+#   
+#   # Determine passing levels
+#   passes_accuracy <- function(pct) {
+#     !is.na(pct) & is.finite(pct) & pct >= acc_low & pct <= acc_high
+#   }
+#   
+#   loq_table$passes_std <- !is.na(loq_table$cv_pct) &
+#     is.finite(loq_table$cv_pct) &
+#     loq_table$cv_pct <= cv_threshold &
+#     passes_accuracy(loq_table$pct_recovery)
+#   
+#   loq_table$passes_lloq <- !is.na(loq_table$cv_pct) &
+#     is.finite(loq_table$cv_pct) &
+#     loq_table$cv_pct <= lloq_cv_threshold &
+#     passes_accuracy(loq_table$pct_recovery)
+#   
+#   passing_std     <- which(loq_table$passes_std)
+#   lloq_candidates <- which(loq_table$passes_lloq)
+#   n_passing       <- length(passing_std)
+#   n_total         <- nrow(loq_table)
+#   
+#   # Extract FDA LLOQ and ULOQ
+#   lloq_fda <- if (length(lloq_candidates) > 0) {
+#     loq_table$nominal_conc[min(lloq_candidates)]
+#   } else { NA_real_ }
+#   
+#   uloq_fda <- if (length(passing_std) > 0) {
+#     loq_table$nominal_conc[max(passing_std)]
+#   } else { NA_real_ }
+#   
+#   # Get response values for FDA LOQs
+#   lloq_fda_response <- tryCatch({
+#     if (!is.na(lloq_fda)) {
+#       as.numeric(predict(fit, newdata = setNames(data.frame(lloq_fda), independent_variable)))
+#     } else NA_real_
+#   }, error = function(e) NA_real_)
+#   
+#   uloq_fda_response <- tryCatch({
+#     if (!is.na(uloq_fda)) {
+#       as.numeric(predict(fit, newdata = setNames(data.frame(uloq_fda), independent_variable)))
+#     } else NA_real_
+#   }, error = function(e) NA_real_)
+#   
+#   # CV and accuracy at the LOQ levels
+#   lloq_cv <- if (!is.na(lloq_fda) && lloq_fda %in% loq_table$nominal_conc) {
+#     loq_table$cv_pct[loq_table$nominal_conc == lloq_fda][1]
+#   } else NA_real_
+#   
+#   uloq_cv <- if (!is.na(uloq_fda) && uloq_fda %in% loq_table$nominal_conc) {
+#     loq_table$cv_pct[loq_table$nominal_conc == uloq_fda][1]
+#   } else NA_real_
+#   
+#   lloq_accuracy <- if (!is.na(lloq_fda) && lloq_fda %in% loq_table$nominal_conc) {
+#     loq_table$pct_recovery[loq_table$nominal_conc == lloq_fda][1]
+#   } else NA_real_
+#   
+#   uloq_accuracy <- if (!is.na(uloq_fda) && uloq_fda %in% loq_table$nominal_conc) {
+#     loq_table$pct_recovery[loq_table$nominal_conc == uloq_fda][1]
+#   } else NA_real_
+#   
+#   if (verbose) {
+#     message(sprintf("[FDA2018] %d/%d levels passing. LLOQ=%.4g, ULOQ=%.4g",
+#                     n_passing, n_total,
+#                     ifelse(is.na(lloq_fda), NaN, lloq_fda),
+#                     ifelse(is.na(uloq_fda), NaN, uloq_fda)))
+#   }
+#   
+#   # ══════════════════════════════════════════════════════════════════════
+#   # ── Assemble result ──
+#   # ══════════════════════════════════════════════════════════════════════
+#   
+#   result <- list(
+#     lloq_fda2018_concentration = lloq_fda,
+#     lloq_fda2018_response      = lloq_fda_response,
+#     uloq_fda2018_concentration = uloq_fda,
+#     uloq_fda2018_response      = uloq_fda_response,
+#     lloq_cv         = lloq_cv,
+#     uloq_cv         = uloq_cv,
+#     lloq_accuracy   = lloq_accuracy,
+#     uloq_accuracy   = uloq_accuracy,
+#     n_passing_std   = n_passing,
+#     n_total_std     = n_total,
+#     pct_passing_std = if (n_total > 0) (n_passing / n_total) * 100 else NA_real_,
+#     fda2018_status  = if (n_passing > 0) "OK" else "NO_PASSING_LEVELS",
+#     blank_mean      = Blank_mean,
+#     blank_sd        = Blank_sd,
+#     llod            = llod,
+#     ulod            = ulod,
+#     inflect_x       = inflect_x,
+#     inflect_y       = inflect_y,
+#     mindc           = mdc_rdl$mindc  %||% NA_real_,
+#     maxdc           = mdc_rdl$maxdc  %||% NA_real_,
+#     minrdl          = mdc_rdl$minrdl %||% NA_real_,
+#     maxrdl          = mdc_rdl$maxrdl %||% NA_real_,
+#     dydx_inflect    = dydx_inflect
+#   )
+#   
+#   return(result)
+# }
+# .compute_fda2018_scalars <- function(fit,
+#                                      best_data,
+#                                      model_name,
+#                                      plate_blanks,
+#                                      response_variable,
+#                                      independent_variable,
+#                                      fixed_a_result    = NULL,
+#                                      is_log_response   = FALSE,
+#                                      cv_threshold      = 20,
+#                                      lloq_cv_threshold = 25,
+#                                      accuracy_lo       = 80,
+#                                      accuracy_hi       = 120,
+#                                      verbose           = TRUE) {
+#   
+#   # ── 0. Define NA scaffold ─────────────────────────────────────────────
+#   #    Every early-return path hands back the same named list so that
+#   
+#   #    downstream code (glance_df assembly) never sees NULL columns.
+#   na_scalars <- list(
+#     lloq            = NA_real_,
+#     uloq            = NA_real_,
+#     lloq_y          = NA_real_,
+#     uloq_y          = NA_real_,
+#     lloq_cv         = NA_real_,
+#     uloq_cv         = NA_real_,
+#     lloq_accuracy   = NA_real_,
+#     uloq_accuracy   = NA_real_,
+#     n_passing_std   = NA_integer_,
+#     n_total_std     = NA_integer_,
+#     pct_passing_std = NA_real_,
+#     fda2018_status  = "FAILED",
+#     Blank_mean      = NA_real_,
+#     Blank_sd        = NA_real_,
+#     llod            = NA_real_,
+#     ulod            = NA_real_,
+#     inflect_x       = NA_real_,
+#     inflect_y       = NA_real_,
+#     lloq_method     = "fda2018",
+#     uloq_method     = "fda2018",
+#     mindc           = NA_real_,
+#     maxdc           = NA_real_,
+#     minrdl          = NA_real_,
+#     maxrdl          = NA_real_,
+#     dydx_inflect    = NA_real_
+#   )
+#   
+#   # ── 1. Guard: minimum data requirements ───────────────────────────────
+#   if (is.null(fit) || is.null(best_data) || nrow(best_data) == 0) {
+#     if (verbose) message("[FDA2018] fit or best_data is NULL/empty. Returning NA scalars.")
+#     return(na_scalars)
+#   }
+#   
+#   if (!response_variable %in% names(best_data)) {
+#     if (verbose) message(sprintf(
+#       "[FDA2018] response_variable '%s' not found in best_data columns: %s",
+#       response_variable, paste(names(best_data), collapse = ", ")
+#     ))
+#     return(na_scalars)
+#   }
+#   
+#   if (!independent_variable %in% names(best_data)) {
+#     if (verbose) message(sprintf(
+#       "[FDA2018] independent_variable '%s' not found in best_data columns: %s",
+#       independent_variable, paste(names(best_data), collapse = ", ")
+#     ))
+#     return(na_scalars)
+#   }
+#   
+#   # ── 2. Prepare standard data for back-calculation ─────────────────────
+#   std_data <- best_data[best_data$stype == "S", , drop = FALSE]
+#   
+#   if (nrow(std_data) == 0) {
+#     if (verbose) message("[FDA2018] No standard (stype=='S') rows in best_data.")
+#     return(na_scalars)
+#   }
+#   
+#   # Verify response and independent columns have finite data
+#   has_finite_response <- any(is.finite(std_data[[response_variable]]))
+#   has_finite_indep    <- any(is.finite(std_data[[independent_variable]]))
+#   
+#   if (!has_finite_response || !has_finite_indep) {
+#     if (verbose) message(sprintf(
+#       "[FDA2018] Standards lack finite values. response finite: %s, independent finite: %s",
+#       has_finite_response, has_finite_indep
+#     ))
+#     return(na_scalars)
+#   }
+#   
+#   if (verbose) {
+#     message(sprintf(
+#       "[FDA2018] %d standard rows, response range [%.4f, %.4f], indep range [%.4f, %.4f]",
+#       nrow(std_data),
+#       min(std_data[[response_variable]], na.rm = TRUE),
+#       max(std_data[[response_variable]], na.rm = TRUE),
+#       min(std_data[[independent_variable]], na.rm = TRUE),
+#       max(std_data[[independent_variable]], na.rm = TRUE)
+#     ))
+#   }
+#   
+#   # ── 3. Back-calculate predicted concentrations ────────────────────────
+#   std_data_bc <- tryCatch(
+#     calculate_predicted_concentration(
+#       model_name        = model_name,
+#       fit               = fit,
+#       plate_samples     = std_data,
+#       fixed_constraint  = fixed_a_result,
+#       response_variable = response_variable,
+#       is_log_response   = FALSE,
+#       verbose           = verbose
+#     ),
+#     error = function(e) {
+#       if (verbose) message("[FDA2018] back-calculation failed: ", conditionMessage(e))
+#       NULL
+#     }
+#   )
+#   
+#   if (is.null(std_data_bc)) {
+#     if (verbose) message("[FDA2018] Back-calculation returned NULL. Returning NA scalars.")
+#     return(na_scalars)
+#   }
+#   
+#   if (!"predicted_concentration" %in% names(std_data_bc)) {
+#     if (verbose) message(sprintf(
+#       "[FDA2018] No 'predicted_concentration' column. Columns: %s",
+#       paste(names(std_data_bc), collapse = ", ")
+#     ))
+#     return(na_scalars)
+#   }
+#   
+#   # Filter to finite predicted concentrations
+#   finite_mask <- is.finite(std_data_bc$predicted_concentration)
+#   std_data_bc <- std_data_bc[finite_mask, , drop = FALSE]
+#   
+#   if (nrow(std_data_bc) == 0) {
+#     if (verbose) message("[FDA2018] Zero rows with finite predicted_concentration after filtering.")
+#     return(na_scalars)
+#   }
+#   
+#   if (verbose) {
+#     message(sprintf(
+#       "[FDA2018] %d rows with finite predicted_concentration (of %d total standards)",
+#       nrow(std_data_bc), nrow(std_data)
+#     ))
+#   }
+#   
+#   # ── 4. Extract x and y data safely ───────────────────────────────────
+#   x_data <- std_data_bc[[independent_variable]]
+#   x_data <- x_data[is.finite(x_data)]
+#   
+#   y_data <- std_data_bc[[response_variable]]
+#   y_data <- y_data[is.finite(y_data)]
+#   
+#   pred_conc <- std_data_bc$predicted_concentration
+#   
+#   if (length(x_data) == 0 || length(y_data) == 0 || length(pred_conc) == 0) {
+#     if (verbose) message(sprintf(
+#       "[FDA2018] Insufficient finite data after filtering. x_data=%d, y_data=%d, pred_conc=%d",
+#       length(x_data), length(y_data), length(pred_conc)
+#     ))
+#     return(na_scalars)
+#   }
+#   
+#   # ── 5. Compute accuracy (percent recovery) ───────────────────────────
+#   #    pct_recovery = (predicted / nominal) * 100
+#   nominal_conc <- std_data_bc[[independent_variable]]
+#   std_data_bc$pct_recovery <- (std_data_bc$predicted_concentration / nominal_conc) * 100
+#   
+#   # ── 6. Compute CV per dilution level ─────────────────────────────────
+#   #    Group by dilution (or independent variable) and compute CV
+#   dilution_col <- if ("dilution" %in% names(std_data_bc)) "dilution" else independent_variable
+#   
+#   loq_table <- tryCatch({
+#     dil_groups <- split(std_data_bc, std_data_bc[[dilution_col]])
+#     
+#     do.call(rbind, lapply(names(dil_groups), function(dname) {
+#       grp <- dil_groups[[dname]]
+#       pc  <- grp$predicted_concentration
+#       pc  <- pc[is.finite(pc)]
+#       
+#       n_finite <- length(pc)
+#       mean_pc  <- if (n_finite > 0) mean(pc, na.rm = TRUE) else NA_real_
+#       sd_pc    <- if (n_finite > 1) sd(pc, na.rm = TRUE)   else NA_real_
+#       cv_pct   <- if (!is.na(mean_pc) && mean_pc != 0) (sd_pc / abs(mean_pc)) * 100 else NA_real_
+#       
+#       # Use the mean pct_recovery for the group
+#       mean_recovery <- mean(grp$pct_recovery, na.rm = TRUE)
+#       
+#       # Nominal concentration (should be same within group)
+#       nom <- mean(grp[[independent_variable]], na.rm = TRUE)
+#       
+#       data.frame(
+#         dilution_level  = dname,
+#         nominal_conc    = nom,
+#         n               = n_finite,
+#         mean_pred       = mean_pc,
+#         sd_pred         = sd_pc,
+#         cv_pct          = cv_pct,
+#         pct_recovery    = mean_recovery,
+#         stringsAsFactors = FALSE
+#       )
+#     }))
+#   }, error = function(e) {
+#     if (verbose) message("[FDA2018] CV computation failed: ", conditionMessage(e))
+#     NULL
+#   })
+#   
+#   if (is.null(loq_table) || nrow(loq_table) == 0) {
+#     if (verbose) message("[FDA2018] Could not compute CV table. Returning NA scalars.")
+#     return(na_scalars)
+#   }
+#   
+#   # ── 7. Determine passing standards ───────────────────────────────────
+#   passes_accuracy <- function(r) {
+#     !is.na(r) & is.finite(r) & r >= accuracy_lo & r <= accuracy_hi
+#   }
+#   
+#   loq_table$passes_std <- !is.na(loq_table$cv_pct) &
+#     is.finite(loq_table$cv_pct) &
+#     loq_table$cv_pct <= cv_threshold &
+#     passes_accuracy(loq_table$pct_recovery)
+#   
+#   loq_table$passes_lloq <- !is.na(loq_table$cv_pct) &
+#     is.finite(loq_table$cv_pct) &
+#     loq_table$cv_pct <= lloq_cv_threshold &
+#     passes_accuracy(loq_table$pct_recovery)
+#   
+#   if (verbose) {
+#     message(sprintf(
+#       "[FDA2018] LOQ table: %d dilution levels, %d pass standard criteria, %d pass LLOQ criteria",
+#       nrow(loq_table), sum(loq_table$passes_std), sum(loq_table$passes_lloq)
+#     ))
+#   }
+#   
+#   # ── 8. Determine LLOQ and ULOQ ──────────────────────────────────────
+#   # Sort by nominal concentration (ascending)
+#   loq_table <- loq_table[order(loq_table$nominal_conc), ]
+#   
+#   lloq_candidates <- which(loq_table$passes_lloq)
+#   passing_std     <- which(loq_table$passes_std)
+#   
+#   # LLOQ = lowest passing dilution level
+#   
+#   # ULOQ = highest passing dilution level
+#   lloq <- if (length(lloq_candidates) > 0) {
+#     loq_table$nominal_conc[min(lloq_candidates)]
+#   } else {
+#     NA_real_
+#   }
+#   
+#   uloq <- if (length(passing_std) > 0) {
+#     loq_table$nominal_conc[max(passing_std)]
+#   } else {
+#     NA_real_
+#   }
+#   
+#   # Get corresponding y-values and CVs
+#   lloq_y  <- NA_real_
+#   uloq_y  <- NA_real_
+#   lloq_cv <- NA_real_
+#   uloq_cv <- NA_real_
+#   lloq_accuracy <- NA_real_
+#   uloq_accuracy <- NA_real_
+#   
+#   if (!is.na(lloq)) {
+#     lloq_row <- loq_table[loq_table$nominal_conc == lloq, , drop = FALSE]
+#     if (nrow(lloq_row) > 0) {
+#       lloq_cv <- lloq_row$cv_pct[1]
+#       lloq_accuracy <- lloq_row$pct_recovery[1]
+#       # Predict y at LLOQ
+#       lloq_y <- tryCatch({
+#         as.numeric(predict(fit, newdata = setNames(data.frame(lloq), independent_variable)))
+#       }, error = function(e) NA_real_)
+#     }
+#   }
+#   
+#   if (!is.na(uloq)) {
+#     uloq_row <- loq_table[loq_table$nominal_conc == uloq, , drop = FALSE]
+#     if (nrow(uloq_row) > 0) {
+#       uloq_cv <- uloq_row$cv_pct[1]
+#       uloq_accuracy <- uloq_row$pct_recovery[1]
+#       uloq_y <- tryCatch({
+#         as.numeric(predict(fit, newdata = setNames(data.frame(uloq), independent_variable)))
+#       }, error = function(e) NA_real_)
+#     }
+#   }
+#   
+#   # ── 9. Blank statistics ──────────────────────────────────────────────
+#   blank_response_col <- if (!is.null(plate_blanks) && nrow(plate_blanks) > 0) {
+#     resolve_response_col(plate_blanks, default = response_variable)
+#   } else {
+#     response_variable
+#   }
+#   
+#   Blank_mean <- if (!is.null(plate_blanks) && nrow(plate_blanks) > 0 &&
+#                     blank_response_col %in% names(plate_blanks)) {
+#     mean(plate_blanks[[blank_response_col]], na.rm = TRUE)
+#   } else {
+#     NA_real_
+#   }
+#   
+#   Blank_sd <- if (!is.null(plate_blanks) && nrow(plate_blanks) > 1 &&
+#                   blank_response_col %in% names(plate_blanks)) {
+#     sd(plate_blanks[[blank_response_col]], na.rm = TRUE)
+#   } else {
+#     NA_real_
+#   }
+#   
+#   # ── 10. LODs (from existing generate_lods logic) ─────────────────────
+#   llod <- NA_real_
+#   ulod <- NA_real_
+#   
+#   tryCatch({
+#     params <- coef(fit)
+#     d_val <- if ("d" %in% names(params)) params["d"] else NA_real_
+#     
+#     # ULOD: lower confidence bound of d (upper asymptote)
+#     ci <- tryCatch(nlstools::confint2(fit, level = 0.95), error = function(e) NULL)
+#     
+#     if (!is.null(ci)) {
+#       par_names <- rownames(ci)
+#       if ("d" %in% par_names) {
+#         ulod <- ci["d", 1]  # 2.5% bound
+#       }
+#       
+#       if (!is.null(fixed_a_result)) {
+#         # LLOD from fixed a + margin of error
+#         se_blank <- if (!is.na(Blank_sd) && !is.null(plate_blanks) && nrow(plate_blanks) > 0) {
+#           Blank_sd / sqrt(sum(!is.na(plate_blanks[[blank_response_col]])))
+#         } else {
+#           0
+#         }
+#         crit_val <- qt(0.975, df = max(nrow(best_data) - length(par_names), 1))
+#         llod <- fixed_a_result + crit_val * se_blank
+#       } else if ("a" %in% par_names) {
+#         llod <- ci["a", 2]  # 97.5% bound
+#       }
+#     }
+#     
+#     # Sanitize
+#     if (!is.na(ulod) && !is.na(llod) && (ulod < 0 || ulod < llod)) {
+#       ulod <- NA_real_
+#     }
+#   }, error = function(e) {
+#     if (verbose) message("[FDA2018] LOD computation error: ", conditionMessage(e))
+#   })
+#   
+#   # ── 11. Inflection point ─────────────────────────────────────────────
+#   # inflect <- tryCatch(
+#   #   generate_inflection_point(fit, model_name, fixed_a_result, verbose = verbose),
+#   #   error = function(e) list(inflect_x = NA_real_, inflect_y = NA_real_)
+#   # )
+#   inflect <- tryCatch(
+#     generate_inflection_point(model_name = model_name, fit = fit,
+#       fixed_a_result       = fixed_a_result,
+#       independent_variable = independent_variable,
+#       verbose              = verbose
+#     ),
+#     error = function(e) list(inflect_x = NA_real_, inflect_y = NA_real_)
+#   )
+#   
+#   inflect_x <- if (!is.null(inflect$inflect_x) && length(inflect$inflect_x) > 0) {
+#     as.numeric(inflect$inflect_x)
+#   } else {
+#     NA_real_
+#   }
+#   
+#   inflect_y <- if (!is.null(inflect$inflect_y) && length(inflect$inflect_y) > 0) {
+#     as.numeric(inflect$inflect_y)
+#   } else {
+#     NA_real_
+#   }
+#   
+#   # ── 12. Sensitivity (dy/dx at inflection) ───────────────────────────
+#   dydx_inflect <- tryCatch({
+#     all_params <- if (!is.null(fixed_a_result)) {
+#       c(a = fixed_a_result, coef(fit))
+#     } else {
+#       coef(fit)
+#     }
+#     
+#     switch(model_name,
+#            "Y5"    = do.call(dydxY5,    c(list(x = inflect_x), as.list(all_params))),
+#            "Y4"    = do.call(dydxY4,    c(list(x = inflect_x), as.list(all_params))),
+#            "Yd5"   = do.call(dydxYd5,   c(list(x = inflect_x), as.list(all_params))),
+#            "Yd4"   = do.call(dydxYd4,   c(list(x = inflect_x), as.list(all_params))),
+#            "Ygomp4"= do.call(dydxYgomp4,c(list(x = inflect_x), as.list(all_params))),
+#            NA_real_
+#     )
+#   }, error = function(e) NA_real_)
+#   
+#   # ── 13. MDC / RDL ───────────────────────────────────────────────────
+#   mdc_rdl <- tryCatch(
+#     generate_mdc_rdl(
+#       best_fit = list(
+#         best_fit   = fit,
+#         best_data  = best_data,
+#         best_glance = list(llod = llod, ulod = ulod)
+#       ),
+#       lods = list(llod = llod, ulod = ulod),
+#       independent_variable = independent_variable,
+#       verbose = verbose
+#     ),
+#     error = function(e) {
+#       if (verbose) message("[FDA2018] MDC/RDL computation error: ", conditionMessage(e))
+#       list(mindc = NA_real_, maxdc = NA_real_, minrdl = NA_real_, maxrdl = NA_real_)
+#     }
+#   )
+#   
+#   # ── 14. Assemble and return ─────────────────────────────────────────
+#   n_total   <- nrow(loq_table)
+#   n_passing <- sum(loq_table$passes_std, na.rm = TRUE)
+#   
+#   result <- list(
+#     lloq            = lloq,
+#     uloq            = uloq,
+#     lloq_y          = lloq_y,
+#     uloq_y          = uloq_y,
+#     lloq_cv         = lloq_cv,
+#     uloq_cv         = uloq_cv,
+#     lloq_accuracy   = lloq_accuracy,
+#     uloq_accuracy   = uloq_accuracy,
+#     n_passing_std   = n_passing,
+#     n_total_std     = n_total,
+#     pct_passing_std = if (n_total > 0) (n_passing / n_total) * 100 else NA_real_,
+#     fda2018_status  = if (n_passing > 0) "OK" else "NO_PASSING_LEVELS",
+#     Blank_mean      = Blank_mean,
+#     Blank_sd        = Blank_sd,
+#     llod            = llod,
+#     ulod            = ulod,
+#     inflect_x       = inflect_x,
+#     inflect_y       = inflect_y,
+#     lloq_method     = "fda2018",
+#     uloq_method     = "fda2018",
+#     mindc           = mdc_rdl$mindc  %||% NA_real_,
+#     maxdc           = mdc_rdl$maxdc  %||% NA_real_,
+#     minrdl          = mdc_rdl$minrdl %||% NA_real_,
+#     maxrdl          = mdc_rdl$maxrdl %||% NA_real_,
+#     dydx_inflect    = dydx_inflect
+#   )
+#   
+#   if (verbose) {
+#     message(sprintf(
+#       "[FDA2018] Done. LLOQ=%.4f, ULOQ=%.4f, LLOD=%.4f, ULOD=%.4f, status=%s",
+#       result$lloq, result$uloq, result$llod, result$ulod, result$fda2018_status
+#     ))
+#   }
+#   
+#   return(result)
+# }
+
+
+# ============================================================================
+# .extract_fda_loqs_from_dil_series
+#
+# Extracts FDA 2018 LLOQ/ULOQ scalars from the pre-computed dilution-series
+# accuracy table (output of compute_dil_series_accuracy()).
+#
+# This replaces the internal back-calculation approach in
+# .compute_fda2018_scalars() which was failing because its inverse-prediction
+# path did not reliably handle all model types.
+#
+# The dilution-series table already contains:
+#   dil_nominal_concentration  – nominal conc at each dilution level
+#   dil_backcalc_mean_conc     – back-calculated conc from pooled mean response
+#   dil_accuracy_pct           – (backcalc / nominal) * 100
+#   dil_cv_response            – CV% of response across plates
+#   dil_passes_fda             – logical: passes both CV and accuracy
+#   dil_fda_flag               – character flag
+#
+# @param dil_series_se_plate_source  data.frame from compute_dil_series_accuracy()
+# @param fit                         nlsLM fit object (for predicting response at LOQ)
+# @param independent_variable        character name of concentration column
+# @param is_log_x                    logical; TRUE if concentration is log10-scaled
+# @param cv_threshold                numeric; CV% limit for standard levels (default 20)
+# @param lloq_cv_threshold           numeric; CV% limit at LLOQ (default 25)
+# @param accuracy_lo                 numeric; lower accuracy bound (default 80)
+# @param accuracy_hi                 numeric; upper accuracy bound (default 120)
+# @param verbose                     logical
+#
+# @return Named list of FDA 2018 LOQ scalars matching the glance column names.
+# ============================================================================
+.extract_fda_loqs_from_dil_series <- function(
+    dil_series_se_plate_source = NULL,
+    fit                        = NULL,
+    independent_variable       = "concentration",
+    is_log_x                   = TRUE,
+    verbose                    = TRUE) {
   
-  # ── 0. Define NA scaffold ─────────────────────────────────────────────
-  #    Every early-return path hands back the same named list so that
+  # ── NA scaffold ────────────────────────────────────────────────────────
+  na_result <- list(
+    lloq_fda2018_concentration = NA_real_,
+    lloq_fda2018_response      = NA_real_,
+    uloq_fda2018_concentration = NA_real_,
+    uloq_fda2018_response      = NA_real_,
+    lloq_cv                    = NA_real_,
+    uloq_cv                    = NA_real_,
+    lloq_accuracy              = NA_real_,
+    uloq_accuracy              = NA_real_,
+    n_passing_std              = NA_integer_,
+    n_total_std                = NA_integer_,
+    pct_passing_std            = NA_real_,
+    fda2018_status             = "FAILED"
+  )
   
-  #    downstream code (glance_df assembly) never sees NULL columns.
+  # ── Guard: no dilution-series data ─────────────────────────────────────
+  if (is.null(dil_series_se_plate_source) ||
+      !is.data.frame(dil_series_se_plate_source) ||
+      nrow(dil_series_se_plate_source) == 0) {
+    if (verbose) message("[.extract_fda_loqs_from_dil_series] No dil_series data available.")
+    return(na_result)
+  }
+  
+  ds <- dil_series_se_plate_source
+  
+  # ── Guard: required columns ────────────────────────────────────────────
+  required_cols <- c("dil_nominal_concentration", "dil_accuracy_pct",
+                     "dil_cv_response", "dil_passes_fda", "dil_fda_flag",
+                     "dilution")
+  missing <- setdiff(required_cols, names(ds))
+  if (length(missing) > 0) {
+    if (verbose) message(sprintf(
+      "[.extract_fda_loqs_from_dil_series] Missing columns: %s. Run compute_dil_series_accuracy() first.",
+      paste(missing, collapse = ", ")
+    ))
+    return(na_result)
+  }
+  
+  # ── Deduplicate to one row per dilution level ──────────────────────────
+  # The dil_series table has one row per plate × dilution.
+  # The pooled stats (dil_mean_response, dil_cv_response, dil_accuracy_pct,
+  # dil_passes_fda) are identical within each dilution level, so we just
+  
+  # take the first row per dilution.
+  ds_dedup <- ds[!duplicated(ds$dilution), , drop = FALSE]
+  ds_dedup <- ds_dedup[order(ds_dedup$dil_nominal_concentration), , drop = FALSE]
+  
+  if (verbose) {
+    message(sprintf(
+      "[.extract_fda_loqs_from_dil_series] %d unique dilution levels from %d total rows.",
+      nrow(ds_dedup), nrow(ds)
+    ))
+  }
+  
+  # ── Identify evaluable rows (dil_passes_fda is not NA) ─────────────────
+  evaluable <- ds_dedup[!is.na(ds_dedup$dil_passes_fda), , drop = FALSE]
+  n_total   <- nrow(evaluable)
+  
+  if (n_total == 0) {
+    if (verbose) message("[.extract_fda_loqs_from_dil_series] No evaluable dilution levels.")
+    result <- na_result
+    result$n_total_std     <- nrow(ds_dedup)
+    result$n_passing_std   <- 0L
+    result$pct_passing_std <- 0
+    result$fda2018_status  <- "NO_PASSING_LEVELS"
+    return(result)
+  }
+  
+  # ── Count passing levels ───────────────────────────────────────────────
+  passing <- evaluable[evaluable$dil_passes_fda == TRUE, , drop = FALSE]
+  n_pass  <- nrow(passing)
+  
+  if (verbose) {
+    message(sprintf(
+      "[.extract_fda_loqs_from_dil_series] %d / %d evaluable levels pass FDA criteria.",
+      n_pass, n_total
+    ))
+  }
+  
+  if (n_pass == 0) {
+    result <- na_result
+    result$n_total_std     <- as.integer(n_total)
+    result$n_passing_std   <- 0L
+    result$pct_passing_std <- 0
+    result$fda2018_status  <- "NO_PASSING_LEVELS"
+    
+    if (verbose) {
+      # Show why each level failed
+      for (i in seq_len(nrow(evaluable))) {
+        row <- evaluable[i, ]
+        message(sprintf(
+          "  Dilution %s: nom_conc=%.2f, CV=%.2f%%, Acc=%.2f%%, flag=%s",
+          as.character(row$dilution),
+          row$dil_nominal_concentration,
+          ifelse(is.na(row$dil_cv_response), NaN, row$dil_cv_response),
+          ifelse(is.na(row$dil_accuracy_pct), NaN, row$dil_accuracy_pct),
+          row$dil_fda_flag
+        ))
+      }
+    }
+    return(result)
+  }
+  
+  # ── Sort passing levels by nominal concentration (ascending) ───────────
+  passing <- passing[order(passing$dil_nominal_concentration), , drop = FALSE]
+  
+  # ── LLOQ: lowest passing nominal concentration ─────────────────────────
+  lloq_row <- passing[1, , drop = FALSE]
+  lloq_fda2018_concentration <- lloq_row$dil_nominal_concentration
+  lloq_cv                    <- lloq_row$dil_cv_response
+  lloq_accuracy              <- lloq_row$dil_accuracy_pct
+  
+  # Predict model response at LLOQ concentration
+  lloq_fda2018_response <- tryCatch({
+    if (!is.null(fit) && inherits(fit, "nls")) {
+      lloq_x <- if (is_log_x) log10(lloq_fda2018_concentration) else lloq_fda2018_concentration
+      nd <- setNames(data.frame(lloq_x), independent_variable)
+      as.numeric(predict(fit, newdata = nd))
+    } else {
+      NA_real_
+    }
+  }, error = function(e) NA_real_)
+  
+  # ── ULOQ: highest passing nominal concentration ────────────────────────
+  uloq_row <- passing[nrow(passing), , drop = FALSE]
+  uloq_fda2018_concentration <- uloq_row$dil_nominal_concentration
+  uloq_cv                    <- uloq_row$dil_cv_response
+  uloq_accuracy              <- uloq_row$dil_accuracy_pct
+  
+  # Predict model response at ULOQ concentration
+  uloq_fda2018_response <- tryCatch({
+    if (!is.null(fit) && inherits(fit, "nls")) {
+      uloq_x <- if (is_log_x) log10(uloq_fda2018_concentration) else uloq_fda2018_concentration
+      nd <- setNames(data.frame(uloq_x), independent_variable)
+      as.numeric(predict(fit, newdata = nd))
+    } else {
+      NA_real_
+    }
+  }, error = function(e) NA_real_)
+  
+  pct_pass <- round(100 * n_pass / n_total, 2)
+  
+  if (verbose) {
+    message(sprintf(
+      "[.extract_fda_loqs_from_dil_series] LLOQ: conc=%.4g, CV=%.2f%%, Acc=%.2f%%",
+      lloq_fda2018_concentration, lloq_cv, lloq_accuracy
+    ))
+    message(sprintf(
+      "[.extract_fda_loqs_from_dil_series] ULOQ: conc=%.4g, CV=%.2f%%, Acc=%.2f%%",
+      uloq_fda2018_concentration, uloq_cv, uloq_accuracy
+    ))
+    message(sprintf(
+      "[.extract_fda_loqs_from_dil_series] %d/%d passing (%.1f%%)",
+      n_pass, n_total, pct_pass
+    ))
+  }
+  
+  # ── Assemble result ────────────────────────────────────────────────────
+  list(
+    lloq_fda2018_concentration = as.numeric(lloq_fda2018_concentration),
+    lloq_fda2018_response      = as.numeric(lloq_fda2018_response),
+    uloq_fda2018_concentration = as.numeric(uloq_fda2018_concentration),
+    uloq_fda2018_response      = as.numeric(uloq_fda2018_response),
+    lloq_cv                    = as.numeric(lloq_cv),
+    uloq_cv                    = as.numeric(uloq_cv),
+    lloq_accuracy              = as.numeric(lloq_accuracy),
+    uloq_accuracy              = as.numeric(uloq_accuracy),
+    n_passing_std              = as.integer(n_pass),
+    n_total_std                = as.integer(n_total),
+    pct_passing_std            = pct_pass,
+    fda2018_status             = "OK"
+  )
+}
+
+# ============================================================================
+# .compute_curve_diagnostics
+#
+# Computes curve-level diagnostics that do NOT depend on the dilution-series
+# accuracy table: LODs, inflection point, blanks, MDC/RDL, sensitivity.
+#
+# This was refactored out of the old .compute_fda2018_scalars() which tried
+# to do both curve diagnostics AND FDA LOQ computation internally.
+# The FDA LOQ columns are now populated by .extract_fda_loqs_from_dil_series().
+# ============================================================================
+.compute_curve_diagnostics <- function(fit,
+                                       best_data,
+                                       best_fit,
+                                       response_variable,
+                                       independent_variable,
+                                       antigen_settings,
+                                       antigen_fit_options,
+                                       verbose = TRUE) {
   na_scalars <- list(
-    lloq            = NA_real_,
-    uloq            = NA_real_,
-    lloq_y          = NA_real_,
-    uloq_y          = NA_real_,
+    blank_mean      = NA_real_,
+    blank_sd        = NA_real_,
+    llod            = NA_real_,
+    ulod            = NA_real_,
+    inflect_x       = NA_real_,
+    inflect_y       = NA_real_,
+    mindc           = NA_real_,
+    maxdc           = NA_real_,
+    minrdl          = NA_real_,
+    maxrdl          = NA_real_,
+    dydx_inflect    = NA_real_,
+    # FDA LOQ placeholders — will be overridden by .extract_fda_loqs_from_dil_series
+    lloq_fda2018_concentration = NA_real_,
+    lloq_fda2018_response      = NA_real_,
+    uloq_fda2018_concentration = NA_real_,
+    uloq_fda2018_response      = NA_real_,
     lloq_cv         = NA_real_,
     uloq_cv         = NA_real_,
     lloq_accuracy   = NA_real_,
@@ -1105,418 +2197,333 @@ dispatch_dydx <- function(model_name, x, theta) {
     n_passing_std   = NA_integer_,
     n_total_std     = NA_integer_,
     pct_passing_std = NA_real_,
-    fda2018_status  = "FAILED",
-    Blank_mean      = NA_real_,
-    Blank_sd        = NA_real_,
-    llod            = NA_real_,
-    ulod            = NA_real_,
-    inflect_x       = NA_real_,
-    inflect_y       = NA_real_,
-    lloq_method     = "fda2018",
-    uloq_method     = "fda2018",
-    mindc           = NA_real_,
-    maxdc           = NA_real_,
-    minrdl          = NA_real_,
-    maxrdl          = NA_real_,
-    dydx_inflect    = NA_real_
+    fda2018_status  = "PENDING"
   )
   
-  # ── 1. Guard: minimum data requirements ───────────────────────────────
+  # ── Guard clauses ──
   if (is.null(fit) || is.null(best_data) || nrow(best_data) == 0) {
-    if (verbose) message("[FDA2018] fit or best_data is NULL/empty. Returning NA scalars.")
+    if (verbose) message("[.compute_curve_diagnostics] NULL fit or empty best_data")
+    na_scalars$fda2018_status <- "FAILED"
     return(na_scalars)
   }
   
   if (!response_variable %in% names(best_data)) {
-    if (verbose) message(sprintf(
-      "[FDA2018] response_variable '%s' not found in best_data columns: %s",
-      response_variable, paste(names(best_data), collapse = ", ")
-    ))
+    if (verbose) message("[.compute_curve_diagnostics] response_variable '",
+                         response_variable, "' not in best_data")
+    na_scalars$fda2018_status <- "FAILED"
     return(na_scalars)
   }
   
   if (!independent_variable %in% names(best_data)) {
-    if (verbose) message(sprintf(
-      "[FDA2018] independent_variable '%s' not found in best_data columns: %s",
-      independent_variable, paste(names(best_data), collapse = ", ")
-    ))
+    if (verbose) message("[.compute_curve_diagnostics] independent_variable '",
+                         independent_variable, "' not in best_data")
+    na_scalars$fda2018_status <- "FAILED"
     return(na_scalars)
   }
   
-  # ── 2. Prepare standard data for back-calculation ─────────────────────
-  std_data <- best_data[best_data$stype == "S", , drop = FALSE]
-  
-  if (nrow(std_data) == 0) {
-    if (verbose) message("[FDA2018] No standard (stype=='S') rows in best_data.")
-    return(na_scalars)
-  }
-  
-  # Verify response and independent columns have finite data
-  has_finite_response <- any(is.finite(std_data[[response_variable]]))
-  has_finite_indep    <- any(is.finite(std_data[[independent_variable]]))
-  
+  has_finite_response <- any(is.finite(best_data[[response_variable]]))
+  has_finite_indep    <- any(is.finite(best_data[[independent_variable]]))
   if (!has_finite_response || !has_finite_indep) {
-    if (verbose) message(sprintf(
-      "[FDA2018] Standards lack finite values. response finite: %s, independent finite: %s",
-      has_finite_response, has_finite_indep
-    ))
+    if (verbose) message("[.compute_curve_diagnostics] No finite response or independent values")
+    na_scalars$fda2018_status <- "FAILED"
     return(na_scalars)
   }
   
-  if (verbose) {
-    message(sprintf(
-      "[FDA2018] %d standard rows, response range [%.4f, %.4f], indep range [%.4f, %.4f]",
-      nrow(std_data),
-      min(std_data[[response_variable]], na.rm = TRUE),
-      max(std_data[[response_variable]], na.rm = TRUE),
-      min(std_data[[independent_variable]], na.rm = TRUE),
-      max(std_data[[independent_variable]], na.rm = TRUE)
-    ))
+  # ══════════════════════════════════════════════════════════════════════
+  # ── Blanks ──
+  # ══════════════════════════════════════════════════════════════════════
+  plate_blanks <- tryCatch({
+    if ("stype" %in% names(best_data)) {
+      best_data[best_data$stype == "B", , drop = FALSE]
+    } else {
+      data.frame()
+    }
+  }, error = function(e) data.frame())
+  
+  blank_responses <- if (nrow(plate_blanks) > 0 && response_variable %in% names(plate_blanks)) {
+    plate_blanks[[response_variable]]
+  } else {
+    numeric(0)
   }
   
-  # ── 3. Back-calculate predicted concentrations ────────────────────────
-  std_data_bc <- tryCatch(
-    calculate_predicted_concentration(
-      model_name        = model_name,
-      fit               = fit,
-      plate_samples     = std_data,
-      fixed_constraint  = fixed_a_result,
-      response_variable = response_variable,
-      is_log_response   = FALSE,
-      verbose           = verbose
-    ),
-    error = function(e) {
-      if (verbose) message("[FDA2018] back-calculation failed: ", conditionMessage(e))
+  Blank_mean <- if (length(blank_responses) > 0) mean(blank_responses, na.rm = TRUE) else NA_real_
+  Blank_sd   <- if (length(blank_responses) > 1) sd(blank_responses, na.rm = TRUE)   else NA_real_
+  
+  # ══════════════════════════════════════════════════════════════════════
+  # ── Extract model_name and fixed_a_result ──
+  # ══════════════════════════════════════════════════════════════════════
+  model_name <- tryCatch({
+    best_fit$best_model_name
+  }, error = function(e) NA_character_)
+  
+  fixed_a_result <- tryCatch({
+    fa <- antigen_settings$l_asy_min_constraint
+    if (!is.null(fa) && is.finite(fa) && fa > 0 &&
+        isTRUE(antigen_settings$l_asy_min_constraint == antigen_settings$l_asy_max_constraint)) {
+      if (isTRUE(antigen_fit_options$is_log_response) && fa > 0) {
+        log10(fa + 0.000005)
+      } else {
+        fa
+      }
+    } else {
       NULL
     }
-  )
+  }, error = function(e) NULL)
   
-  if (is.null(std_data_bc)) {
-    if (verbose) message("[FDA2018] Back-calculation returned NULL. Returning NA scalars.")
-    return(na_scalars)
-  }
-  
-  if (!"predicted_concentration" %in% names(std_data_bc)) {
-    if (verbose) message(sprintf(
-      "[FDA2018] No 'predicted_concentration' column. Columns: %s",
-      paste(names(std_data_bc), collapse = ", ")
-    ))
-    return(na_scalars)
-  }
-  
-  # Filter to finite predicted concentrations
-  finite_mask <- is.finite(std_data_bc$predicted_concentration)
-  std_data_bc <- std_data_bc[finite_mask, , drop = FALSE]
-  
-  if (nrow(std_data_bc) == 0) {
-    if (verbose) message("[FDA2018] Zero rows with finite predicted_concentration after filtering.")
-    return(na_scalars)
-  }
-  
-  if (verbose) {
-    message(sprintf(
-      "[FDA2018] %d rows with finite predicted_concentration (of %d total standards)",
-      nrow(std_data_bc), nrow(std_data)
-    ))
-  }
-  
-  # ── 4. Extract x and y data safely ───────────────────────────────────
-  x_data <- std_data_bc[[independent_variable]]
-  x_data <- x_data[is.finite(x_data)]
-  
-  y_data <- std_data_bc[[response_variable]]
-  y_data <- y_data[is.finite(y_data)]
-  
-  pred_conc <- std_data_bc$predicted_concentration
-  
-  if (length(x_data) == 0 || length(y_data) == 0 || length(pred_conc) == 0) {
-    if (verbose) message(sprintf(
-      "[FDA2018] Insufficient finite data after filtering. x_data=%d, y_data=%d, pred_conc=%d",
-      length(x_data), length(y_data), length(pred_conc)
-    ))
-    return(na_scalars)
-  }
-  
-  # ── 5. Compute accuracy (percent recovery) ───────────────────────────
-  #    pct_recovery = (predicted / nominal) * 100
-  nominal_conc <- std_data_bc[[independent_variable]]
-  std_data_bc$pct_recovery <- (std_data_bc$predicted_concentration / nominal_conc) * 100
-  
-  # ── 6. Compute CV per dilution level ─────────────────────────────────
-  #    Group by dilution (or independent variable) and compute CV
-  dilution_col <- if ("dilution" %in% names(std_data_bc)) "dilution" else independent_variable
-  
-  loq_table <- tryCatch({
-    dil_groups <- split(std_data_bc, std_data_bc[[dilution_col]])
-    
-    do.call(rbind, lapply(names(dil_groups), function(dname) {
-      grp <- dil_groups[[dname]]
-      pc  <- grp$predicted_concentration
-      pc  <- pc[is.finite(pc)]
-      
-      n_finite <- length(pc)
-      mean_pc  <- if (n_finite > 0) mean(pc, na.rm = TRUE) else NA_real_
-      sd_pc    <- if (n_finite > 1) sd(pc, na.rm = TRUE)   else NA_real_
-      cv_pct   <- if (!is.na(mean_pc) && mean_pc != 0) (sd_pc / abs(mean_pc)) * 100 else NA_real_
-      
-      # Use the mean pct_recovery for the group
-      mean_recovery <- mean(grp$pct_recovery, na.rm = TRUE)
-      
-      # Nominal concentration (should be same within group)
-      nom <- mean(grp[[independent_variable]], na.rm = TRUE)
-      
-      data.frame(
-        dilution_level  = dname,
-        nominal_conc    = nom,
-        n               = n_finite,
-        mean_pred       = mean_pc,
-        sd_pred         = sd_pc,
-        cv_pct          = cv_pct,
-        pct_recovery    = mean_recovery,
-        stringsAsFactors = FALSE
-      )
-    }))
-  }, error = function(e) {
-    if (verbose) message("[FDA2018] CV computation failed: ", conditionMessage(e))
-    NULL
-  })
-  
-  if (is.null(loq_table) || nrow(loq_table) == 0) {
-    if (verbose) message("[FDA2018] Could not compute CV table. Returning NA scalars.")
-    return(na_scalars)
-  }
-  
-  # ── 7. Determine passing standards ───────────────────────────────────
-  passes_accuracy <- function(r) {
-    !is.na(r) & is.finite(r) & r >= accuracy_lo & r <= accuracy_hi
-  }
-  
-  loq_table$passes_std <- !is.na(loq_table$cv_pct) &
-    is.finite(loq_table$cv_pct) &
-    loq_table$cv_pct <= cv_threshold &
-    passes_accuracy(loq_table$pct_recovery)
-  
-  loq_table$passes_lloq <- !is.na(loq_table$cv_pct) &
-    is.finite(loq_table$cv_pct) &
-    loq_table$cv_pct <= lloq_cv_threshold &
-    passes_accuracy(loq_table$pct_recovery)
-  
-  if (verbose) {
-    message(sprintf(
-      "[FDA2018] LOQ table: %d dilution levels, %d pass standard criteria, %d pass LLOQ criteria",
-      nrow(loq_table), sum(loq_table$passes_std), sum(loq_table$passes_lloq)
-    ))
-  }
-  
-  # ── 8. Determine LLOQ and ULOQ ──────────────────────────────────────
-  # Sort by nominal concentration (ascending)
-  loq_table <- loq_table[order(loq_table$nominal_conc), ]
-  
-  lloq_candidates <- which(loq_table$passes_lloq)
-  passing_std     <- which(loq_table$passes_std)
-  
-  # LLOQ = lowest passing dilution level
-  
-  # ULOQ = highest passing dilution level
-  lloq <- if (length(lloq_candidates) > 0) {
-    loq_table$nominal_conc[min(lloq_candidates)]
-  } else {
-    NA_real_
-  }
-  
-  uloq <- if (length(passing_std) > 0) {
-    loq_table$nominal_conc[max(passing_std)]
-  } else {
-    NA_real_
-  }
-  
-  # Get corresponding y-values and CVs
-  lloq_y  <- NA_real_
-  uloq_y  <- NA_real_
-  lloq_cv <- NA_real_
-  uloq_cv <- NA_real_
-  lloq_accuracy <- NA_real_
-  uloq_accuracy <- NA_real_
-  
-  if (!is.na(lloq)) {
-    lloq_row <- loq_table[loq_table$nominal_conc == lloq, , drop = FALSE]
-    if (nrow(lloq_row) > 0) {
-      lloq_cv <- lloq_row$cv_pct[1]
-      lloq_accuracy <- lloq_row$pct_recovery[1]
-      # Predict y at LLOQ
-      lloq_y <- tryCatch({
-        as.numeric(predict(fit, newdata = setNames(data.frame(lloq), independent_variable)))
-      }, error = function(e) NA_real_)
-    }
-  }
-  
-  if (!is.na(uloq)) {
-    uloq_row <- loq_table[loq_table$nominal_conc == uloq, , drop = FALSE]
-    if (nrow(uloq_row) > 0) {
-      uloq_cv <- uloq_row$cv_pct[1]
-      uloq_accuracy <- uloq_row$pct_recovery[1]
-      uloq_y <- tryCatch({
-        as.numeric(predict(fit, newdata = setNames(data.frame(uloq), independent_variable)))
-      }, error = function(e) NA_real_)
-    }
-  }
-  
-  # ── 9. Blank statistics ──────────────────────────────────────────────
-  blank_response_col <- if (!is.null(plate_blanks) && nrow(plate_blanks) > 0) {
-    resolve_response_col(plate_blanks, default = response_variable)
-  } else {
-    response_variable
-  }
-  
-  Blank_mean <- if (!is.null(plate_blanks) && nrow(plate_blanks) > 0 &&
-                    blank_response_col %in% names(plate_blanks)) {
-    mean(plate_blanks[[blank_response_col]], na.rm = TRUE)
-  } else {
-    NA_real_
-  }
-  
-  Blank_sd <- if (!is.null(plate_blanks) && nrow(plate_blanks) > 1 &&
-                  blank_response_col %in% names(plate_blanks)) {
-    sd(plate_blanks[[blank_response_col]], na.rm = TRUE)
-  } else {
-    NA_real_
-  }
-  
-  # ── 10. LODs (from existing generate_lods logic) ─────────────────────
-  llod <- NA_real_
-  ulod <- NA_real_
-  
-  tryCatch({
-    params <- coef(fit)
-    d_val <- if ("d" %in% names(params)) params["d"] else NA_real_
-    
-    # ULOD: lower confidence bound of d (upper asymptote)
-    ci <- tryCatch(nlstools::confint2(fit, level = 0.95), error = function(e) NULL)
-    
-    if (!is.null(ci)) {
-      par_names <- rownames(ci)
-      if ("d" %in% par_names) {
-        ulod <- ci["d", 1]  # 2.5% bound
-      }
-      
-      if (!is.null(fixed_a_result)) {
-        # LLOD from fixed a + margin of error
-        se_blank <- if (!is.na(Blank_sd) && !is.null(plate_blanks) && nrow(plate_blanks) > 0) {
-          Blank_sd / sqrt(sum(!is.na(plate_blanks[[blank_response_col]])))
-        } else {
-          0
-        }
-        crit_val <- qt(0.975, df = max(nrow(best_data) - length(par_names), 1))
-        llod <- fixed_a_result + crit_val * se_blank
-      } else if ("a" %in% par_names) {
-        llod <- ci["a", 2]  # 97.5% bound
-      }
-    }
-    
-    # Sanitize
-    if (!is.na(ulod) && !is.na(llod) && (ulod < 0 || ulod < llod)) {
-      ulod <- NA_real_
-    }
-  }, error = function(e) {
-    if (verbose) message("[FDA2018] LOD computation error: ", conditionMessage(e))
-  })
-  
-  # ── 11. Inflection point ─────────────────────────────────────────────
-  inflect <- tryCatch(
-    generate_inflection_point(fit, model_name, fixed_a_result, verbose = verbose),
-    error = function(e) list(inflect_x = NA_real_, inflect_y = NA_real_)
-  )
-  
-  inflect_x <- if (!is.null(inflect$inflect_x) && length(inflect$inflect_x) > 0) {
-    as.numeric(inflect$inflect_x)
-  } else {
-    NA_real_
-  }
-  
-  inflect_y <- if (!is.null(inflect$inflect_y) && length(inflect$inflect_y) > 0) {
-    as.numeric(inflect$inflect_y)
-  } else {
-    NA_real_
-  }
-  
-  # ── 12. Sensitivity (dy/dx at inflection) ───────────────────────────
-  dydx_inflect <- tryCatch({
-    all_params <- if (!is.null(fixed_a_result)) {
-      c(a = fixed_a_result, coef(fit))
-    } else {
-      coef(fit)
-    }
-    
-    switch(model_name,
-           "Y5"    = do.call(dydxY5,    c(list(x = inflect_x), as.list(all_params))),
-           "Y4"    = do.call(dydxY4,    c(list(x = inflect_x), as.list(all_params))),
-           "Yd5"   = do.call(dydxYd5,   c(list(x = inflect_x), as.list(all_params))),
-           "Yd4"   = do.call(dydxYd4,   c(list(x = inflect_x), as.list(all_params))),
-           "Ygomp4"= do.call(dydxYgomp4,c(list(x = inflect_x), as.list(all_params))),
-           NA_real_
+  # ══════════════════════════════════════════════════════════════════════
+  # ── Inflection Point ──
+  # ══════════════════════════════════════════════════════════════════════
+  inflection <- tryCatch({
+    generate_inflection_point(
+      model_name           = model_name,
+      fit                  = fit,
+      fixed_a_result       = fixed_a_result,
+      independent_variable = independent_variable,
+      verbose              = verbose
     )
-  }, error = function(e) NA_real_)
+  }, error = function(e) {
+    if (verbose) message("[.compute_curve_diagnostics] inflection error: ", conditionMessage(e))
+    list(inflect_x = NA_real_, inflect_y = NA_real_)
+  })
   
-  # ── 13. MDC / RDL ───────────────────────────────────────────────────
-  mdc_rdl <- tryCatch(
+  inflect_x <- if (!is.null(inflection$inflect_x) && length(inflection$inflect_x) > 0) {
+    as.numeric(inflection$inflect_x)
+  } else {
+    NA_real_
+  }
+  
+  inflect_y <- if (!is.null(inflection$inflect_y) && length(inflection$inflect_y) > 0) {
+    as.numeric(inflection$inflect_y)
+  } else {
+    NA_real_
+  }
+  
+  # ══════════════════════════════════════════════════════════════════════
+  # ── LODs ──
+  # ══════════════════════════════════════════════════════════════════════
+  std_error_blank <- tryCatch({
+    antigen_settings$std_error_blank %||% {
+      if (nrow(plate_blanks) > 1 && response_variable %in% names(plate_blanks)) {
+        sd(plate_blanks[[response_variable]], na.rm = TRUE) /
+          sqrt(sum(!is.na(plate_blanks[[response_variable]])))
+      } else {
+        0
+      }
+    }
+  }, error = function(e) 0)
+  
+  lods <- tryCatch({
+    generate_lods(
+      best_fit        = best_fit,
+      fixed_a_result  = fixed_a_result,
+      std_error_blank = std_error_blank,
+      verbose         = verbose
+    )
+  }, error = function(e) {
+    if (verbose) message("[.compute_curve_diagnostics] LODs error: ", conditionMessage(e))
+    list(llod = NA_real_, ulod = NA_real_)
+  })
+  
+  llod <- as.numeric(lods$llod)
+  ulod <- as.numeric(lods$ulod)
+  
+  # ══════════════════════════════════════════════════════════════════════
+  # ── Sensitivity (dy/dx at inflection) ──
+  # ══════════════════════════════════════════════════════════════════════
+  dydx_inflect <- tryCatch({
+    if (!is.na(inflect_x) && !is.na(model_name)) {
+      all_params <- if (!is.null(fixed_a_result)) {
+        c(a = fixed_a_result, coef(fit))
+      } else {
+        coef(fit)
+      }
+      dispatch_dydx(model_name, inflect_x, all_params)
+    } else {
+      NA_real_
+    }
+  }, error = function(e) {
+    tryCatch({
+      if (!is.na(inflect_x)) {
+        h <- abs(inflect_x) * 1e-5
+        if (h == 0) h <- 1e-8
+        y_plus  <- predict(fit, newdata = setNames(data.frame(inflect_x + h), independent_variable))
+        y_minus <- predict(fit, newdata = setNames(data.frame(inflect_x - h), independent_variable))
+        as.numeric((y_plus - y_minus) / (2 * h))
+      } else {
+        NA_real_
+      }
+    }, error = function(e2) NA_real_)
+  })
+  
+  # ══════════════════════════════════════════════════════════════════════
+  # ── MDC / RDL ──
+  # ══════════════════════════════════════════════════════════════════════
+  mdc_rdl <- tryCatch({
     generate_mdc_rdl(
       best_fit = list(
-        best_fit   = fit,
-        best_data  = best_data,
+        best_fit    = fit,
+        best_data   = best_data,
         best_glance = list(llod = llod, ulod = ulod)
       ),
       lods = list(llod = llod, ulod = ulod),
       independent_variable = independent_variable,
-      verbose = verbose
-    ),
-    error = function(e) {
-      if (verbose) message("[FDA2018] MDC/RDL computation error: ", conditionMessage(e))
-      list(mindc = NA_real_, maxdc = NA_real_, minrdl = NA_real_, maxrdl = NA_real_)
-    }
-  )
+      verbose              = verbose
+    )
+  }, error = function(e) {
+    if (verbose) message("[.compute_curve_diagnostics] MDC/RDL error: ", conditionMessage(e))
+    list(mindc = NA_real_, maxdc = NA_real_, minrdl = NA_real_, maxrdl = NA_real_)
+  })
   
-  # ── 14. Assemble and return ─────────────────────────────────────────
-  n_total   <- nrow(loq_table)
-  n_passing <- sum(loq_table$passes_std, na.rm = TRUE)
-  
-  result <- list(
-    lloq            = lloq,
-    uloq            = uloq,
-    lloq_y          = lloq_y,
-    uloq_y          = uloq_y,
-    lloq_cv         = lloq_cv,
-    uloq_cv         = uloq_cv,
-    lloq_accuracy   = lloq_accuracy,
-    uloq_accuracy   = uloq_accuracy,
-    n_passing_std   = n_passing,
-    n_total_std     = n_total,
-    pct_passing_std = if (n_total > 0) (n_passing / n_total) * 100 else NA_real_,
-    fda2018_status  = if (n_passing > 0) "OK" else "NO_PASSING_LEVELS",
-    Blank_mean      = Blank_mean,
-    Blank_sd        = Blank_sd,
+  # ══════════════════════════════════════════════════════════════════════
+  # ── Assemble result ──
+  # ══════════════════════════════════════════════════════════════════════
+  list(
+    std_error_blank = antigen_settings$std_error_blank,
+    blank_mean      = Blank_mean,
+    blank_sd        = Blank_sd,
     llod            = llod,
     ulod            = ulod,
     inflect_x       = inflect_x,
     inflect_y       = inflect_y,
-    lloq_method     = "fda2018",
-    uloq_method     = "fda2018",
     mindc           = mdc_rdl$mindc  %||% NA_real_,
     maxdc           = mdc_rdl$maxdc  %||% NA_real_,
     minrdl          = mdc_rdl$minrdl %||% NA_real_,
     maxrdl          = mdc_rdl$maxrdl %||% NA_real_,
-    dydx_inflect    = dydx_inflect
+    dydx_inflect    = dydx_inflect,
+    # FDA LOQ placeholders — .extract_fda_loqs_from_dil_series will override
+    lloq_fda2018_concentration = NA_real_,
+    lloq_fda2018_response      = NA_real_,
+    uloq_fda2018_concentration = NA_real_,
+    uloq_fda2018_response      = NA_real_,
+    lloq_cv         = NA_real_,
+    uloq_cv         = NA_real_,
+    lloq_accuracy   = NA_real_,
+    uloq_accuracy   = NA_real_,
+    n_passing_std   = NA_integer_,
+    n_total_std     = NA_integer_,
+    pct_passing_std = NA_real_,
+    fda2018_status  = "PENDING"
   )
+}
+
+
+# ============================================================================
+# .summarize_dil_series_accuracy
+#
+# Summarises the per-dilution accuracy/precision table produced by
+# compute_dil_series_accuracy() into scalar QC metrics that fit into a
+# single-row glance data.frame.
+#
+# @param dil_series_se_plate_source  data.frame from compute_dil_series_accuracy(),
+#        or NULL if unavailable.
+# @param verbose  logical; emit diagnostic messages.
+# @return Named list of scalar values (all NA when input is NULL or empty).
+# ============================================================================
+.summarize_dil_series_accuracy <- function(dil_series_se_plate_source = NULL,
+                                           verbose = TRUE) {
+  
+  # ── NA scaffold returned when there is nothing to summarise ──────────
+  na_result <- list(
+    dil_n_points_total       = NA_integer_,
+    dil_n_points_evaluable   = NA_integer_,
+    dil_n_points_pass_fda    = NA_integer_,
+    dil_n_points_fail_fda    = NA_integer_,
+    dil_pct_pass_fda         = NA_real_,
+    dil_median_accuracy_pct  = NA_real_,
+    dil_mean_accuracy_pct    = NA_real_,
+    dil_max_cv_response      = NA_real_,
+    dil_mean_cv_response     = NA_real_,
+    dil_fda_overall_pass     = NA,
+    dil_fda_flags_summary    = NA_character_,
+    dil_accuracy_range_lo    = NA_real_,
+    dil_accuracy_range_hi    = NA_real_
+  )
+  
+  if (is.null(dil_series_se_plate_source) ||
+      !is.data.frame(dil_series_se_plate_source) ||
+      nrow(dil_series_se_plate_source) == 0) {
+    if (verbose) message("[.summarize_dil_series_accuracy] No dilution-series data — returning NAs")
+    return(na_result)
+  }
+  
+  ds <- dil_series_se_plate_source
+  
+  # ── Total number of dilution points ─────────────────────────────────
+  n_total <- nrow(ds)
+  
+  # ── Evaluable = rows where dil_passes_fda is not NA ─────────────────
+  evaluable_mask <- !is.na(ds$dil_passes_fda)
+  n_evaluable    <- sum(evaluable_mask)
+  
+  if (n_evaluable == 0) {
+    if (verbose) message("[.summarize_dil_series_accuracy] No evaluable dilution points")
+    result        <- na_result
+    result$dil_n_points_total     <- n_total
+    result$dil_n_points_evaluable <- 0L
+    return(result)
+  }
+  
+  ds_eval <- ds[evaluable_mask, , drop = FALSE]
+  
+  # ── Pass / fail counts ──────────────────────────────────────────────
+  n_pass <- sum(ds_eval$dil_passes_fda == TRUE,  na.rm = TRUE)
+  n_fail <- sum(ds_eval$dil_passes_fda == FALSE, na.rm = TRUE)
+  pct_pass <- if (n_evaluable > 0) round(100 * n_pass / n_evaluable, 2) else NA_real_
+  
+  # ── Accuracy summary (using dil_accuracy_pct, excluding NAs) ────────
+  acc_vals <- ds_eval$dil_accuracy_pct[!is.na(ds_eval$dil_accuracy_pct)]
+  median_acc <- if (length(acc_vals) > 0) median(acc_vals)    else NA_real_
+  mean_acc   <- if (length(acc_vals) > 0) mean(acc_vals)      else NA_real_
+  acc_lo     <- if (length(acc_vals) > 0) min(acc_vals)       else NA_real_
+  acc_hi     <- if (length(acc_vals) > 0) max(acc_vals)       else NA_real_
+  
+  # ── Precision summary (using dil_cv_response) ──────────────────────
+  cv_vals  <- ds_eval$dil_cv_response[!is.na(ds_eval$dil_cv_response)]
+  max_cv   <- if (length(cv_vals) > 0) max(cv_vals)  else NA_real_
+  mean_cv  <- if (length(cv_vals) > 0) mean(cv_vals) else NA_real_
+  
+  # ── Overall FDA pass: TRUE only if every evaluable point passes ─────
+  overall_pass <- (n_fail == 0L && n_pass > 0L)
+  
+  # ── Flag summary: compact string of unique dil_fda_flag values ──────
+  flags_summary <- if ("dil_fda_flag" %in% names(ds_eval)) {
+    flags <- unique(ds_eval$dil_fda_flag[!is.na(ds_eval$dil_fda_flag)])
+    if (length(flags) > 0) paste(sort(flags), collapse = "; ") else NA_character_
+  } else {
+    NA_character_
+  }
   
   if (verbose) {
     message(sprintf(
-      "[FDA2018] Done. LLOQ=%.4f, ULOQ=%.4f, LLOD=%.4f, ULOD=%.4f, status=%s",
-      result$lloq, result$uloq, result$llod, result$ulod, result$fda2018_status
+      "[.summarize_dil_series_accuracy] %d total, %d evaluable, %d pass, %d fail (%.1f%% pass)",
+      n_total, n_evaluable, n_pass, n_fail, pct_pass
+    ))
+    message(sprintf(
+      "[.summarize_dil_series_accuracy] Accuracy: median=%.2f%%, mean=%.2f%%, range=[%.2f%%, %.2f%%]",
+      median_acc, mean_acc, acc_lo, acc_hi
+    ))
+    message(sprintf(
+      "[.summarize_dil_series_accuracy] Precision: mean CV=%.2f%%, max CV=%.2f%%",
+      mean_cv, max_cv
     ))
   }
   
-  return(result)
+  list(
+    dil_n_points_total       = as.integer(n_total),
+    dil_n_points_evaluable   = as.integer(n_evaluable),
+    dil_n_points_pass_fda    = as.integer(n_pass),
+    dil_n_points_fail_fda    = as.integer(n_fail),
+    dil_pct_pass_fda         = pct_pass,
+    dil_median_accuracy_pct  = median_acc,
+    dil_mean_accuracy_pct    = mean_acc,
+    dil_max_cv_response      = max_cv,
+    dil_mean_cv_response     = mean_cv,
+    dil_fda_overall_pass     = overall_pass,
+    dil_fda_flags_summary    = flags_summary,
+    dil_accuracy_range_lo    = acc_lo,
+    dil_accuracy_range_hi    = acc_hi
+  )
 }
-
 # This function depends on get_loqs, generate_inflection_point, generate_lods as it is a wrapper and calls them
 # fit_qc_glance()
 #
@@ -1541,293 +2548,402 @@ fit_qc_glance <- function(best_fit,
                           fixed_a_result,
                           antigen_settings,
                           antigen_fit_options,
+                          dil_series_se_plate_source = NULL,
                           verbose = TRUE) {
-  
-  # ── 0.  Pull objects out of best_fit ─────────────────────────────────
-  resolved <- ensure_response_column(
-    df           = best_fit$best_data,
-    response_var = response_variable,
-    coerce_numeric = TRUE,
-    context      = "fit_qc_glance"
-  )
-  best_fit$best_data <- resolved$df
-  response_variable  <- resolved$response_var
-  
-  if (!resolved$ok) {
-    if (verbose) message("[fit_qc_glance] No valid response column. Returning NA glance.")
-    best_fit$best_glance <- .make_na_glance(
-      best_data           = best_fit$best_data,
-      model_name          = best_fit$best_model_name,
-      fixed_a_result      = fixed_a_result,
-      antigen_fit_options = antigen_fit_options
-    )
-    return(best_fit)
-  }
   
   fit        <- best_fit$best_fit
   best_data  <- best_fit$best_data
   model_name <- best_fit$best_model_name
   
-  # ── 1.  Defensive: coerce response to numeric ───────────────────────
-  #   Some ELISA pipelines carry absorbance as character after CSV import.
-  if (!is.numeric(best_data[[response_variable]])) {
-    if (verbose) message(sprintf(
-      "[fit_qc_glance] Coercing '%s' from %s to numeric (%d NAs introduced)",
-      response_variable,
-      class(best_data[[response_variable]])[1],
-      sum(is.na(suppressWarnings(as.numeric(best_data[[response_variable]]))))
-    ))
-    best_data[[response_variable]] <- suppressWarnings(
-      as.numeric(best_data[[response_variable]])
-    )
-    # Write back so downstream callers also get numeric
-    best_fit$best_data <- best_data
-  }
-  
-  if (!is.numeric(best_data[[independent_variable]])) {
-    if (verbose) message(sprintf(
-      "[fit_qc_glance] Coercing '%s' from %s to numeric",
-      independent_variable,
-      class(best_data[[independent_variable]])[1]
-    ))
-    best_data[[independent_variable]] <- suppressWarnings(
-      as.numeric(best_data[[independent_variable]])
-    )
-    best_fit$best_data <- best_data
-  }
-  
-  # ── 2.  Guard: need a valid fit and usable data ─────────────────────
-  response <- best_data[[response_variable]]
-  response <- response[is.finite(response)]
-  
-  if (is.null(fit) || !inherits(fit, "nls") || length(response) < 3) {
-    if (verbose) message(sprintf(
-      "[fit_qc_glance] Cannot compute glance: fit valid=%s, finite response n=%d. Returning best_fit with NA glance.",
-      inherits(fit, "nls"), length(response)
-    ))
-    best_fit$best_glance <- .make_na_glance(
-      best_data          = best_data,
-      model_name         = model_name,
-      fixed_a_result     = fixed_a_result,
-      antigen_fit_options = antigen_fit_options
-    )
+  # ── Early exit if no valid fit ──
+  if (is.null(fit) || is.null(best_data) || nrow(best_data) == 0) {
+    if (verbose) message("[fit_qc_glance] No valid fit or data -> NA glance")
+    best_fit$best_glance <- .make_na_glance(best_data, model_name,
+                                            fixed_a_result, antigen_fit_options)
     return(best_fit)
   }
   
-  # ── 3.  Plate blanks ────────────────────────────────────────────────
-  plate_blanks <- if (!is.null(best_data) && "stype" %in% names(best_data)) {
-    best_data[best_data$stype == "B", , drop = FALSE]
-  } else {
-    data.frame()
-  }
-  
-  # ── 4.  QC scalars (FDA 2018 protocol) ──────────────────────────────
+  # ══════════════════════════════════════════════════════════════════════
+  # ── Step 1: Compute LODs, inflection, MDC/RDL, blanks ──
+  # ══════════════════════════════════════════════════════════════════════
   qc_glance <- tryCatch(
-    .compute_fda2018_scalars(
+    .compute_curve_diagnostics(
       fit                  = fit,
       best_data            = best_data,
-      model_name           = model_name,
-      plate_blanks         = plate_blanks,
+      best_fit             = best_fit,
       response_variable    = response_variable,
       independent_variable = independent_variable,
-      fixed_a_result       = fixed_a_result,
-      is_log_response      = isTRUE(antigen_fit_options$is_log_response),
+      antigen_settings     = antigen_settings,
+      antigen_fit_options  = antigen_fit_options,
       verbose              = verbose
     ),
     error = function(e) {
-      if (verbose) message("[fit_qc_glance] .compute_fda2018_scalars error: ", conditionMessage(e))
-      NULL
+      if (verbose) message("[fit_qc_glance] .compute_curve_diagnostics error: ",
+                           conditionMessage(e))
+      .na_qc_glance_list()
     }
   )
   
-  # If FDA2018 failed entirely, build a safe NA scaffold
-  if (is.null(qc_glance)) {
-    qc_glance <- .na_qc_glance_list()
-  }
+  cat("Head of QC glance\n")
+  print(head(qc_glance))
   
-  # ── 5.  Model summary statistics ────────────────────────────────────
-  s <- tryCatch(summary(fit), error = function(e) NULL)
-  
-  if (is.null(s)) {
-    if (verbose) message("[fit_qc_glance] summary(fit) failed. Returning NA glance.")
-    best_fit$best_glance <- .make_na_glance(
-      best_data           = best_data,
-      model_name          = model_name,
-      fixed_a_result      = fixed_a_result,
-      antigen_fit_options = antigen_fit_options,
-      qc_glance           = qc_glance
-    )
-    return(best_fit)
-  }
-  
-  coefs   <- coef(s)
-  coef_df <- as.data.frame(t(coefs[, "Estimate", drop = FALSE]))
-  # Rename to just the parameter names (strip "Estimate" suffix)
-  names(coef_df) <- rownames(coefs)
-  
-  if (!("a" %in% names(coef_df))) {
-    coef_df$a <- if (!is.null(fixed_a_result) && is.finite(as.numeric(fixed_a_result))) {
-      as.numeric(fixed_a_result)
+  # ══════════════════════════════════════════════════════════════════════
+  # ── Step 2: Shape/curvature-based LOQs (from second derivative) ──
+  # ══════════════════════════════════════════════════════════════════════
+  curv_loqs <- tryCatch({
+    if (!is.null(best_fit$best_d2xy) && nrow(best_fit$best_d2xy) >= 3) {
+      get_loqs(
+        best_d2xy            = best_fit$best_d2xy,
+        fit                  = fit,
+        independent_variable = independent_variable,
+        verbose              = verbose
+      )
     } else {
-      NA_real_
+      if (verbose) message("[fit_qc_glance] No best_d2xy available for curvature LOQs")
+      list(lloq = NA_real_, uloq = NA_real_, lloq_y = NA_real_, uloq_y = NA_real_)
     }
+  }, error = function(e) {
+    if (verbose) message("[fit_qc_glance] get_loqs error: ", conditionMessage(e))
+    list(lloq = NA_real_, uloq = NA_real_, lloq_y = NA_real_, uloq_y = NA_real_)
+  })
+  
+  # ══════════════════════════════════════════════════════════════════════
+  # ── Step 3: Merge shape-based LOQs into qc_glance ──
+  # ══════════════════════════════════════════════════════════════════════
+  qc_glance$lloq   <- curv_loqs$lloq
+  qc_glance$uloq   <- curv_loqs$uloq
+  qc_glance$lloq_y <- curv_loqs$lloq_y
+  qc_glance$uloq_y <- curv_loqs$uloq_y
+  
+  if (verbose) {
+    message(sprintf("[fit_qc_glance] Shape LOQs: LLOQ=%.4g, ULOQ=%.4g",
+                    ifelse(is.na(curv_loqs$lloq), NaN, curv_loqs$lloq),
+                    ifelse(is.na(curv_loqs$uloq), NaN, curv_loqs$uloq)))
   }
   
-  sigma    <- s$sigma
-  df_resid <- s$df[2]
-  
-  # ── 6.  Goodness-of-fit metrics ────────────────────────────────────
-  response_all <- best_data[[response_variable]]
-  response_all <- response_all[is.finite(response_all)]
-  
-  resid_vals <- tryCatch(residuals(fit), error = function(e) rep(NA_real_, length(response_all)))
-  
-  rss <- sum(resid_vals^2, na.rm = TRUE)
-  tss <- sum((response_all - mean(response_all, na.rm = TRUE))^2, na.rm = TRUE)
-  
-  r_squared <- if (tss > 0) 1 - rss / tss else NA_real_
-  
-  aic        <- tryCatch(AIC(fit), error = function(e) NA_real_)
-  bic        <- tryCatch(BIC(fit), error = function(e) NA_real_)
-  logLik_val <- tryCatch(as.numeric(logLik(fit)), error = function(e) NA_real_)
-  
-  converged <- tryCatch(fit$convInfo$isConv, error = function(e) NA)
-  iter      <- tryCatch(fit$convInfo$finIter, error = function(e) NA_integer_)
-  
-  model_formula <- tryCatch(
-    gsub("I\\((.*)\\)", "\\1", paste(deparse(formula(fit)), collapse = " ")),
-    error = function(e) NA_character_
+  # ══════════════════════════════════════════════════════════════════════
+  # ── Step 3b: Dilution-series accuracy/precision summary ──
+  # ══════════════════════════════════════════════════════════════════════
+  dil_summary <- .summarize_dil_series_accuracy(
+    dil_series_se_plate_source = dil_series_se_plate_source,
+    verbose                    = verbose
   )
   
-  n_obs        <- length(resid_vals)
-  mse          <- if (n_obs > 0) mean(resid_vals^2, na.rm = TRUE) else NA_real_
-  mean_obs     <- if (length(response_all) > 0) mean(response_all, na.rm = TRUE) else NA_real_
-  cv           <- if (!is.na(mean_obs) && mean_obs != 0) (sqrt(mse) / abs(mean_obs)) * 100 else NA_real_
-  
-  # ── 7.  Safe extraction of unique identifiers ──────────────────────
-  safe_unique <- function(x) {
-    u <- unique(x)
-    u <- u[!is.na(u)]
-    if (length(u) == 0) return(NA_character_)
-    paste(u, collapse = ";")
+  # Merge dilution-series summary scalars into qc_glance
+  for (nm in names(dil_summary)) {
+    qc_glance[[nm]] <- dil_summary[[nm]]
   }
   
-  # ── 8.  Convert qc_glance list → single-row data.frame ────────────
-  #   This is the critical fix: ensure every element is length-1 scalar
-  qc_df <- tryCatch({
-    qc_scalar <- lapply(qc_glance, function(v) {
-      if (is.null(v) || length(v) == 0) return(NA_real_)
-      v[[1]]
-    })
-    as.data.frame(qc_scalar, stringsAsFactors = FALSE)
-  }, error = function(e) {
-    if (verbose) message("[fit_qc_glance] qc_glance -> data.frame conversion failed: ", conditionMessage(e))
-    as.data.frame(.na_qc_glance_list(), stringsAsFactors = FALSE)
-  })
+  # ══════════════════════════════════════════════════════════════════════
+  # ── Step 3c: Populate FDA 2018 LOQ columns from dil_series results ──
+  # ══════════════════════════════════════════════════════════════════════
+  fda_from_dil <- .extract_fda_loqs_from_dil_series(
+    dil_series_se_plate_source = dil_series_se_plate_source,
+    fit                        = fit,
+    independent_variable       = independent_variable,
+    is_log_x                   = isTRUE(antigen_fit_options$is_log_concentration),
+    verbose                    = verbose
+  )
   
-  # ── 9.  Assemble glance_df ─────────────────────────────────────────
-  #   Build from explicit scalars — never mix 0-row and 1-row frames.
-  glance_df <- tryCatch({
-    base_df <- data.frame(
-      study_accession         = safe_unique(best_data$study_accession),
-      experiment_accession    = safe_unique(best_data$experiment_accession),
-      plateid                 = safe_unique(best_data$plateid),
-      plate                   = safe_unique(best_data$plate),
-      nominal_sample_dilution = safe_unique(best_data$nominal_sample_dilution),
-      antigen                 = safe_unique(best_data$antigen),
-      iter                    = as.integer(iter),
-      status                  = as.logical(converged),
-      crit                    = as.character(model_name),
-      stringsAsFactors        = FALSE
-    )
-    
-    # Bind coefficient columns
-    base_df <- cbind(base_df, coef_df)
-    
-    # Bind QC glance columns
-    base_df <- cbind(base_df, qc_df)
-    
-    # Add remaining statistics
-    base_df$dfresidual      <- df_resid
-    base_df$nobs            <- n_obs
-    base_df$rsquare_fit     <- r_squared
-    base_df$aic             <- aic
-    base_df$bic             <- bic
-    base_df$loglik          <- logLik_val
-    base_df$mse             <- mse
-    base_df$cv              <- cv
-    base_df$source          <- safe_unique(best_data$source)
-    base_df$bkg_method      <- as.character(antigen_fit_options$blank_option %||% NA_character_)
-    base_df$is_log_response <- as.logical(antigen_fit_options$is_log_response %||% NA)
-    base_df$is_log_x        <- as.logical(antigen_fit_options$is_log_concentration %||% NA)
-    base_df$apply_prozone   <- as.logical(antigen_fit_options$apply_prozone %||% NA)
-    base_df$formula         <- model_formula
-    base_df$last_concentration_calc_method <- "interpolated"
-    
-    base_df
-  }, error = function(e) {
-    if (verbose) message("[fit_qc_glance] glance_df assembly failed: ", conditionMessage(e))
-    # Return a minimal 1-row NA frame so downstream doesn't crash
-    data.frame(
-      study_accession      = safe_unique(best_data$study_accession),
-      experiment_accession = safe_unique(best_data$experiment_accession),
-      plateid              = safe_unique(best_data$plateid),
-      plate                = safe_unique(best_data$plate),
-      antigen              = safe_unique(best_data$antigen),
-      crit                 = as.character(model_name),
-      status               = FALSE,
-      stringsAsFactors     = FALSE
-    )
-  })
+  # Override the FDA columns with dilution-series-derived values
+  for (nm in names(fda_from_dil)) {
+    qc_glance[[nm]] <- fda_from_dil[[nm]]
+  }
   
   if (verbose) {
     message(sprintf(
-      "[fit_qc_glance] glance_df assembled: %d rows, %d cols. Model=%s, R²=%.4f, AIC=%.2f",
-      nrow(glance_df), ncol(glance_df),
-      model_name,
-      ifelse(is.na(r_squared), -1, r_squared),
-      ifelse(is.na(aic), -1, aic)
+      "[fit_qc_glance] FDA LOQs (from dil_series): LLOQ=%.4g, ULOQ=%.4g, status=%s",
+      ifelse(is.na(qc_glance$lloq_fda2018_concentration), NaN,
+             qc_glance$lloq_fda2018_concentration),
+      ifelse(is.na(qc_glance$uloq_fda2018_concentration), NaN,
+             qc_glance$uloq_fda2018_concentration),
+      qc_glance$fda2018_status
     ))
   }
   
-  best_fit$best_glance <- attach_grouping_keys(glance_df, best_data, context = "fit_qc_glance")
-
-  # # ------------------------------------------------------------------
-  # # Assemble glance_df  (qc_glance already contains the 6 FDA columns)
-  # # ------------------------------------------------------------------
-  # glance_df <- data.frame(
-  #   study_accession        = unique(best_data$study_accession),
-  #   experiment_accession   = unique(best_data$experiment_accession),
-  #   plateid                = unique(best_data$plateid),
-  #   plate                  = unique(best_data$plate),
-  #   nominal_sample_dilution = unique(best_data$nominal_sample_dilution),
-  #   antigen                = unique(best_data$antigen),
-  #   iter                   = iter,
-  #   status                 = converged,
-  #   crit                   = crit,
-  #   coef_df,
-  #   qc_glance, # includes LLOQ/ULOQ FDA2018 + Blank_mean/SD
-  #   dfresidual = df_resid,
-  #   nobs = n_obs,
-  #   rsquare_fit = r_squared,
-  #   aic = aic,
-  #   bic = bic,
-  #   loglik = logLik_val,
-  #   mse = mse,
-  #   cv = cv,
-  #   source = unique(best_data$source),
-  #   bkg_method =  antigen_fit_options$blank_option, #blank_option,
-  #   is_log_response = antigen_fit_options$is_log_response,
-  #   is_log_x = antigen_fit_options$is_log_concentration,
-  #   apply_prozone  = antigen_fit_options$apply_prozone,
-  #   formula = model_formula,
-  #   last_concentration_calc_method = "interpolated"
-  #   )
+  # ══════════════════════════════════════════════════════════════════════
+  # ── Step 4: Build the glance data.frame ──
+  # ══════════════════════════════════════════════════════════════════════
+  qc_df <- as.data.frame(
+    lapply(qc_glance, function(v) if (is.null(v) || length(v) == 0) NA_real_ else v[[1]]),
+    stringsAsFactors = FALSE
+  )
+  
+  safe_unique <- function(x) {
+    u <- unique(x); u <- u[!is.na(u)]
+    if (length(u) == 0) NA_character_ else paste(u, collapse = ";")
+  }
+  
+  # Extract model coefficients
+  coefs <- tryCatch(coef(fit), error = function(e) c(a=NA, b=NA, c=NA, d=NA, g=NA))
+  
+  # Goodness-of-fit
+  rss       <- tryCatch(sum(residuals(fit)^2), error = function(e) NA_real_)
+  df_resid  <- tryCatch(df.residual(fit), error = function(e) NA_real_)
+  nobs_fit  <- tryCatch(nobs(fit), error = function(e) NA_integer_)
+  aic_val   <- tryCatch(AIC(fit), error = function(e) NA_real_)
+  bic_val   <- tryCatch(BIC(fit), error = function(e) NA_real_)
+  loglik_val <- tryCatch(as.numeric(logLik(fit)), error = function(e) NA_real_)
+  converged   <- fit$convInfo$isConv
+  iter        <- fit$convInfo$finIter
+  mse_val   <- if (!is.na(rss) && !is.na(df_resid) && df_resid > 0) rss / df_resid else NA_real_
+  
+  # R-squared
+  y_obs     <- tryCatch(best_data[[response_variable]], error = function(e) numeric(0))
+  y_pred    <- tryCatch(predict(fit, newdata = best_data), error = function(e) numeric(0))
+  rsq       <- if (length(y_obs) > 1 && length(y_pred) == length(y_obs)) {
+    ss_res <- sum((y_obs - y_pred)^2, na.rm = TRUE)
+    ss_tot <- sum((y_obs - mean(y_obs, na.rm = TRUE))^2, na.rm = TRUE)
+    if (ss_tot > 0) 1 - ss_res / ss_tot else NA_real_
+  } else NA_real_
+  
+  cv_val <- if (!is.na(mse_val) && length(y_obs) > 0) {
+    sqrt(mse_val) / mean(y_obs, na.rm = TRUE) * 100
+  } else NA_real_
+  
+  glance_df <- data.frame(
+    study_accession         = safe_unique(best_data$study_accession),
+    experiment_accession    = safe_unique(best_data$experiment_accession),
+    plateid                 = safe_unique(best_data$plateid),
+    plate                   = safe_unique(best_data$plate),
+    nominal_sample_dilution = safe_unique(best_data$nominal_sample_dilution),
+    antigen                 = safe_unique(best_data$antigen),
+    iter                    = iter,
+    status                  = converged,
+    crit                    = as.character(model_name),
+    a  = as.numeric(coefs["a"] %||% fixed_a_result %||% NA_real_),
+    b  = as.numeric(coefs["b"] %||% NA_real_),
+    c  = as.numeric(coefs["c"] %||% NA_real_),
+    d  = as.numeric(coefs["d"] %||% NA_real_),
+    g  = as.numeric(coefs["g"] %||% NA_real_),
+    stringsAsFactors = FALSE
+  )
+  
+  # Bind the QC columns
+  glance_df <- cbind(glance_df, qc_df)
+  
+  # Add remaining fit stats
+  glance_df$dfresidual  <- df_resid
+  glance_df$nobs        <- nobs_fit
+  glance_df$rsquare_fit <- rsq
+  glance_df$aic         <- aic_val
+  glance_df$bic         <- bic_val
+  glance_df$loglik      <- loglik_val
+  glance_df$mse         <- mse_val
+  glance_df$cv          <- cv_val
+  glance_df$source      <- safe_unique(best_data$source)
+  glance_df$bkg_method  <- antigen_fit_options$blank_option %||% NA_character_
+  glance_df$is_log_response <- antigen_fit_options$is_log_response %||% NA
+  glance_df$is_log_x    <- antigen_fit_options$is_log_concentration %||% NA
+  glance_df$apply_prozone <- antigen_fit_options$apply_prozone %||% NA
+  glance_df$formula     <- tryCatch(sub("I\\((.*)\\)", "\\1", paste(deparse(formula(fit)), collapse = " ")), error = function(e) NA_character_)
+  glance_df$last_concentration_calc_method <- "interpolated"
+  
+  glance_df <- attach_grouping_keys(glance_df, best_data, context = "fit_qc_glance")
+  
+  drop_cols <- c(
+    "lloq_cv", "uloq_cv", "lloq_accuracy", "uloq_accuracy",
+    "n_passing_std", "n_total_std", "pct_passing_std", "fda2018_status",
+    "dil_n_points_total", "dil_n_points_evaluable",
+    "dil_n_points_pass_fda", "dil_n_points_fail_fda",
+    "dil_pct_pass_fda", "dil_median_accuracy_pct", "dil_mean_accuracy_pct",
+    "dil_max_cv_response", "dil_mean_cv_response",
+    "dil_fda_overall_pass", "dil_fda_flags_summary",
+    "dil_accuracy_range_lo", "dil_accuracy_range_hi"
+  )
+  
+  glance_df <- glance_df[, !names(glance_df) %in% drop_cols, drop = FALSE]
+  
+  best_fit$best_glance <- glance_df
+  
+  # # ══════════════════════════════════════════════════════════════════════
+  # # ── Step 5: Attach the full dilution-series detail table ──
+  # # ══════════════════════════════════════════════════════════════════════
+  # best_fit$dil_series_accuracy <- dil_series_se_plate_source
   # 
-  # best_fit$best_glance <- glance_df
-
   return(best_fit)
 }
+# fit_qc_glance <- function(best_fit,
+#                           response_variable,
+#                           independent_variable,
+#                           fixed_a_result,
+#                           antigen_settings,
+#                           antigen_fit_options,
+#                           dil_series_se_plate_source = NULL,
+#                           verbose = TRUE) {
+#   
+#   fit        <- best_fit$best_fit
+#   best_data  <- best_fit$best_data
+#   model_name <- best_fit$best_model_name
+#   
+#   # ── Early exit if no valid fit ──
+#   if (is.null(fit) || is.null(best_data) || nrow(best_data) == 0) {
+#     if (verbose) message("[fit_qc_glance] No valid fit or data -> NA glance")
+#     best_fit$best_glance <- .make_na_glance(best_data, model_name,
+#                                             fixed_a_result, antigen_fit_options)
+#     return(best_fit)
+#   }
+#   
+#   # ══════════════════════════════════════════════════════════════════════
+#   # ── Step 1: FDA 2018 scalars (LODs, FDA LOQs, blanks, MDC/RDL, etc.) ──
+#   # ══════════════════════════════════════════════════════════════════════
+#   qc_glance <- tryCatch(
+#     .compute_fda2018_scalars(
+#       fit                  = fit,
+#       best_data            = best_data,
+#       best_fit             = best_fit,
+#       response_variable    = response_variable,
+#       independent_variable = independent_variable,
+#       antigen_settings     = antigen_settings,
+#       antigen_fit_options  = antigen_fit_options,
+#       dil_series_se_plate_source = dil_series_se_plate_source,
+#       verbose              = verbose
+#     ),
+#     error = function(e) {
+#       if (verbose) message("[fit_qc_glance] .compute_fda2018_scalars error: ",
+#                            conditionMessage(e))
+#       .na_qc_glance_list()
+#     }
+#   )
+#   
+#   cat("Head of QC glance\n")
+#   print(head(qc_glance))
+#   
+#   # ══════════════════════════════════════════════════════════════════════
+#   # ── Step 2: Shape/curvature-based LOQs (from second derivative) ──
+#   # ══════════════════════════════════════════════════════════════════════
+#   curv_loqs <- tryCatch({
+#     if (!is.null(best_fit$best_d2xy) && nrow(best_fit$best_d2xy) >= 3) {
+#       get_loqs(
+#         best_d2xy            = best_fit$best_d2xy,
+#         fit                  = fit,
+#         independent_variable = independent_variable,
+#         verbose              = verbose
+#       )
+#     } else {
+#       if (verbose) message("[fit_qc_glance] No best_d2xy available for curvature LOQs")
+#       list(lloq = NA_real_, uloq = NA_real_, lloq_y = NA_real_, uloq_y = NA_real_)
+#     }
+#   }, error = function(e) {
+#     if (verbose) message("[fit_qc_glance] get_loqs error: ", conditionMessage(e))
+#     list(lloq = NA_real_, uloq = NA_real_, lloq_y = NA_real_, uloq_y = NA_real_)
+#   })
+#   
+#   # ══════════════════════════════════════════════════════════════════════
+#   # ── Step 3: Merge shape-based LOQs into qc_glance ──
+#   # ══════════════════════════════════════════════════════════════════════
+#   qc_glance$lloq   <- curv_loqs$lloq
+#   qc_glance$uloq   <- curv_loqs$uloq
+#   qc_glance$lloq_y <- curv_loqs$lloq_y
+#   qc_glance$uloq_y <- curv_loqs$uloq_y
+#   
+#   if (verbose) {
+#     message(sprintf("[fit_qc_glance] Shape LOQs: LLOQ=%.4g, ULOQ=%.4g",
+#                     ifelse(is.na(curv_loqs$lloq), NaN, curv_loqs$lloq),
+#                     ifelse(is.na(curv_loqs$uloq), NaN, curv_loqs$uloq)))
+#     message(sprintf("[fit_qc_glance] FDA LOQs:   LLOQ=%.4g, ULOQ=%.4g",
+#                     ifelse(is.na(qc_glance$lloq_fda2018_concentration), NaN,
+#                            qc_glance$lloq_fda2018_concentration),
+#                     ifelse(is.na(qc_glance$uloq_fda2018_concentration), NaN,
+#                            qc_glance$uloq_fda2018_concentration)))
+#   }
+#   
+#   # ══════════════════════════════════════════════════════════════════════
+#   # ── Step 3b: Dilution-series accuracy/precision summary ──
+#   # ══════════════════════════════════════════════════════════════════════
+#   dil_summary <- .summarize_dil_series_accuracy(
+#     dil_series_se_plate_source = dil_series_se_plate_source,
+#     verbose                    = verbose
+#   )
+#   # Merge dilution-series summary scalars into qc_glance
+#   for (nm in names(dil_summary)) {
+#     qc_glance[[nm]] <- dil_summary[[nm]]
+#   }
+#   
+#   # ══════════════════════════════════════════════════════════════════════
+#   # ── Step 4: Build the glance data.frame ──
+#   # ══════════════════════════════════════════════════════════════════════
+#   qc_df <- as.data.frame(
+#     lapply(qc_glance, function(v) if (is.null(v) || length(v) == 0) NA_real_ else v[[1]]),
+#     stringsAsFactors = FALSE
+#   )
+#   
+#   safe_unique <- function(x) {
+#     u <- unique(x); u <- u[!is.na(u)]
+#     if (length(u) == 0) NA_character_ else paste(u, collapse = ";")
+#   }
+#   
+#   # Extract model coefficients
+#   coefs <- tryCatch(coef(fit), error = function(e) c(a=NA, b=NA, c=NA, d=NA, g=NA))
+#   
+#   # Goodness-of-fit
+#   rss       <- tryCatch(sum(residuals(fit)^2), error = function(e) NA_real_)
+#   df_resid  <- tryCatch(df.residual(fit), error = function(e) NA_real_)
+#   nobs_fit  <- tryCatch(nobs(fit), error = function(e) NA_integer_)
+#   aic_val   <- tryCatch(AIC(fit), error = function(e) NA_real_)
+#   bic_val   <- tryCatch(BIC(fit), error = function(e) NA_real_)
+#   loglik_val<- tryCatch(as.numeric(logLik(fit)), error = function(e) NA_real_)
+#   mse_val   <- if (!is.na(rss) && !is.na(df_resid) && df_resid > 0) rss / df_resid else NA_real_
+#   
+#   # R-squared
+#   y_obs     <- tryCatch(best_data[[response_variable]], error = function(e) numeric(0))
+#   y_pred    <- tryCatch(predict(fit, newdata = best_data), error = function(e) numeric(0))
+#   rsq       <- if (length(y_obs) > 1 && length(y_pred) == length(y_obs)) {
+#     ss_res <- sum((y_obs - y_pred)^2, na.rm = TRUE)
+#     ss_tot <- sum((y_obs - mean(y_obs, na.rm = TRUE))^2, na.rm = TRUE)
+#     if (ss_tot > 0) 1 - ss_res / ss_tot else NA_real_
+#   } else NA_real_
+#   
+#   cv_val <- if (!is.na(mse_val) && length(y_obs) > 0) {
+#     sqrt(mse_val) / mean(y_obs, na.rm = TRUE) * 100
+#   } else NA_real_
+#   
+#   glance_df <- data.frame(
+#     study_accession         = safe_unique(best_data$study_accession),
+#     experiment_accession    = safe_unique(best_data$experiment_accession),
+#     plateid                 = safe_unique(best_data$plateid),
+#     plate                   = safe_unique(best_data$plate),
+#     nominal_sample_dilution = safe_unique(best_data$nominal_sample_dilution),
+#     antigen                 = safe_unique(best_data$antigen),
+#     iter                    = NA_integer_,
+#     status                  = TRUE,
+#     crit                    = as.character(model_name),
+#     a  = as.numeric(coefs["a"] %||% fixed_a_result %||% NA_real_),
+#     b  = as.numeric(coefs["b"] %||% NA_real_),
+#     c  = as.numeric(coefs["c"] %||% NA_real_),
+#     d  = as.numeric(coefs["d"] %||% NA_real_),
+#     g  = as.numeric(coefs["g"] %||% NA_real_),
+#     stringsAsFactors = FALSE
+#   )
+#   
+#   # Bind the QC columns
+#   glance_df <- cbind(glance_df, qc_df)
+#   
+#   # Add remaining fit stats
+#   glance_df$dfresidual  <- df_resid
+#   glance_df$nobs        <- nobs_fit
+#   glance_df$rsquare_fit <- rsq
+#   glance_df$aic         <- aic_val
+#   glance_df$bic         <- bic_val
+#   glance_df$loglik      <- loglik_val
+#   glance_df$mse         <- mse_val
+#   glance_df$cv          <- cv_val
+#   glance_df$source      <- safe_unique(best_data$source)
+#   glance_df$bkg_method  <- antigen_fit_options$bkg_method %||% NA_character_
+#   glance_df$is_log_response <- antigen_fit_options$is_log_response %||% NA
+#   glance_df$is_log_x    <- antigen_fit_options$is_log_x %||% NA
+#   glance_df$apply_prozone <- antigen_fit_options$apply_prozone %||% NA
+#   glance_df$formula     <- tryCatch(deparse(formula(fit)), error = function(e) NA_character_)
+#   
+#   best_fit$best_glance <- glance_df
+#   
+#   # ══════════════════════════════════════════════════════════════════════
+#   # ── Step 5: Attach the full dilution-series detail table ──
+#   # ══════════════════════════════════════════════════════════════════════
+#   best_fit$dil_series_accuracy <- dil_series_se_plate_source
+#   
+#   return(best_fit)
+# }
 
 
 # ── Helper: NA scaffold for qc_glance list ──────────────────────────────
@@ -1837,6 +2953,11 @@ fit_qc_glance <- function(best_fit,
     uloq            = NA_real_,
     lloq_y          = NA_real_,
     uloq_y          = NA_real_,
+    # ── FDA 2018-based LOQs (populated from dil_series) ──
+    lloq_fda2018_concentration = NA_real_,
+    lloq_fda2018_response      = NA_real_,
+    uloq_fda2018_concentration = NA_real_,
+    uloq_fda2018_response      = NA_real_,
     lloq_cv         = NA_real_,
     uloq_cv         = NA_real_,
     lloq_accuracy   = NA_real_,
@@ -1845,21 +2966,68 @@ fit_qc_glance <- function(best_fit,
     n_total_std     = NA_integer_,
     pct_passing_std = NA_real_,
     fda2018_status  = "FAILED",
-    Blank_mean      = NA_real_,
-    Blank_sd        = NA_real_,
+    # ── Curve diagnostics ──
+    blank_mean      = NA_real_,
+    blank_sd        = NA_real_,
     llod            = NA_real_,
     ulod            = NA_real_,
     inflect_x       = NA_real_,
     inflect_y       = NA_real_,
-    lloq_method     = "fda2018",
-    uloq_method     = "fda2018",
     mindc           = NA_real_,
     maxdc           = NA_real_,
     minrdl          = NA_real_,
     maxrdl          = NA_real_,
-    dydx_inflect    = NA_real_
+    dydx_inflect    = NA_real_,
+    # ── Dilution-series summary (populated from .summarize_dil_series_accuracy) ──
+    dil_n_points_total       = NA_integer_,
+    dil_n_points_evaluable   = NA_integer_,
+    dil_n_points_pass_fda    = NA_integer_,
+    dil_n_points_fail_fda    = NA_integer_,
+    dil_pct_pass_fda         = NA_real_,
+    dil_median_accuracy_pct  = NA_real_,
+    dil_mean_accuracy_pct    = NA_real_,
+    dil_max_cv_response      = NA_real_,
+    dil_mean_cv_response     = NA_real_,
+    dil_fda_overall_pass     = NA,
+    dil_fda_flags_summary    = NA_character_,
+    dil_accuracy_range_lo    = NA_real_,
+    dil_accuracy_range_hi    = NA_real_
   )
 }
+# .na_qc_glance_list <- function() {
+#   list(
+#     lloq            = NA_real_,
+#     uloq            = NA_real_,
+#     lloq_y          = NA_real_,
+#     uloq_y          = NA_real_,
+#     # ── FDA 2018-based LOQs ──
+#     lloq_fda2018_concentration = NA_real_,
+#     lloq_fda2018_response      = NA_real_,
+#     uloq_fda2018_concentration = NA_real_,
+#     uloq_fda2018_response      = NA_real_,
+#     lloq_cv         = NA_real_,
+#     uloq_cv         = NA_real_,
+#     lloq_accuracy   = NA_real_,
+#     uloq_accuracy   = NA_real_,
+#     n_passing_std   = NA_integer_,
+#     n_total_std     = NA_integer_,
+#     pct_passing_std = NA_real_,
+#     fda2018_status  = "FAILED",
+#     Blank_mean      = NA_real_,
+#     Blank_sd        = NA_real_,
+#     llod            = NA_real_,
+#     ulod            = NA_real_,
+#     inflect_x       = NA_real_,
+#     inflect_y       = NA_real_,
+#     lloq_method     = "fda2018",
+#     uloq_method     = "fda2018",
+#     mindc           = NA_real_,
+#     maxdc           = NA_real_,
+#     minrdl          = NA_real_,
+#     maxrdl          = NA_real_,
+#     dydx_inflect    = NA_real_
+#   )
+# }
 
 
 # ── Helper: full NA glance data.frame for early-exit paths ───────────────
@@ -1868,7 +3036,6 @@ fit_qc_glance <- function(best_fit,
                             fixed_a_result,
                             antigen_fit_options,
                             qc_glance = NULL) {
-  
   safe_unique <- function(x) {
     u <- unique(x); u <- u[!is.na(u)]
     if (length(u) == 0) NA_character_ else paste(u, collapse = ";")
@@ -1918,6 +3085,61 @@ fit_qc_glance <- function(best_fit,
   
   base_df
 }
+# .make_na_glance <- function(best_data,
+#                             model_name,
+#                             fixed_a_result,
+#                             antigen_fit_options,
+#                             qc_glance = NULL) {
+#   
+#   safe_unique <- function(x) {
+#     u <- unique(x); u <- u[!is.na(u)]
+#     if (length(u) == 0) NA_character_ else paste(u, collapse = ";")
+#   }
+#   
+#   if (is.null(qc_glance)) qc_glance <- .na_qc_glance_list()
+#   
+#   qc_df <- as.data.frame(
+#     lapply(qc_glance, function(v) if (is.null(v) || length(v) == 0) NA_real_ else v[[1]]),
+#     stringsAsFactors = FALSE
+#   )
+#   
+#   base_df <- data.frame(
+#     study_accession         = safe_unique(best_data$study_accession),
+#     experiment_accession    = safe_unique(best_data$experiment_accession),
+#     plateid                 = safe_unique(best_data$plateid),
+#     plate                   = safe_unique(best_data$plate),
+#     nominal_sample_dilution = safe_unique(best_data$nominal_sample_dilution),
+#     antigen                 = safe_unique(best_data$antigen),
+#     iter                    = NA_integer_,
+#     status                  = FALSE,
+#     crit                    = as.character(model_name),
+#     a                       = if (!is.null(fixed_a_result)) as.numeric(fixed_a_result) else NA_real_,
+#     b = NA_real_, c = NA_real_, d = NA_real_, g = NA_real_,
+#     stringsAsFactors        = FALSE
+#   )
+#   
+#   base_df <- cbind(base_df, qc_df)
+#   
+#   base_df$dfresidual      <- NA_real_
+#   base_df$nobs            <- NA_integer_
+#   base_df$rsquare_fit     <- NA_real_
+#   base_df$aic             <- NA_real_
+#   base_df$bic             <- NA_real_
+#   base_df$loglik          <- NA_real_
+#   base_df$mse             <- NA_real_
+#   base_df$cv              <- NA_real_
+#   base_df$source          <- safe_unique(best_data$source)
+#   base_df$bkg_method      <- NA_character_
+#   base_df$is_log_response <- NA
+#   base_df$is_log_x        <- NA
+#   base_df$apply_prozone   <- NA
+#   base_df$formula         <- NA_character_
+#   
+#   # ── Ensure wavelength/feature are carried from best_data ──
+#   base_df <- attach_grouping_keys(base_df, best_data, context = ".make_na_glance")
+#   
+#   base_df
+# }
 
 # Compute FDA (2018) LLOQ, ULOQ, Blank_mean, and Blank_SD for a single plate.
 #
@@ -3547,8 +4769,462 @@ compute_antigen_se_table <- function(
   return(se_table)
 }
 
+compute_dil_series_se <- function(
+    standards_data,
+    response_col  = "mfi",
+    dilution_col  = "dilution",
+    plate_col     = "plate_nom",
+    grouping_cols = c("project_id",
+                      "study_accession",
+                      "experiment_accession",
+                      "source_nom",
+                      "antigen",
+                      "feature"),
+    min_reps = 2,
+    verbose  = FALSE) {
+  
+  # ------------------------------------------------------------------
+  # 1. Input validation
+  # ------------------------------------------------------------------
+  # Only require grouping_cols that are actually present — project_id
+  # may not exist in every dataset, so we warn rather than stop.
+  present_grouping_cols <- intersect(grouping_cols, colnames(standards_data))
+  missing_grouping_cols <- setdiff(grouping_cols, colnames(standards_data))
+  
+  if (length(missing_grouping_cols) > 0) {
+    warning(sprintf(
+      "[compute_dil_series_se] The following grouping_cols are absent and will be ignored: %s",
+      paste(missing_grouping_cols, collapse = ", ")
+    ))
+  }
+  
+  if (length(present_grouping_cols) == 0) {
+    stop("[compute_dil_series_se] No grouping_cols found in standards_data.")
+  }
+  
+  required_cols <- unique(c(present_grouping_cols, response_col, dilution_col, plate_col))
+  missing_cols  <- setdiff(required_cols, colnames(standards_data))
+  if (length(missing_cols) > 0) {
+    stop("[compute_dil_series_se] Missing required columns: ",
+         paste(missing_cols, collapse = ", "))
+  }
+  
+  if (!is.numeric(standards_data[[response_col]])) {
+    stop("[compute_dil_series_se] response_col '", response_col, "' must be numeric.")
+  }
+  
+  # Use only the grouping cols that are present from here on
+  grouping_cols <- present_grouping_cols
+  
+  if (verbose) {
+    message(sprintf(
+      "[compute_dil_series_se] Using grouping cols: %s",
+      paste(grouping_cols, collapse = ", ")
+    ))
+  }
+  
+  # ------------------------------------------------------------------
+  # 2. Build a per-row group key so we can merge stats back onto
+  #    every original row at the end.
+  # ------------------------------------------------------------------
+  n_rows <- nrow(standards_data)
+  
+  # ------------------------------------------------------------------
+  # 3. Identify unique grouping × dilution combinations
+  # ------------------------------------------------------------------
+  key_cols       <- c(grouping_cols, dilution_col)
+  unique_keys    <- unique(standards_data[, key_cols, drop = FALSE])
+  unique_keys    <- unique_keys[do.call(order, unique_keys), , drop = FALSE]
+  rownames(unique_keys) <- NULL
+  
+  if (verbose) {
+    message(sprintf(
+      "[compute_dil_series_se] %d unique grouping × dilution combinations found.",
+      nrow(unique_keys)
+    ))
+  }
+  
+  # ------------------------------------------------------------------
+  # 4. For every unique grouping × dilution, compute mean, median, SE
+  #    across all plates.
+  # ------------------------------------------------------------------
+  stats_list <- lapply(seq_len(nrow(unique_keys)), function(i) {
+    
+    key <- unique_keys[i, , drop = FALSE]
+    
+    # Build row mask for this grouping × dilution
+    mask <- rep(TRUE, n_rows)
+    for (col in key_cols) {
+      val  <- key[[col]]
+      mask <- mask &
+        !is.na(standards_data[[col]]) &
+        standards_data[[col]] == val
+    }
+    
+    vals <- standards_data[[response_col]][mask]
+    vals <- vals[!is.na(vals)]           # drop NA responses
+    n    <- length(vals)
+    
+    mean_resp   <- if (n >= 1L) mean(vals)           else NA_real_
+    median_resp <- if (n >= 1L) median(vals)         else NA_real_
+    se_resp     <- if (n >= min_reps) sd(vals) / sqrt(n) else NA_real_
+    
+    cv_resp <- if (!is.na(se_resp)    && is.finite(se_resp) &&
+          !is.na(mean_resp)  && is.finite(mean_resp) &&
+          abs(mean_resp) > .Machine$double.eps) {
+        (se_resp / abs(mean_resp)) * 100
+      } else {
+        NA_real_
+      }
+    
+    
+    n_plates    <- if (plate_col %in% colnames(standards_data)) {
+      length(unique(standards_data[[plate_col]][mask &
+                                                  !is.na(standards_data[[plate_col]])]))
+    } else {
+      NA_integer_
+    }
+    
+    data.frame(
+      key,
+      dil_mean_response   = mean_resp,
+      dil_median_response = median_resp,
+      dil_se_response     = se_resp,
+      dil_cv_response     = cv_resp,
+      dil_n_obs           = n,
+      dil_n_plates        = n_plates,
+      stringsAsFactors    = FALSE,
+      row.names           = NULL
+    )
+  })
+  
+  stats_df <- do.call(rbind, stats_list)
+  rownames(stats_df) <- NULL
+  
+  if (verbose) {
+    n_valid_se <- sum(!is.na(stats_df$dil_se_response))
+    message(sprintf(
+      "[compute_dil_series_se] SE computable for %d / %d grouping × dilution combinations.",
+      n_valid_se, nrow(stats_df)
+    ))
+  }
+  
+  # ------------------------------------------------------------------
+  # 5. Left-join the per-(grouping × dilution) stats back onto every
+  #    original row of standards_data so the output has the same number
+  #    of rows as the input.
+  # ------------------------------------------------------------------
+  # Use base R merge with all.x = TRUE to preserve row count and order.
+  # We add a temporary index to guarantee the original row order is
+  # restored after the merge.
+  standards_data$.tmp_row_order <- seq_len(n_rows)
+  
+  out <- merge(
+    standards_data,
+    stats_df,
+    by     = key_cols,
+    all.x  = TRUE,
+    sort   = FALSE
+  )
+  
+  # Restore original row order
+  out <- out[order(out$.tmp_row_order), , drop = FALSE]
+  out$.tmp_row_order <- NULL
+  rownames(out) <- NULL
+  
+  if (verbose) {
+    message(sprintf(
+      "[compute_dil_series_se] Output has %d rows (input had %d rows).",
+      nrow(out), n_rows
+    ))
+    n_se_na <- sum(is.na(out$dil_se_response))
+    message(sprintf(
+      "[compute_dil_series_se] %d / %d rows have NA dil_se_response (< %d replicates at that dilution level).",
+      n_se_na, nrow(out), min_reps
+    ))
+  }
+  
+  return(out)
+}
 
+#' compute_dil_series_accuracy
+#'
+#' For each dilution level in a pooled dilution-series data frame (the output
+#' of compute_dil_series_se()), back-calculates the concentration that
+#' corresponds to the POOLED MEAN response at that level using the fitted
+#' sigmoid model, then expresses it as a percent recovery vs. the nominal
+#' concentration.  Per-row (per-plate) accuracy is then computed by the same
+#' logic applied to each individual plate's observed response.
+#'
+#' FDA 2018 acceptance criteria applied:
+#'   CV%      <= cv_threshold      (default 20%) at standard levels
+#'   CV%      <= lloq_cv_threshold (default 25%) at the LLOQ level
+#'   Accuracy  in [accuracy_lo, accuracy_hi]     (default 80-120%)
+#'
+#' @param best_fit            List returned by select_model_fit_AIC() /
+#'                            fit_qc_glance().  Must contain:
+#'                              $best_fit       – nlsLM object
+#'                              $best_model_name – character model name
+#'                              $best_data      – data used to fit the model
+#' @param dil_series_df       data.frame – output of compute_dil_series_se().
+#'                            Must contain dil_mean_response and the
+#'                            dilution_col column.
+#' @param response_col        Character. Name of the raw response column.
+#' @param independent_variable Character. Name of the concentration column
+#'                            in best_data (e.g. "concentration").
+#' @param dilution_col        Character. Dilution column name (default "dilution").
+#' @param fixed_a_result      Numeric scalar or NULL. Fixed lower asymptote
+#'                            on the SAME scale as the fitted model
+#'                            (i.e. log10-transformed if is_log_response=TRUE).
+#' @param is_log_response     Logical. Was the response log10-transformed
+#'                            before fitting? (default TRUE)
+#' @param is_log_concentration Logical. Is the independent variable on the
+#'                            log10 concentration scale? (default TRUE)
+#' @param undiluted_sc_concentration Numeric. Concentration of the undiluted
+#'                            standard (e.g. 10000). Used to convert dilution
+#'                            to nominal concentration for the recovery ratio.
+#' @param cv_threshold        Numeric. CV% acceptance limit (default 20).
+#' @param lloq_cv_threshold   Numeric. CV% acceptance limit at LLOQ (default 25).
+#' @param accuracy_lo         Numeric. Lower accuracy bound % (default 80).
+#' @param accuracy_hi         Numeric. Upper accuracy bound % (default 120).
+#' @param verbose             Logical (default TRUE).
+#'
+#' @return dil_series_df with additional columns:
+#'   dil_nominal_concentration  – nominal concentration at this dilution level
+#'   dil_backcalc_mean_conc     – back-calculated concentration from pooled mean response
+#'   dil_accuracy_pct           – (back-calc / nominal) * 100  [pooled-mean level]
+#'   dil_accuracy_pct_row       – per-row (per-plate) accuracy from observed response
+#'   dil_passes_cv              – logical: CV% <= threshold
+#'   dil_passes_accuracy        – logical: accuracy in [accuracy_lo, accuracy_hi]
+#'   dil_passes_fda             – logical: passes BOTH cv and accuracy
+#'   dil_fda_flag               – character label ("PASS","FAIL_CV","FAIL_ACC","FAIL_BOTH","NA")
 
+compute_dil_series_accuracy <- function(
+    best_fit,
+    dil_series_df,
+    response_col           = "mfi",
+    independent_variable   = "concentration",
+    dilution_col           = "dilution",
+    fixed_a_result         = NULL,
+    is_log_response        = TRUE,
+    is_log_concentration   = TRUE,
+    undiluted_sc_concentration = 10000,
+    cv_threshold           = 20,
+    lloq_cv_threshold      = 25,
+    accuracy_lo            = 80,
+    accuracy_hi            = 120,
+    verbose                = TRUE) {
+  
+  # ── 0. Extract model components ──────────────────────────────────────
+  fit        <- best_fit$best_fit
+  model_name <- best_fit$best_model_name
+  
+  if (is.null(fit) || !inherits(fit, "nls")) {
+    warning("[compute_dil_series_accuracy] best_fit$best_fit is NULL or not an nls object.")
+    return(dil_series_df)
+  }
+  
+  if (!"dil_mean_response" %in% names(dil_series_df)) {
+    stop("[compute_dil_series_accuracy] dil_series_df must contain 'dil_mean_response'. ",
+         "Run compute_dil_series_se() first.")
+  }
+  
+  if (!dilution_col %in% names(dil_series_df)) {
+    stop("[compute_dil_series_accuracy] dilution_col '", dilution_col,
+         "' not found in dil_series_df.")
+  }
+  
+  if (!response_col %in% names(dil_series_df)) {
+    stop("[compute_dil_series_accuracy] response_col '", response_col,
+         "' not found in dil_series_df.")
+  }
+  
+  # ── 1. Helper: transform a raw response to model scale ───────────────
+  # The model was fitted on (possibly) log10-transformed response.
+  # Inverse prediction requires y on the same scale as the model.
+  to_model_scale <- function(y_raw) {
+    if (is_log_response) {
+      y_raw[y_raw <= 0] <- NA_real_   # log10 of non-positive is undefined
+      log10(y_raw)
+    } else {
+      y_raw
+    }
+  }
+  
+  # ── 2. Helper: safe inverse prediction ───────────────────────────────
+  # Returns back-calculated x (on the model's concentration scale) or NA.
+  safe_backcalc <- function(y_model_scale) {
+    if (is.na(y_model_scale) || !is.finite(y_model_scale)) return(NA_real_)
+    tryCatch({
+      if (!is.null(fixed_a_result)) {
+        switch(model_name,
+               Y5     = inv_Y5_fixed(y_model_scale,
+                                     fixed_a = fixed_a_result,
+                                     b = coef(fit)["b"], c = coef(fit)["c"],
+                                     d = coef(fit)["d"], g = coef(fit)["g"]),
+               Yd5    = inv_Yd5_fixed(y_model_scale,
+                                      fixed_a = fixed_a_result,
+                                      b = coef(fit)["b"], c = coef(fit)["c"],
+                                      d = coef(fit)["d"], g = coef(fit)["g"]),
+               Y4     = inv_Y4_fixed(y_model_scale,
+                                     fixed_a = fixed_a_result,
+                                     b = coef(fit)["b"], c = coef(fit)["c"],
+                                     d = coef(fit)["d"]),
+               Yd4    = inv_Yd4_fixed(y_model_scale,
+                                      fixed_a = fixed_a_result,
+                                      b = coef(fit)["b"], c = coef(fit)["c"],
+                                      d = coef(fit)["d"]),
+               Ygomp4 = inv_Ygomp4_fixed(y_model_scale,
+                                         fixed_a = fixed_a_result,
+                                         b = coef(fit)["b"], c = coef(fit)["c"],
+                                         d = coef(fit)["d"]),
+               NA_real_
+        )
+      } else {
+        switch(model_name,
+               Y5     = inv_Y5(y_model_scale,
+                               a = coef(fit)["a"], b = coef(fit)["b"],
+                               c = coef(fit)["c"], d = coef(fit)["d"],
+                               g = coef(fit)["g"]),
+               Yd5    = inv_Yd5(y_model_scale,
+                                a = coef(fit)["a"], b = coef(fit)["b"],
+                                c = coef(fit)["c"], d = coef(fit)["d"],
+                                g = coef(fit)["g"]),
+               Y4     = inv_Y4(y_model_scale,
+                               a = coef(fit)["a"], b = coef(fit)["b"],
+                               c = coef(fit)["c"], d = coef(fit)["d"]),
+               Yd4    = inv_Yd4(y_model_scale,
+                                a = coef(fit)["a"], b = coef(fit)["b"],
+                                c = coef(fit)["c"], d = coef(fit)["d"]),
+               Ygomp4 = inv_Ygomp4(y_model_scale,
+                                   a = coef(fit)["a"], b = coef(fit)["b"],
+                                   c = coef(fit)["c"], d = coef(fit)["d"]),
+               NA_real_
+        )
+      }
+    }, error = function(e) NA_real_)
+  }
+  
+  # ── 3. Helper: convert model x back to linear concentration ──────────
+  to_linear_conc <- function(x_model) {
+    if (is_log_concentration) 10^x_model else x_model
+  }
+  
+  # ── 4. Nominal concentration for each row from dilution ──────────────
+  # nominal_conc (linear) = (1 / dilution) * undiluted_sc_concentration
+  dil_series_df$dil_nominal_concentration <- tryCatch({
+    nom <- (1 / dil_series_df[[dilution_col]]) * undiluted_sc_concentration
+    ifelse(is.finite(nom) & nom > 0, nom, NA_real_)
+  }, error = function(e) rep(NA_real_, nrow(dil_series_df)))
+  
+  # ── 5. Back-calculate from POOLED MEAN response ───────────────────────
+  # One unique back-calc per grouping × dilution level
+  # (dil_mean_response is constant within each group × dilution after the join)
+  pooled_mean_raw <- dil_series_df$dil_mean_response
+  
+  dil_series_df$dil_backcalc_mean_conc <- vapply(
+    to_model_scale(pooled_mean_raw),
+    function(y_ms) {
+      x_bc <- safe_backcalc(y_ms)
+      as.numeric(to_linear_conc(x_bc))
+    },
+    numeric(1L)
+  )
+  
+  if (verbose) {
+    n_bc_ok <- sum(is.finite(dil_series_df$dil_backcalc_mean_conc))
+    message(sprintf(
+      "[compute_dil_series_accuracy] Pooled-mean back-calc succeeded for %d / %d rows.",
+      n_bc_ok, nrow(dil_series_df)
+    ))
+  }
+  
+  # ── 6. Pooled-mean accuracy: (back-calc / nominal) * 100 ─────────────
+  dil_series_df$dil_accuracy_pct <- {
+    bc  <- dil_series_df$dil_backcalc_mean_conc
+    nom <- dil_series_df$dil_nominal_concentration
+    ok  <- is.finite(bc) & is.finite(nom) & nom > .Machine$double.eps
+    ifelse(ok, (bc / nom) * 100, NA_real_)
+  }
+  
+  # ── 7. Per-row (per-plate) accuracy from individual observed response ─
+  obs_raw <- dil_series_df[[response_col]]
+  
+  dil_series_df$dil_accuracy_pct_row <- vapply(
+    seq_len(nrow(dil_series_df)),
+    function(i) {
+      y_ms  <- to_model_scale(obs_raw[i])
+      x_bc  <- safe_backcalc(y_ms)
+      x_lin <- to_linear_conc(x_bc)
+      nom   <- dil_series_df$dil_nominal_concentration[i]
+      if (is.finite(x_lin) && is.finite(nom) && nom > .Machine$double.eps) {
+        (x_lin / nom) * 100
+      } else {
+        NA_real_
+      }
+    },
+    numeric(1L)
+  )
+  
+  if (verbose) {
+    n_row_ok <- sum(is.finite(dil_series_df$dil_accuracy_pct_row))
+    message(sprintf(
+      "[compute_dil_series_accuracy] Per-row back-calc succeeded for %d / %d rows.",
+      n_row_ok, nrow(dil_series_df)
+    ))
+  }
+  
+  # ── 8. FDA pass/fail flags ────────────────────────────────────────────
+  # Use the LLOQ CV threshold for the lowest dilution level (highest conc),
+  # and standard CV threshold for all others.
+  min_dilution <- min(dil_series_df[[dilution_col]], na.rm = TRUE)
+  is_lloq_row  <- dil_series_df[[dilution_col]] == min_dilution
+  
+  cv_limit <- ifelse(is_lloq_row, lloq_cv_threshold, cv_threshold)
+  
+  dil_series_df$dil_passes_cv <- {
+    cv  <- dil_series_df$dil_cv_response
+    ok  <- !is.na(cv) & is.finite(cv)
+    ifelse(ok, cv <= cv_limit, NA)
+  }
+  
+  dil_series_df$dil_passes_accuracy <- {
+    acc <- dil_series_df$dil_accuracy_pct
+    ok  <- !is.na(acc) & is.finite(acc)
+    ifelse(ok, acc >= accuracy_lo & acc <= accuracy_hi, NA)
+  }
+  
+  dil_series_df$dil_passes_fda <- {
+    passes_cv  <- dil_series_df$dil_passes_cv
+    passes_acc <- dil_series_df$dil_passes_accuracy
+    both_known <- !is.na(passes_cv) & !is.na(passes_acc)
+    ifelse(both_known, passes_cv & passes_acc, NA)
+  }
+  
+  # ── 9. Human-readable flag ────────────────────────────────────────────
+  dil_series_df$dil_fda_flag <- {
+    p_cv  <- dil_series_df$dil_passes_cv
+    p_acc <- dil_series_df$dil_passes_accuracy
+    dplyr::case_when(
+      is.na(p_cv) | is.na(p_acc)   ~ "NA",
+      p_cv  & p_acc                 ~ "PASS",
+      !p_cv & p_acc                 ~ "FAIL_CV",
+      p_cv  & !p_acc                ~ "FAIL_ACC",
+      !p_cv & !p_acc                ~ "FAIL_BOTH",
+      TRUE                          ~ "NA"
+    )
+  }
+  
+  if (verbose) {
+    flag_tbl <- table(dil_series_df$dil_fda_flag, useNA = "ifany")
+    message("[compute_dil_series_accuracy] FDA flag summary:")
+    for (nm in names(flag_tbl)) {
+      message(sprintf("  %-12s : %d rows", nm, flag_tbl[[nm]]))
+    }
+  }
+  
+  return(dil_series_df)
+}
 
 #' Look Up SE for a Specific Antigen from the SE Table
 #'

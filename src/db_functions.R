@@ -155,7 +155,7 @@ pull_data <- function(study_accession, experiment_accession, project_id, conn = 
   # print(names(standard_curve_data))
 
   standards <- inner_join(standard_curve_data, plates[, c("study_accession", "experiment_accession" ,"plateid", "plate", "plate_id" , "assay_response_variable" ,"assay_independent_variable"
-   ,"project_id")], by = c("study_accession", "experiment_accession","plate_id"))[ ,c("study_accession","experiment_accession","feature", "source", "wavelength","plateid",
+   ,"project_id")], by = c("study_accession", "experiment_accession","plate_id"))[ ,c("project_id", "study_accession","experiment_accession","feature", "source", "wavelength","plateid",
                                                                                                                         "plate", "stype", "nominal_sample_dilution",
                                                                                                                         "sampleid","well","dilution","antigen","mfi",
                                                                                                                         "assay_response_variable", "assay_independent_variable")]
@@ -296,6 +296,9 @@ diagnose_upsert_data <- function(df, table, conn = NULL, schema = "madi_results"
   }
 
   present_nk <- intersect(nk, names(df))
+  
+  message("\n  --- HEAD of incoming data ---")
+  print(head(df))
 
   # ----- NA audit per NK column -----
   for (col in present_nk) {
@@ -1204,7 +1207,8 @@ fetch_best_glance_all <- function(study_accession,experiment_accession, project_
   query <- glue("SELECT best_glance_all_id, project_id, study_accession, experiment_accession, plateid, plate, nominal_sample_dilution
   , antigen, feature, iter, status, crit, a, b, c, d, g, lloq, uloq, lloq_y, uloq_y, llod, ulod, inflect_x, inflect_y, std_error_blank
   , dydx_inflect, mindc, maxdc, minrdl, maxrdl, dfresidual, nobs, rsquare_fit, aic, bic, loglik, mse, cv, source, wavelength, bkg_method, 
-  is_log_response, is_log_x, apply_prozone, formula, last_concentration_calc_method
+  is_log_response, is_log_x, apply_prozone, formula, last_concentration_calc_method, lloq_fda2018_concentration, lloq_fda2018_response, uloq_fda2018_concentration,
+  uloq_fda2018_response, blank_mean, blank_sd
 	FROM madi_results.best_glance_all
 	WHERE project_id = {project_id}
 	AND study_accession = '{study_accession}'
@@ -1378,7 +1382,8 @@ fetch_best_glance_all_summary <- function(study_accession, experiment_accession,
       g.uloq_y, g.llod, g.ulod, g.inflect_x, g.inflect_y, g.std_error_blank,
       g.dydx_inflect, g.dfresidual, g.nobs, g.rsquare_fit, g.aic, g.bic,
       g.loglik, g.mse, g.cv, g.source, g.wavelength, g.bkg_method, g.is_log_response,
-      g.is_log_x, g.apply_prozone, g.formula, g.g, g.last_concentration_calc_method
+      g.is_log_x, g.apply_prozone, g.formula, g.g, g.last_concentration_calc_method,
+      g.lloq_fda2018_concentration, g.lloq_fda2018_response, g.uloq_fda2018_concentration, g.uloq_fda2018_response, g.blank_mean, g.blank_sd
     FROM madi_results.best_glance_all g
     CROSS JOIN params
     WHERE g.project_id = {project_id}
