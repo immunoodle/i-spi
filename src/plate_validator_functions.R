@@ -1203,11 +1203,12 @@ upload_specimen_data <- function(conn, plates_map, specimen_type, combined_plate
 #'
 #' @param conn Database connection
 #' @param antigen_import_list Antigen list data
+#' @param project_id project ID
 #' @param study_accession Study accession ID
 #' @param experiment_accession Experiment accession ID
 #'
 #' @return Number of rows inserted
-upload_antigen_family <- function(conn, antigen_import_list, study_accession, experiment_accession) {
+upload_antigen_family <- function(conn, antigen_import_list, project_id, study_accession, experiment_accession) {
 
   antigen_family_df <- prepare_batch_antigen_family(antigen_import_list)
   existing_antigens <- get_existing_antigens(conn, study_accession, experiment_accession)
@@ -1264,6 +1265,10 @@ upload_batch_to_database <- function(conn, batch_plates, metadata_batch, layout_
   antigen_import_list <- layout_sheets[["antigen_list"]]
   plates_map <- layout_sheets[["plates_map"]]
 
+  # add feature to antigen import list 
+  features <- data.frame(feature = unique(plates_map$feature))
+  antigen_import_list <- merge(antigen_import_list, features, by = NULL)
+  
   # Get unique identifiers
   project_id <- unique(metadata_batch$project_id)
   study_accession <- unique(metadata_batch$study_name)

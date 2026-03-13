@@ -236,7 +236,43 @@ pull_data <- function(study_accession, experiment_accession, project_id, conn = 
   samples$source_nom   <- build_source_nom(samples)
   
   cat("  source_nom values (standards):", paste(unique(standards$source_nom), collapse = ", "), "\n")
-
+  
+  # ====================================================================
+  # CHECK IF SOURCE PREFIXES DIFFER FROM STANDARDS
+  # ====================================================================
+  
+  std_prefix <- unique(sub("\\|.*$", "", standards$source_nom))
+  
+  if (length(std_prefix) == 1) {
+    
+    sample_prefix <- unique(sub("\\|.*$", "", samples$source_nom))
+    blank_prefix  <- unique(sub("\\|.*$", "", blanks$source_nom))
+    
+    needs_fix <- !(all(sample_prefix == std_prefix) & all(blank_prefix == std_prefix))
+    
+    if (needs_fix) {
+      
+      fix_source_nom <- function(df, std_prefix) {
+        
+        suffix <- sub("^[^|]*", "", df$source_nom)
+        df$source_nom <- paste0(std_prefix, suffix)
+        
+        df
+      }
+      
+      samples <- fix_source_nom(samples, std_prefix)
+      blanks  <- fix_source_nom(blanks, std_prefix)
+      
+      cat("✓ source_nom prefixes updated to match standards:", std_prefix, "\n")
+      
+    } else {
+      cat("✓ source_nom prefixes already match standards\n")
+    }
+    
+  } else {
+    cat("⚠ Multiple standard source prefixes detected:",
+        paste(std_prefix, collapse = ", "), "\n")
+  }
 
   return(list(plates=plates, standards=standards,
               blanks=blanks, samples=samples,
