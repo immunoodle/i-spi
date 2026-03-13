@@ -313,6 +313,7 @@ include_blanks_conc <- function(blank_data, data, response_variable, independent
 
   # Create new blank/mean point
   new_point <- tibble::tibble(
+    project_id = unique(data$project_id),
     study_accession = unique(data$study_accession),
     experiment_accession = unique(data$experiment_accession),
     feature = unique(data$feature),
@@ -379,6 +380,8 @@ include_blanks_conc <- function(blank_data, data, response_variable, independent
   # cat("\n names of  new point\n")
   # print(names(new_point))
   #
+  
+  
   data_with_blank <- rbind(data, new_point)
   return(data_with_blank)
 

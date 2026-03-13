@@ -109,8 +109,7 @@ observeEvent(
       verbose        = TRUE
     )
     
-    #se_antigen_table_v <<- se_antigen_table
-    
+
     dil_series_se_table <- compute_dil_series_se(standards_data = loaded_data$standards, 
                                                 response_col  = response_var,
                                                 dilution_col  = "dilution",
@@ -124,6 +123,7 @@ observeEvent(
                                                 min_reps = 2,
                                                 verbose  = FALSE) 
     
+
     study_params <- fetch_study_parameters(
       study_accession = selected_study,
       param_user      = currentuser(),
@@ -1254,7 +1254,7 @@ lapply(c("study", "experiment", "plate"), function(s) {
                               current_user, scope_label, session) {
   is_batch_processing(TRUE)
   
-  # ── Progress setup (same as before) ──
+  # ── Progress setup ──
   prog_file <- tempfile(pattern = "interp_progress_", fileext = ".txt")
   writeLines(paste0("Starting Interpolated...\nScope: ", scope_label), prog_file)
   interp_progress_file(prog_file)
@@ -1279,7 +1279,7 @@ lapply(c("study", "experiment", "plate"), function(s) {
     duration = NULL
   )
   
-  # ── ALL DATA LOADING ON MAIN THREAD (mirrors .launch_mcmc step 4) ──
+  # ── ALL DATA LOADING ON MAIN THREAD ──
   headers <- fetch_db_header_experiments(
     study_accession = study, conn = conn
   )
@@ -1295,36 +1295,18 @@ lapply(c("study", "experiment", "plate"), function(s) {
       study_accession      = study,
       experiment_accession = exp,
       project_id           = proj,
-      conn                 = conn    # ← main session connection
+      conn                 = conn
     )
-
   )
   
-  if (scope == "plate") {
-    loaded_data_list <- lapply(loaded_data_list, function(x) {
-      for (tbl in c("plates", "standards", "samples", "blanks")) {
-        if (!is.null(x[[tbl]]) && nrow(x[[tbl]]) > 0)
-          x[[tbl]] <- x[[tbl]][x[[tbl]]$plate_nom == plate, , drop = FALSE]
-      }
-      x
-    })
-  }
-  
-  response_var   <- loaded_data_list[[exp_list[1]]]$response_var
-  all_standards  <- do.call(rbind, lapply(loaded_data_list, `[[`, "standards"))
-  
-  se_antigen_table_batch <- compute_antigen_se_table(
-    standards_data = all_standards,
-    response_col   = response_var,
-    dilution_col   = "dilution",
-    plate_col      = "plate",
-    grouping_cols  = c("project_id","study_accession", "experiment_accession",
-                       "source_nom", "antigen", "feature"),
-    verbose        = FALSE
-  )
+  # ── Compute dil_series SE on FULL unfiltered standards (all plates) ──
+  # Must happen BEFORE plate-scope filtering so we get proper cross-plate
+  # replication (n >= min_reps) and valid SE estimates for FDA LOQ computation.
+  all_standards_full <- do.call(rbind, lapply(loaded_data_list, `[[`, "standards"))
+  response_var <- loaded_data_list[[exp_list[1]]]$response_var
   
   dil_series_se_table_batch <- compute_dil_series_se(
-    standards_data = all_standards,
+    standards_data = all_standards_full,
     response_col   = response_var,
     dilution_col   = "dilution",
     plate_col      = "plate_nom",
@@ -1337,12 +1319,36 @@ lapply(c("study", "experiment", "plate"), function(s) {
     min_reps = 2,
     verbose  = FALSE
   )
+  
+  # ── NOW apply plate scope filter to loaded_data_list ──
+  if (scope == "plate") {
+    loaded_data_list <- lapply(loaded_data_list, function(x) {
+      for (tbl in c("plates", "standards", "samples", "blanks")) {
+        if (!is.null(x[[tbl]]) && nrow(x[[tbl]]) > 0)
+          x[[tbl]] <- x[[tbl]][x[[tbl]]$plate_nom == plate, , drop = FALSE]
+      }
+      x
+    })
+  }
+  
+  all_standards <- do.call(rbind, lapply(loaded_data_list, `[[`, "standards"))
+  
+  se_antigen_table_batch <- compute_antigen_se_table(
+    standards_data = all_standards,
+    response_col   = response_var,
+    dilution_col   = "dilution",
+    plate_col      = "plate",
+    grouping_cols  = c("project_id", "study_accession", "experiment_accession",
+                       "source_nom", "antigen", "feature"),
+    verbose        = FALSE
+  )
+  
   study_params_batch <- fetch_study_parameters(
     study_accession = study,
     param_user      = current_user,
     param_group     = "standard_curve_options",
     project_id      = proj,
-    conn            = conn    # ← main session connection
+    conn            = conn
   )
   
   model_names <- c("Y5", "Yd5", "Y4", "Yd4", "Ygomp4")
@@ -1358,22 +1364,21 @@ lapply(c("study", "experiment", "plate"), function(s) {
   
   db_conn_args <- get_db_connection_args()
   
-  # ── FUTURE: Only fitting + DB writes (mirrors .launch_mcmc step 5) ──
+  # ── FUTURE: Only fitting + DB writes ──
   future_promise <- future::future({
     bg_conn <- do.call(get_db_connection_from_args, db_conn_args)
     on.exit(DBI::dbDisconnect(bg_conn), add = TRUE)
     
-    # Fitting loop — writes progress to prog_file
     batch_fit_res <- fit_experiment_plate_batch(
-      prepped_data_list_res  = prepped_data_list_res,
-      antigen_plate_list_res = antigen_plate_list_res,
-      model_names            = model_names,
-      study_params           = study_params_batch,
-      se_antigen_table       = se_antigen_table_batch,
-      dil_series_se_table    = dil_series_se_table_batch, 
-      prog_file              = prog_file,
+      prepped_data_list_res   = prepped_data_list_res,
+      antigen_plate_list_res  = antigen_plate_list_res,
+      model_names             = model_names,
+      study_params            = study_params_batch,
+      se_antigen_table        = se_antigen_table_batch,
+      dil_series_se_table     = dil_series_se_table_batch,
+      prog_file               = prog_file,
       dil_series_response_col = response_var,
-      verbose                = FALSE
+      verbose                 = FALSE
     )
     
     batch_outputs <- create_batch_fit_outputs(
@@ -1383,125 +1388,111 @@ lapply(c("study", "experiment", "plate"), function(s) {
       batch_outputs, response_var, proj
     )
     
-    # Save phase with progress updates
+    # ── Debug: check FDA LOQ columns ──
     tryCatch(writeLines(
       paste0("Interpolated: saving best_glance_all...\nScope: ", scope_label),
       prog_file), error = function(e) NULL)
     
-    message("[debug] best_glance_all columns: ", 
+    message("[debug] best_glance_all columns: ",
             paste(names(batch_outputs$best_glance_all), collapse = ", "))
     
-    # Right before upsert_best_curve(conn = bg_conn, df = batch_outputs$best_glance_all, ...)
-    lloq_check_cols <- grep("lloq_fda2018|uloq_fda2018", names(batch_outputs$best_glance_all), value = TRUE)
-    message("[debug] lloq cols present in best_glance_all: ", 
-            if (length(lloq_check_cols) == 0) "NONE" else paste(lloq_check_cols, collapse = ", "))
+    lloq_check_cols <- grep("lloq_fda2018|uloq_fda2018",
+                            names(batch_outputs$best_glance_all), value = TRUE)
+    message("[debug] lloq cols present in best_glance_all: ",
+            if (length(lloq_check_cols) == 0) "NONE"
+            else paste(lloq_check_cols, collapse = ", "))
     
     if (length(lloq_check_cols) > 0) {
       message("[debug] lloq values (first 3 rows):")
-      print(batch_outputs$best_glance_all[1:min(3, nrow(batch_outputs$best_glance_all)), 
-                                          lloq_check_cols, drop = FALSE])
+      print(batch_outputs$best_glance_all[
+        1:min(3, nrow(batch_outputs$best_glance_all)),
+        lloq_check_cols, drop = FALSE])
       message("[debug] lloq NA counts:")
-      print(colSums(is.na(batch_outputs$best_glance_all[, lloq_check_cols, drop = FALSE])))
+      print(colSums(is.na(
+        batch_outputs$best_glance_all[, lloq_check_cols, drop = FALSE]
+      )))
     }
     
-    ## debug in future needs to save 
-    # saveRDS(batch_outputs$best_glance_all, "best_glance_debug.rds")
-    
 
+    # ── Save best_glance_all first (parent table) ──
     upsert_best_curve(
       conn = bg_conn, df = batch_outputs$best_glance_all,
       schema = "madi_results", table = "best_glance_all",
       notify = NULL, shiny_mode = FALSE
     )
     
-    
-    study_to_save <- unique(batch_outputs$best_glance_all$study_accession)
+    # ── Fetch glance lookup for FK joins ──
+    study_to_save   <- unique(batch_outputs$best_glance_all$study_accession)
     project_to_save <- unique(batch_outputs$best_glance_all$project_id)
+    exp_list_sql    <- paste0("'", paste(exp_list, collapse = "','"), "'")
     
-    # Scoped glance lookup
-    exp_list_sql <- paste0("'", paste(exp_list, collapse = "','"), "'")
     glance_lookup <- DBI::dbGetQuery(bg_conn, glue::glue(
       "SELECT best_glance_all_id, project_id, study_accession, experiment_accession,
               plateid, plate, nominal_sample_dilution, source, antigen, feature, wavelength
        FROM madi_results.best_glance_all
-       WHERE project_id = {project_to_save} 
+       WHERE project_id = {project_to_save}
          AND study_accession = '{study_to_save}'
          AND experiment_accession IN ({exp_list_sql});"
     ))
     glance_lookup$best_glance_all_id <- as.integer(glance_lookup$best_glance_all_id)
     
-    # natural key (nk) vector for the glance → child table FK join
-    # feature + wavelength are included to prevent many-to-many joins
-    keys <- c("project_id","study_accession", "experiment_accession", "plateid",
+    keys <- c("project_id", "study_accession", "experiment_accession", "plateid",
               "plate", "nominal_sample_dilution", "source", "antigen", "feature", "wavelength")
     
-    # Normalize wavelength in glance_lookup (DB may return '__none__' already,
-    # but guard against any lingering NULLs from before migration)
+    # ── Normalize wavelength in glance_lookup AND all child tables ──
     glance_lookup$wavelength <- normalize_wavelength(glance_lookup$wavelength)
     
-    message(sprintf("[save] glance_lookup: %d rows, keys: %s",
-                    nrow(glance_lookup), paste(keys, collapse = ", ")))
+    for (tbl_name in c("best_pred_all", "best_sample_se_all", "best_standard_all",
+                       "best_plate_all", "best_tidy_all")) {
+      if (!is.null(batch_outputs[[tbl_name]]) &&
+          "wavelength" %in% names(batch_outputs[[tbl_name]])) {
+        batch_outputs[[tbl_name]]$wavelength <-
+          normalize_wavelength(batch_outputs[[tbl_name]]$wavelength)
+      }
+    }
+    
+    message(sprintf("[save] glance_lookup: %d rows", nrow(glance_lookup)))
     message(sprintf("[save] glance_lookup wavelengths: %s",
                     paste(unique(glance_lookup$wavelength), collapse = ", ")))
     
-    message(sprintf("[save] glance_lookup: %d rows, keys: %s",
-                    nrow(glance_lookup), paste(keys, collapse = ", ")))
-    message(sprintf("[save] glance_lookup wavelengths: %s",
-                    paste(unique(glance_lookup$wavelength), collapse = ", ")))
-    
-    
-    # attach the best_glance_all_id to each child table (guarded)
-    if (!is.null(batch_outputs$best_pred_all) && nrow(batch_outputs$best_pred_all) > 0) {
+    # ── FK joins: attach best_glance_all_id to each child table ──
+    if (!is.null(batch_outputs$best_pred_all) &&
+        nrow(batch_outputs$best_pred_all) > 0) {
       n_before <- nrow(batch_outputs$best_pred_all)
-      batch_outputs$best_pred_all <-
-        dplyr::inner_join(
-          batch_outputs$best_pred_all,
-          glance_lookup,
-          by = keys
-        )
+      batch_outputs$best_pred_all <- dplyr::inner_join(
+        batch_outputs$best_pred_all, glance_lookup, by = keys
+      )
       n_after <- nrow(batch_outputs$best_pred_all)
       message(sprintf("[save] best_pred_all FK join: %d -> %d rows", n_before, n_after))
-      if (n_after == 0 && n_before > 0) {
-        message("[save] WARNING: FK join dropped ALL best_pred_all rows — likely wavelength mismatch between glance and pred tables.")
-      }
+      if (n_after == 0 && n_before > 0)
+        message("[save] WARNING: FK join dropped ALL best_pred_all rows — likely key mismatch.")
     }
     
-    if (!is.null(batch_outputs$best_sample_se_all) && nrow(batch_outputs$best_sample_se_all) > 0) {
+    if (!is.null(batch_outputs$best_sample_se_all) &&
+        nrow(batch_outputs$best_sample_se_all) > 0) {
       n_before <- nrow(batch_outputs$best_sample_se_all)
-      batch_outputs$best_sample_se_all <-
-        dplyr::inner_join(
-          batch_outputs$best_sample_se_all,
-          glance_lookup,
-          by = keys
-        )
+      batch_outputs$best_sample_se_all <- dplyr::inner_join(
+        batch_outputs$best_sample_se_all, glance_lookup, by = keys
+      )
       n_after <- nrow(batch_outputs$best_sample_se_all)
       message(sprintf("[save] best_sample_se_all FK join: %d -> %d rows", n_before, n_after))
-      if (n_after == 0 && n_before > 0) {
-        message("[save] WARNING: FK join dropped ALL best_sample_se_all rows — likely wavelength mismatch between glance and sample tables.")
-      }
+      if (n_after == 0 && n_before > 0)
+        message("[save] WARNING: FK join dropped ALL best_sample_se_all rows — likely key mismatch.")
     }
     
-    if (!is.null(batch_outputs$best_standard_all) && nrow(batch_outputs$best_standard_all) > 0) {
+    if (!is.null(batch_outputs$best_standard_all) &&
+        nrow(batch_outputs$best_standard_all) > 0) {
       n_before <- nrow(batch_outputs$best_standard_all)
-      batch_outputs$best_standard_all <-
-        dplyr::inner_join(
-          batch_outputs$best_standard_all,
-          glance_lookup,
-          by = keys
-        )
+      batch_outputs$best_standard_all <- dplyr::inner_join(
+        batch_outputs$best_standard_all, glance_lookup, by = keys
+      )
       n_after <- nrow(batch_outputs$best_standard_all)
       message(sprintf("[save] best_standard_all FK join: %d -> %d rows", n_before, n_after))
-      if (n_after == 0 && n_before > 0) {
-        message("[save] WARNING: FK join dropped ALL best_standard_all rows — likely wavelength mismatch between glance and standard tables.")
-      }
+      if (n_after == 0 && n_before > 0)
+        message("[save] WARNING: FK join dropped ALL best_standard_all rows — likely key mismatch.")
     }
     
-    for (tbl_name in c("best_pred_all", "best_sample_se_all", "best_standard_all")) {
-      batch_outputs[[tbl_name]] <- dplyr::inner_join(
-        batch_outputs[[tbl_name]], glance_lookup, by = keys
-      )
-    }
-    
+    # ── Save all child tables ──
     for (pair in list(
       list(df = "best_plate_all",     table = "best_plate_all"),
       list(df = "best_tidy_all",      table = "best_tidy_all"),
@@ -1525,7 +1516,6 @@ lapply(c("study", "experiment", "plate"), function(s) {
   
   removeNotification("batch_sc_fit_notify")
   
-  # ── Progress poller (identical to .launch_mcmc step 6) ──
   progress_poller <- reactivePoll(
     intervalMillis = 2000, session = session,
     checkFunc = function() {
@@ -1557,7 +1547,6 @@ lapply(c("study", "experiment", "plate"), function(s) {
     is_batch_processing(FALSE)
   }
   
-  # ── Promise handlers (identical to .launch_mcmc step 7) ──
   promises::then(
     future_promise,
     onFulfilled = function(result) {
@@ -1577,6 +1566,303 @@ lapply(c("study", "experiment", "plate"), function(s) {
   
   NULL
 }
+# 
+# .run_interpolated <- function(scope, study, experiment, plate, proj,
+#                               current_user, scope_label, session) {
+#   is_batch_processing(TRUE)
+#   
+#   # ── Progress setup (same as before) ──
+#   prog_file <- tempfile(pattern = "interp_progress_", fileext = ".txt")
+#   writeLines(paste0("Starting Interpolated...\nScope: ", scope_label), prog_file)
+#   interp_progress_file(prog_file)
+#   interp_progress_msg(paste0("Starting Interpolated...\nScope: ", scope_label))
+#   interp_pending_scopes(c(
+#     interp_pending_scopes(),
+#     list(c(scope = scope, method = "interpolated"))
+#   ))
+#   concentrationUIRefresher(concentrationUIRefresher() + 1)
+#   
+#   showNotification(
+#     id = "batch_sc_fit_notify",
+#     HTML(
+#       paste0(
+#         "<div class='big-notification'>",
+#         "Starting standard curves:<br>",
+#         "interpolated concentrations<br>",
+#         "for ", scope_label, "<span class='dots'></span>",
+#         "</div>"
+#       )
+#     ),
+#     duration = NULL
+#   )
+#   
+#   # ── ALL DATA LOADING ON MAIN THREAD (mirrors .launch_mcmc step 4) ──
+#   headers <- fetch_db_header_experiments(
+#     study_accession = study, conn = conn
+#   )
+#   exp_list <- switch(scope,
+#                      "study"      = unique(headers$experiment_accession),
+#                      "experiment" = ,
+#                      "plate"      = experiment
+#   )
+#   
+#   loaded_data_list <- lapply(
+#     stats::setNames(exp_list, exp_list),
+#     function(exp) pull_data(
+#       study_accession      = study,
+#       experiment_accession = exp,
+#       project_id           = proj,
+#       conn                 = conn
+#     )
+#   )
+#   
+#   # ── Compute dil_series SE on FULL unfiltered standards (all plates) ──
+#   # Must happen BEFORE plate-scope filtering so we get proper cross-plate
+#   # replication (n >= min_reps) and valid SE estimates for FDA LOQ computation.
+#   all_standards_full <- do.call(rbind, lapply(loaded_data_list, `[[`, "standards"))
+#   response_var <- loaded_data_list[[exp_list[1]]]$response_var
+#   
+#   dil_series_se_table_batch <- compute_dil_series_se(
+#     standards_data = all_standards_full,
+#     response_col   = response_var,
+#     dilution_col   = "dilution",
+#     plate_col      = "plate_nom",
+#     grouping_cols  = c("project_id",
+#                        "study_accession",
+#                        "experiment_accession",
+#                        "source_nom",
+#                        "antigen",
+#                        "feature"),
+#     min_reps = 2,
+#     verbose  = FALSE
+#   )
+#   
+#   # ── NOW apply plate scope filter to loaded_data_list ──
+#   if (scope == "plate") {
+#     loaded_data_list <- lapply(loaded_data_list, function(x) {
+#       for (tbl in c("plates", "standards", "samples", "blanks")) {
+#         if (!is.null(x[[tbl]]) && nrow(x[[tbl]]) > 0)
+#           x[[tbl]] <- x[[tbl]][x[[tbl]]$plate_nom == plate, , drop = FALSE]
+#       }
+#       x
+#     })
+#   }
+#   
+#   all_standards <- do.call(rbind, lapply(loaded_data_list, `[[`, "standards"))
+#   
+#   se_antigen_table_batch <- compute_antigen_se_table(
+#     standards_data = all_standards,
+#     response_col   = response_var,
+#     dilution_col   = "dilution",
+#     plate_col      = "plate",
+#     grouping_cols  = c("project_id","study_accession", "experiment_accession",
+#                        "source_nom", "antigen", "feature"),
+#     verbose        = FALSE
+#   )
+#   
+#   study_params_batch <- fetch_study_parameters(
+#     study_accession = study,
+#     param_user      = current_user,
+#     param_group     = "standard_curve_options",
+#     project_id      = proj,
+#     conn            = conn
+#   )
+#   
+#   model_names <- c("Y5", "Yd5", "Y4", "Yd4", "Ygomp4")
+#   
+#   antigen_list_res       <- build_antigen_list(exp_list, loaded_data_list, study)
+#   antigen_plate_list_res <- build_antigen_plate_list(antigen_list_res, loaded_data_list)
+#   prepped_data_list_res  <- prep_plate_data_batch(
+#     antigen_plate_list_res, study_params_batch, verbose = FALSE
+#   )
+#   antigen_plate_list_res$antigen_plate_list_ids <-
+#     prepped_data_list_res$antigen_plate_name_list
+#   n_total <- length(prepped_data_list_res$antigen_plate_name_list)
+#   
+#   db_conn_args <- get_db_connection_args()
+#   
+#   # ── FUTURE: Only fitting + DB writes ──
+#   future_promise <- future::future({
+#     bg_conn <- do.call(get_db_connection_from_args, db_conn_args)
+#     on.exit(DBI::dbDisconnect(bg_conn), add = TRUE)
+#     
+#     batch_fit_res <- fit_experiment_plate_batch(
+#       prepped_data_list_res  = prepped_data_list_res,
+#       antigen_plate_list_res = antigen_plate_list_res,
+#       model_names            = model_names,
+#       study_params           = study_params_batch,
+#       se_antigen_table       = se_antigen_table_batch,
+#       dil_series_se_table    = dil_series_se_table_batch,
+#       prog_file              = prog_file,
+#       dil_series_response_col = response_var,
+#       verbose                = FALSE
+#     )
+#     
+#     batch_outputs <- create_batch_fit_outputs(
+#       batch_fit_res, antigen_plate_list_res
+#     )
+#     batch_outputs <- process_batch_outputs(
+#       batch_outputs, response_var, proj
+#     )
+#     
+#     tryCatch(writeLines(
+#       paste0("Interpolated: saving best_glance_all...\nScope: ", scope_label),
+#       prog_file), error = function(e) NULL)
+#     
+#     message("[debug] best_glance_all columns: ",
+#             paste(names(batch_outputs$best_glance_all), collapse = ", "))
+#     
+#     lloq_check_cols <- grep("lloq_fda2018|uloq_fda2018", names(batch_outputs$best_glance_all), value = TRUE)
+#     message("[debug] lloq cols present in best_glance_all: ",
+#             if (length(lloq_check_cols) == 0) "NONE" else paste(lloq_check_cols, collapse = ", "))
+#     
+#     if (length(lloq_check_cols) > 0) {
+#       message("[debug] lloq values (first 3 rows):")
+#       print(batch_outputs$best_glance_all[1:min(3, nrow(batch_outputs$best_glance_all)),
+#                                           lloq_check_cols, drop = FALSE])
+#       message("[debug] lloq NA counts:")
+#       print(colSums(is.na(batch_outputs$best_glance_all[, lloq_check_cols, drop = FALSE])))
+#     }
+#     
+#     ## debug in future needs to save 
+#     saveRDS(batch_outputs$best_glance_all, "best_glance_debug.rds")
+#     
+#     upsert_best_curve(
+#       conn = bg_conn, df = batch_outputs$best_glance_all,
+#       schema = "madi_results", table = "best_glance_all",
+#       notify = NULL, shiny_mode = FALSE
+#     )
+#     
+#     study_to_save   <- unique(batch_outputs$best_glance_all$study_accession)
+#     project_to_save <- unique(batch_outputs$best_glance_all$project_id)
+#     
+#     exp_list_sql <- paste0("'", paste(exp_list, collapse = "','"), "'")
+#     glance_lookup <- DBI::dbGetQuery(bg_conn, glue::glue(
+#       "SELECT best_glance_all_id, project_id, study_accession, experiment_accession,
+#               plateid, plate, nominal_sample_dilution, source, antigen, feature, wavelength
+#        FROM madi_results.best_glance_all
+#        WHERE project_id = {project_to_save}
+#          AND study_accession = '{study_to_save}'
+#          AND experiment_accession IN ({exp_list_sql});"
+#     ))
+#     glance_lookup$best_glance_all_id <- as.integer(glance_lookup$best_glance_all_id)
+#     
+#     keys <- c("project_id","study_accession", "experiment_accession", "plateid",
+#               "plate", "nominal_sample_dilution", "source", "antigen", "feature", "wavelength")
+#     
+#     glance_lookup$wavelength <- normalize_wavelength(glance_lookup$wavelength)
+#     
+#     message(sprintf("[save] glance_lookup: %d rows, keys: %s",
+#                     nrow(glance_lookup), paste(keys, collapse = ", ")))
+#     message(sprintf("[save] glance_lookup wavelengths: %s",
+#                     paste(unique(glance_lookup$wavelength), collapse = ", ")))
+#     
+#     if (!is.null(batch_outputs$best_pred_all) && nrow(batch_outputs$best_pred_all) > 0) {
+#       n_before <- nrow(batch_outputs$best_pred_all)
+#       batch_outputs$best_pred_all <- dplyr::inner_join(batch_outputs$best_pred_all, glance_lookup, by = keys)
+#       n_after <- nrow(batch_outputs$best_pred_all)
+#       message(sprintf("[save] best_pred_all FK join: %d -> %d rows", n_before, n_after))
+#       if (n_after == 0 && n_before > 0)
+#         message("[save] WARNING: FK join dropped ALL best_pred_all rows — likely wavelength mismatch.")
+#     }
+#     
+#     if (!is.null(batch_outputs$best_sample_se_all) && nrow(batch_outputs$best_sample_se_all) > 0) {
+#       n_before <- nrow(batch_outputs$best_sample_se_all)
+#       batch_outputs$best_sample_se_all <- dplyr::inner_join(batch_outputs$best_sample_se_all, glance_lookup, by = keys)
+#       n_after <- nrow(batch_outputs$best_sample_se_all)
+#       message(sprintf("[save] best_sample_se_all FK join: %d -> %d rows", n_before, n_after))
+#       if (n_after == 0 && n_before > 0)
+#         message("[save] WARNING: FK join dropped ALL best_sample_se_all rows — likely wavelength mismatch.")
+#     }
+#     
+#     if (!is.null(batch_outputs$best_standard_all) && nrow(batch_outputs$best_standard_all) > 0) {
+#       n_before <- nrow(batch_outputs$best_standard_all)
+#       batch_outputs$best_standard_all <- dplyr::inner_join(batch_outputs$best_standard_all, glance_lookup, by = keys)
+#       n_after <- nrow(batch_outputs$best_standard_all)
+#       message(sprintf("[save] best_standard_all FK join: %d -> %d rows", n_before, n_after))
+#       if (n_after == 0 && n_before > 0)
+#         message("[save] WARNING: FK join dropped ALL best_standard_all rows — likely wavelength mismatch.")
+#     }
+#     
+#     for (tbl_name in c("best_pred_all", "best_sample_se_all", "best_standard_all")) {
+#       batch_outputs[[tbl_name]] <- dplyr::inner_join(
+#         batch_outputs[[tbl_name]], glance_lookup, by = keys
+#       )
+#     }
+#     
+#     for (pair in list(
+#       list(df = "best_plate_all",     table = "best_plate_all"),
+#       list(df = "best_tidy_all",      table = "best_tidy_all"),
+#       list(df = "best_pred_all",      table = "best_pred_all"),
+#       list(df = "best_sample_se_all", table = "best_sample_se_all"),
+#       list(df = "best_standard_all",  table = "best_standard_all")
+#     )) {
+#       tryCatch(writeLines(
+#         paste0("Interpolated: saving ", pair$table, "...\nScope: ", scope_label),
+#         prog_file), error = function(e) NULL)
+#       
+#       upsert_best_curve(
+#         conn = bg_conn, df = batch_outputs[[pair$df]],
+#         schema = "madi_results", table = pair$table,
+#         notify = NULL, shiny_mode = FALSE
+#       )
+#     }
+#     
+#     list(ok = TRUE, n_curves = n_total, scope_label = scope_label)
+#   }, seed = TRUE)
+#   
+#   removeNotification("batch_sc_fit_notify")
+#   
+#   progress_poller <- reactivePoll(
+#     intervalMillis = 2000, session = session,
+#     checkFunc = function() {
+#       pf <- interp_progress_file()
+#       if (is.null(pf) || !file.exists(pf)) return(0)
+#       file.info(pf)$mtime
+#     },
+#     valueFunc = function() {
+#       pf <- interp_progress_file()
+#       if (is.null(pf) || !file.exists(pf)) return(NULL)
+#       tryCatch(paste(readLines(pf), collapse = "\n"), error = function(e) NULL)
+#     }
+#   )
+#   
+#   progress_observer <- observe({
+#     msg <- progress_poller()
+#     if (!is.null(msg) && nzchar(msg)) interp_progress_msg(msg)
+#   })
+#   
+#   .cleanup_interp <- function(label, type = "message", duration = 10) {
+#     progress_observer$destroy()
+#     pf <- interp_progress_file()
+#     if (!is.null(pf) && file.exists(pf)) file.remove(pf)
+#     interp_progress_file(NULL)
+#     interp_progress_msg(NULL)
+#     .remove_pending(interp_pending_scopes, scope, "interpolated")
+#     showNotification(label, type = type, duration = duration)
+#     concentrationUIRefresher(concentrationUIRefresher() + 1)
+#     is_batch_processing(FALSE)
+#   }
+#   
+#   promises::then(
+#     future_promise,
+#     onFulfilled = function(result) {
+#       .cleanup_interp(
+#         paste0("Interpolated completed for ", result$scope_label,
+#                " (", result$n_curves, " curves).")
+#       )
+#     },
+#     onRejected = function(err) {
+#       .cleanup_interp(
+#         paste0("Interpolated error: ", conditionMessage(err)),
+#         type = "error", duration = 15
+#       )
+#       message("Interpolated future rejected: ", conditionMessage(err))
+#     }
+#   )
+#   
+#   NULL
+# }
 
 # ============================================================================
 # .launch_mcmc — async helper (future + promises + progress polling)
@@ -1649,7 +1935,14 @@ lapply(c("study", "experiment", "plate"), function(s) {
   }
   
   id_set  <- best_glance_snapshot$best_glance_all_id
+  study <- study
+  proj <- proj
   n_total <- length(id_set)
+  
+  message("IDs: ", paste(id_set, collapse = ", "))
+  message("Study: ", study)
+  message("Project: ", proj)
+  
   
   combined_df_snapshot <- tryCatch(
     fetch_combined_mcmc(

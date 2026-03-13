@@ -582,31 +582,168 @@ plot_standard_curve <- function(best_fit,
   
   ### 4. RAW POINTS — pre-compute to avoid plotly lazy-eval scope issues
   plot_std <- best_fit$best_data
-  plot_std$.trace_name <- ifelse(
-    plot_std$stype == "S", "Standards",
-    ifelse(plot_std$stype == "B", "Geometric Mean of Blanks",
-           as.character(plot_std$stype))
+  # on correct scale 
+  if (is_display_log_independent) {
+    
+    glance_fda_lloq_conc <- log10(best_fit$best_glance$lloq_fda2018_concentration)
+    glance_fda_2018_uloq_conc <- log10(best_fit$best_glance$uloq_fda2018_concentration)
+    
+  } else {
+    
+    glance_fda_lloq_conc <- best_fit$best_glance$lloq_fda2018_concentration
+    glance_fda_2018_uloq_conc <- best_fit$best_glance$uloq_fda2018_concentration
+    
+  }
+  
+  plot_std$fda2018_class <- ifelse(
+    plot_std[[independent_variable]] >= glance_fda_lloq_conc &
+      plot_std[[independent_variable]] <= glance_fda_2018_uloq_conc,
+    "Standards (+ FDA 2018)",
+    "Standards (- FDA 2018)"
   )
   
+  std_in <- plot_std[
+    plot_std$stype == "S" &
+      plot_std$fda2018_class == "Standards (+ FDA 2018)", ]
+  
+  std_out <- plot_std[
+    plot_std$stype == "S" &
+      plot_std$fda2018_class == "Standards (- FDA 2018)", ]
+  
+  blanks <- plot_std[
+    plot_std$stype == "B", ]
+  
+  ### Standards inside FDA range (circle)
   p <- p %>% plotly::add_trace(
-    data   = plot_std,
-    x      = plot_std[[independent_variable]],
-    y      = plot_std[[response_variable]],
-    type   = "scatter",
-    mode   = "markers",
-    name   = ~.trace_name,
-    color  = ~stype,
-    colors = c("B" = "#c2b280", "S" = "#2b3d26"),
-    text   = ~paste0(
+    data = std_in,
+    x = std_in[[independent_variable]],
+    y = std_in[[response_variable]],
+    type = "scatter",
+    mode = "markers",
+    name = "Standards (+ FDA 2018)",
+    legendgroup = "standards",
+    marker = list(
+      color = "#2b3d26",
+      symbol = "circle"
+    ),
+    text = ~paste0(
       "<br>", format_assay_terms(independent_variable), ": ",
-      plot_std[[independent_variable]],
+      std_in[[independent_variable]],
       "<br>Dilution Factor: ", dilution,
       "<br>", format_assay_terms(response_variable), ": ",
-      plot_std[[response_variable]]
+      std_in[[response_variable]],
+      "<br> FDA 2018 Status: ",  gsub("Standards ", "", std_in$fda2018_class)
     ),
     hoverinfo = "text"
   )
   
+  ### Standards outside FDA range (triangle)
+  p <- p %>% plotly::add_trace(
+    data = std_out,
+    x = std_out[[independent_variable]],
+    y = std_out[[response_variable]],
+    type = "scatter",
+    mode = "markers",
+    name = "Standards (- FDA 2018)",
+    legendgroup = "standards",
+    marker = list(
+      color = "#2b3d26",
+      symbol = "triangle-up"
+    ),
+    text = ~paste0(
+      "<br>", format_assay_terms(independent_variable), ": ",
+      std_out[[independent_variable]],
+      "<br>Dilution Factor: ", dilution,
+      "<br>", format_assay_terms(response_variable), ": ",
+      std_out[[response_variable]],
+      "<br>FDA 2018 Status: ",  gsub("Standards ", "", std_out$fda2018_class)
+    ),
+    hoverinfo = "text"
+  )
+  
+  # blanks
+  p <- p %>% plotly::add_trace(
+    data = blanks,
+    x = blanks[[independent_variable]],
+    y = blanks[[response_variable]],
+    type = "scatter",
+    mode = "markers",
+    name = "Geometric Mean of Blanks",
+    marker = list(
+      color = "#c2b280",
+      symbol = "circle"
+    ),
+    text = ~paste0(
+      "<br>", format_assay_terms(independent_variable), ": ",
+      blanks[[independent_variable]],
+      "<br>Dilution Factor: ", dilution,
+      "<br>", format_assay_terms(response_variable), ": ",
+      blanks[[response_variable]]
+    ),
+    hoverinfo = "text"
+  )
+  # plot_std$marker_symbol <- "circle"
+  # 
+  # plot_std$marker_symbol[
+  #   plot_std$stype == "S" & plot_std$fda2018_class == "Standards - FDA 2018"
+  # ] <- "triangle-up"
+  # 
+  # plot_std$.trace_name <- ifelse(
+  #   plot_std$stype == "S", "Standards",
+  #   ifelse(plot_std$stype == "B",
+  #          "Geometric Mean of Blanks",
+  #          as.character(plot_std$stype))
+  # )
+  # plot_std$.trace_name <- ifelse(
+  #   plot_std$stype == "S", "Standards",
+  #   plot_std$fda2018_class,
+  #   ifelse(plot_std$stype == "B", "Geometric Mean of Blanks",
+  #          as.character(plot_std$stype))
+  # )
+  
+  # p <- p %>% plotly::add_trace(
+  #   data   = plot_std,
+  #   x      = plot_std[[independent_variable]],
+  #   y      = plot_std[[response_variable]],
+  #   type   = "scatter",
+  #   mode   = "markers",
+  #   name   = ~.trace_name,
+  #   color  = ~stype,
+  #   colors = c("B" = "#c2b280", "S" = "#2b3d26"),
+  #   text   = ~paste0(
+  #     "<br>", format_assay_terms(independent_variable), ": ",
+  #     plot_std[[independent_variable]],
+  #     "<br>Dilution Factor: ", dilution,
+  #     "<br>", format_assay_terms(response_variable), ": ",
+  #     plot_std[[response_variable]]
+  #   ),
+  #   hoverinfo = "text"
+  # )
+  # p <- p %>% plotly::add_trace(
+  #   data   = plot_std,
+  #   x      = plot_std[[independent_variable]],
+  #   y      = plot_std[[response_variable]],
+  #   type   = "scatter",
+  #   mode   = "markers",
+  #   name   = ~.trace_name,
+  #   color  = ~stype,
+  #   symbol = ~marker_symbol,
+  #   colors = c("B" = "#c2b280", "S" = "#2b3d26"),
+  #   symbols = c(
+  #     "circle" = "circle",
+  #     "triangle-up" = "triangle-up"
+  #   ),
+  #   text   = ~paste0(
+  #     "<br>", format_assay_terms(independent_variable), ": ",
+  #     plot_std[[independent_variable]],
+  #     "<br>Dilution Factor: ", dilution,
+  #     "<br>", format_assay_terms(response_variable), ": ",
+  #     plot_std[[response_variable]],
+  #     "<br>FDA 2018 Range: ", fda2018_class
+  #   ),
+  #   hoverinfo = "text"
+  # )
+  # 
   
   ### 5. FITTED CURVE
   
