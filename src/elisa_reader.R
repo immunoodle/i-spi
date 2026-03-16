@@ -1124,7 +1124,6 @@ build_elisa_plates_map <- function(combined_data, plate_map, plate_id_df,
   plates_map$timepoint_tissue_abbreviation  <- unique_plate_wells$timepoint_tissue_abbreviation
   plates_map$plateid                        <- unique_plate_wells$plateid
   plates_map$plate_id                       <- paste0(study_accession, "_", experiment_accession, "_", unique_plate_wells$plateid)
-  
   # Join plate_id from plate_id_df
   if ("plate_id" %in% names(plate_id_df)) {
     pid_lookup <- unique(plate_id_df[, c("plateid", "plate_id"), drop = FALSE])
@@ -1133,6 +1132,15 @@ build_elisa_plates_map <- function(combined_data, plate_map, plate_id_df,
   }
   
   cat("    → plates_map:", nrow(plates_map), "rows\n")
+  # propagate plate column 
+  plates_map$plate <- plates_map$plateid
+  
+  plates_map <- plates_map[
+    , append(names(plates_map)[names(plates_map) != "plate"],
+             "plate",
+             after = match("plateid", names(plates_map)))
+  ]
+  
   plates_map
 }
 

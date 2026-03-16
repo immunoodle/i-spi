@@ -44,7 +44,8 @@ fetch_antigen_parameters <- function(study_accession, experiment_accession, proj
   FROM madi_results.xmap_antigen_family
   WHERE project_id = {project_id}
   AND study_accession = '{study_accession}'
-  AND experiment_accession = '{experiment_accession}';
+  AND experiment_accession = '{experiment_accession}'
+  AND l_asy_constraint_method IS NOT NULL;
 ")
   antigen_constraints <- dbGetQuery(conn, query)
   return(antigen_constraints=antigen_constraints)
