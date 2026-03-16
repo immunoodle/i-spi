@@ -648,7 +648,8 @@ plot_standard_curve <- function(best_fit,
     legendgroup = "standards",
     marker = list(
       color = "#2b3d26",
-      symbol = "triangle-up"
+      symbol = "triangle-up",
+      size = 8
     ),
     text = ~paste0(
       "<br>", format_assay_terms(independent_variable), ": ",

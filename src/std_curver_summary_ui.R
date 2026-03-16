@@ -51,7 +51,8 @@ observeEvent(list(
 
 
 
-      antigen_families <- fetch_antigen_family_table(selected_study)
+      antigen_families <- fetch_antigen_family_table(selected_study, userWorkSpaceID(),
+                                                     selected_experiment)
 
 
       best_pred_all <- attach_antigen_familes(best_pred_all = best_pred_all,

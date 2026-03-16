@@ -214,6 +214,7 @@ render_study_parameters <- reactive({
   #req(study_config)
   # Get selected study
   selected_study <-  input$readxMap_study_accession#ifelse(input$readxMap_study_accession == "Click here", "reset", input$readxMap_study_accession)
+  selected_experiment <- input$readxMap_experiment_accession
   main_tab_selected <- input$main_tabs
   cat("Study in parameters: ")
   cat(selected_study)
@@ -241,7 +242,7 @@ render_study_parameters <- reactive({
   # antigen_families_rv(antigen_family_df)
 
   # Fetch data once
-  antigen_families_rv(fetch_antigen_family_table(selected_study))
+  antigen_families_rv(fetch_antigen_family_table(selected_study, userWorkSpaceID(), selected_experiment))
 
   # Debug output
   #cat("Antigen families data updated for:", selected_study, "\n")

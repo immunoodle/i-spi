@@ -1845,6 +1845,9 @@ observeEvent(input$upload_elisa_layout_file, {
     timepoint_map <- all_sheets[["timepoint"]]
     elisa_metadata <- all_sheets[["elisa_metadata"]]  # may be NULL for new templates
     
+    features <- data.frame(feature = unique(plates_map$feature))
+    antigen_list <- merge(antigen_list, features, by = NULL)
+    
     # Fix: readxl can guess assay_response as integer when cells carry no numFmt
     # style and all sampled values happen to look whole-number.  Force double here
     # so the column never reaches dbAppendTable as integer.
@@ -2237,7 +2240,7 @@ observeEvent(input$upload_elisa_batch_data, {
     # Upload antigen family
     if (!is.null(antigen_list) && nrow(antigen_list) > 0) {
       cat("  Uploading antigen family...\n")
-      upload_antigen_family(conn, antigen_list, study_accession, experiment_accession)
+      upload_antigen_family(conn, antigen_list, workspace_id, study_accession, experiment_accession)
     }
     
     # Upload planned visits

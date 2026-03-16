@@ -497,7 +497,12 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
 
   }
   # Update the experiment in antigen family
-  create_antigen_family_rows(input$readxMap_study_accession, input$readxMap_experiment_accession)
+  message("before create antigen family rows")
+  fetch_antigen_family_table(study_accession = input$readxMap_study_accession, 
+                             project_id = userWorkSpaceID(), experiment_accession = input$readxMap_experiment_accession,
+                             default_family = "All Antigens")
+  
+  # create_antigen_family_rows(input$readxMap_study_accession, input$readxMap_experiment_accession,userWorkSpaceID())
 
   remove_modal_progress(session = getDefaultReactiveDomain())
 

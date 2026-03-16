@@ -96,6 +96,8 @@ observeEvent(
       conn                 = conn
     )
     
+    #loaded_data_v <<- loaded_data
+    
     response_var <- loaded_data$response_var
     indep_var    <- loaded_data$indep_var
     
@@ -436,6 +438,15 @@ observeEvent(
       updateSelectInput(session, "sc_antigen_select", selected = NULL)
       
       response_var <- loaded_data$response_var  # "absorbance" for ELISA, "mfi" for Luminex
+      
+      cat("debug in antigen selector:\n")
+      print(response_var)
+      
+      print(selected_study)
+      print(selected_experiment)
+      print(input$sc_plate_select)
+      
+      print(head(loaded_data$standards))
 
       dat_antigen <- loaded_data$standards[loaded_data$standards$study_accession %in% selected_study &
                                           loaded_data$standards$experiment_accession %in% selected_experiment &
@@ -455,6 +466,15 @@ observeEvent(
 
     output$sc_source_selector <- renderUI({
       req(loaded_data$standards, input$sc_plate_select, input$sc_antigen_select)
+      
+      cat("debug in source selector:\n")
+      print(selected_study)
+      print(selected_experiment)
+      print(input$sc_plate_select)
+      print(input$sc_antigen_select)
+      
+      print(head(loaded_data$standards))
+      
 
       dat_source <- loaded_data$standards[
           loaded_data$standards$study_accession %in% selected_study &
@@ -480,42 +500,42 @@ observeEvent(
       )
     })
     
-    output$sc_antigen_selector <- renderUI({
-      req(loaded_data$standards$study_accession,
-          loaded_data$standards$experiment_accession)
-      
-      updateSelectInput(session, "sc_antigen_select", selected = NULL)
-      
-      dat <- loaded_data$standards[
-        loaded_data$standards$study_accession      %in% selected_study &
-          loaded_data$standards$experiment_accession %in% selected_experiment &
-          loaded_data$standards$plate_nom            %in% input$sc_plate_select, ]
-      dat <- dat[!is.na(dat$mfi), ]
-      req(nrow(dat) > 0)
-      
-      selectInput("sc_antigen_select",
-                  label   = "Antigen",
-                  choices = unique(dat$antigen))
-    })
+    # output$sc_antigen_selector <- renderUI({
+    #   req(loaded_data$standards$study_accession,
+    #       loaded_data$standards$experiment_accession)
+    #   
+    #   updateSelectInput(session, "sc_antigen_select", selected = NULL)
+    #   
+    #   dat <- loaded_data$standards[
+    #     loaded_data$standards$study_accession      %in% selected_study &
+    #       loaded_data$standards$experiment_accession %in% selected_experiment &
+    #       loaded_data$standards$plate_nom            %in% input$sc_plate_select, ]
+    #   dat <- dat[!is.na(dat$mfi), ]
+    #   req(nrow(dat) > 0)
+    #   
+    #   selectInput("sc_antigen_select",
+    #               label   = "Antigen",
+    #               choices = unique(dat$antigen))
+    # })
     
-    output$sc_source_selector <- renderUI({
-      req(loaded_data$standards, input$sc_plate_select, input$sc_antigen_select)
-      
-      dat <- loaded_data$standards[
-        loaded_data$standards$study_accession      %in% selected_study &
-          loaded_data$standards$experiment_accession %in% selected_experiment &
-          loaded_data$standards$plate_nom            %in% input$sc_plate_select &
-          loaded_data$standards$antigen              %in% input$sc_antigen_select, ]
-      req(nrow(dat) > 0)
-      
-      radioButtons(
-        "sc_source_select",
-        label    = "Source",
-        choices  = unique(dat$source),
-        selected = unique(dat$source)[1]
-      )
-    })
-    
+    # output$sc_source_selector <- renderUI({
+    #   req(loaded_data$standards, input$sc_plate_select, input$sc_antigen_select)
+    #   
+    #   dat <- loaded_data$standards[
+    #     loaded_data$standards$study_accession      %in% selected_study &
+    #       loaded_data$standards$experiment_accession %in% selected_experiment &
+    #       loaded_data$standards$plate_nom            %in% input$sc_plate_select &
+    #       loaded_data$standards$antigen              %in% input$sc_antigen_select, ]
+    #   req(nrow(dat) > 0)
+    #   
+    #   radioButtons(
+    #     "sc_source_select",
+    #     label    = "Source",
+    #     choices  = unique(dat$source),
+    #     selected = unique(dat$source)[1]
+    #   )
+    # })
+    # 
     
     # ------------------------------------------------------------------
     # Loading notification

@@ -308,48 +308,98 @@ fetch_study_timeperiods <- function(study_accession) {
 
 
 # Fetch Antigen Family Table
-fetch_antigen_family_table <- function(study_accession) {
-  if (study_accession == "reset") {
-    result_df <- NULL
-  } else {
-    query <- paste0("
-      SELECT xmap_antigen_family_id, study_accession, antigen, antigen_family
-      FROM madi_results.xmap_antigen_family
-      WHERE study_accession = '", study_accession, "'")
-
-    # Run the query and fetch the result as a data frame
-    result_df <- dbGetQuery(conn, query)
-
-    if (nrow(result_df) == 0 || is.null(result_df)) {
-      # check if result df is null or 0 rows and if so run additional query insert.
-      insert_query <- paste0("INSERT INTO madi_results.xmap_antigen_family(
-                	study_accession, antigen, antigen_family)
-                	SELECT DISTINCT '",study_accession,"', antigen, 'All Antigens'
-                	FROM madi_results.xmap_sample
-                	WHERE study_accession = '", study_accession, "'
-                	ORDER BY antigen;")
-      dbExecute(conn, insert_query)
-      result_df <- dbGetQuery(conn, query)
-    } else {
-      #}  ## Add new antigens to table
-      insert_query <- paste0("
-      INSERT INTO madi_results.xmap_antigen_family (study_accession, antigen, antigen_family)
-      SELECT DISTINCT s.study_accession, s.antigen, 'All Antigens'
-      FROM madi_results.xmap_sample s
-      WHERE s.study_accession = '", study_accession, "'
-        AND NOT EXISTS (
-          SELECT 1 FROM madi_results.xmap_antigen_family f
-          WHERE f.study_accession = s.study_accession
-            AND f.antigen = s.antigen
-        );")
-      dbExecute(conn, insert_query)
-
-      result_df <- dbGetQuery(conn, query)
-    }
-  } # end outer else statement
-
-  return(result_df)
-}
+# fetch_antigen_family_table <- function(study_accession, project_id) {
+#   if (study_accession == "reset") {
+#     result_df <- NULL
+#   } else {
+#     query <- paste0("
+#       SELECT xmap_antigen_family_id, study_accession, project_id, antigen, antigen_family
+#       FROM madi_results.xmap_antigen_family
+#       WHERE study_accession = '", study_accession, "'
+#       AND project_id = ", project_id, ";")
+#     
+#     result_df <- dbGetQuery(conn, query)
+#     
+#     if (nrow(result_df) == 0 || is.null(result_df)) {
+#       insert_query <- paste0("
+#         INSERT INTO madi_results.xmap_antigen_family
+#         (study_accession, project_id, antigen, antigen_family)
+#         SELECT DISTINCT
+#           '", study_accession, "',
+#           ", project_id, ",
+#           antigen,
+#           'All Antigens'
+#         FROM madi_results.xmap_sample
+#         WHERE study_accession = '", study_accession, "'
+#         ORDER BY antigen;")
+#       dbExecute(conn, insert_query)
+#       result_df <- dbGetQuery(conn, query)
+#     } else {
+#       insert_query <- paste0("
+#         INSERT INTO madi_results.xmap_antigen_family
+#         (study_accession, project_id, antigen, antigen_family)
+#         SELECT DISTINCT
+#           s.study_accession,
+#           ", project_id, ",
+#           s.antigen,
+#           'All Antigens'
+#         FROM madi_results.xmap_sample s
+#         WHERE s.study_accession = '", study_accession, "'
+#           AND NOT EXISTS (
+#             SELECT 1
+#             FROM madi_results.xmap_antigen_family f
+#             WHERE f.study_accession = s.study_accession
+#               AND f.project_id = ", project_id, "
+#               AND f.antigen = s.antigen
+#           );")
+#       dbExecute(conn, insert_query)
+#       result_df <- dbGetQuery(conn, query)
+#     }
+#   }
+#   return(result_df)
+# }
+# fetch_antigen_family_table <- function(study_accession) {
+#   if (study_accession == "reset") {
+#     result_df <- NULL
+#   } else {
+#     query <- paste0("
+#       SELECT xmap_antigen_family_id, study_accession, antigen, antigen_family
+#       FROM madi_results.xmap_antigen_family
+#       WHERE study_accession = '", study_accession, "'")
+# 
+#     # Run the query and fetch the result as a data frame
+#     result_df <- dbGetQuery(conn, query)
+# 
+#     if (nrow(result_df) == 0 || is.null(result_df)) {
+#       # check if result df is null or 0 rows and if so run additional query insert.
+#       insert_query <- paste0("INSERT INTO madi_results.xmap_antigen_family(
+#                 	study_accession, antigen, antigen_family)
+#                 	SELECT DISTINCT '",study_accession,"', antigen, 'All Antigens'
+#                 	FROM madi_results.xmap_sample
+#                 	WHERE study_accession = '", study_accession, "'
+#                 	ORDER BY antigen;")
+#       dbExecute(conn, insert_query)
+#       result_df <- dbGetQuery(conn, query)
+#     } else {
+#       #}  ## Add new antigens to table
+#       insert_query <- paste0("
+#       INSERT INTO madi_results.xmap_antigen_family (study_accession, antigen, antigen_family)
+#       SELECT DISTINCT s.study_accession, s.antigen, 'All Antigens'
+#       FROM madi_results.xmap_sample s
+#       WHERE s.study_accession = '", study_accession, "'
+#         AND NOT EXISTS (
+#           SELECT 1 FROM madi_results.xmap_antigen_family f
+#           WHERE f.study_accession = s.study_accession
+#             AND f.antigen = s.antigen
+#         );")
+#       dbExecute(conn, insert_query)
+# 
+#       result_df <- dbGetQuery(conn, query)
+#     }
+#   } # end outer else statement
+# 
+#   return(result_df)
+# }
 
 
 ## Delete Plate from the SQL database and all associated data
