@@ -2163,8 +2163,8 @@ prepare_batch_bead_assay_controls <- function(controls_plate_map, combined_plate
   return(controls_to_upload)
 }
 
-prepare_batch_antigen_family <- function(antigen_import_list) {
-  antigen_import_list_df <- antigen_import_list[, c("study_name", "experiment_name", "antigen_abbreviation", "feature","antigen_family", 
+prepare_batch_antigen_family <- function(antigen_import_list, default_family = "All Antigens") {
+  antigen_import_list_df <- antigen_import_list[, c("project_id", "study_name", "experiment_name", "antigen_abbreviation", "feature","antigen_family", 
                                                     "standard_curve_max_concentration", "antigen_name", "virus_bacterial_strain", "antigen_source",
                                       "catalog_number", "l_asy_min_constraint", "l_asy_max_constraint", "l_asy_constraint_method")]
   names(antigen_import_list_df)[names(antigen_import_list_df) == "study_name"] <- "study_accession"
@@ -2172,6 +2172,15 @@ prepare_batch_antigen_family <- function(antigen_import_list) {
   names(antigen_import_list_df)[names(antigen_import_list_df) == "standard_curve_max_concentration"] <- "standard_curve_concentration"
   names(antigen_import_list_df)[names(antigen_import_list_df) == "antigen_abbreviation"] <- "antigen"
 
+  # --- Step 3: Backfill empty/NA antigen_family values in the returned data ---
+  if (nrow(antigen_import_list_df) > 0 && "antigen_family" %in% names(antigen_import_list_df)) {
+    na_or_empty <- is.na(antigen_import_list_df$antigen_family) |
+      trimws(as.character(antigen_import_list_df$antigen_family)) == ""
+    if (any(na_or_empty)) {
+      antigen_import_list_df$antigen_family[na_or_empty] <- default_family
+    }
+  }
+  
   # features <- data.frame(feature = unique(samples_to_upload$feature))
   # antigen_import_list_df <- merge(antigen_import_list_df, features, by = NULL)
   

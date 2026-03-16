@@ -602,7 +602,7 @@ observeEvent(
         drop = FALSE]
       req(nrow(antigen_constraints) > 0)
       
-      result <<- select_antigen_plate(
+      result <- select_antigen_plate(
         loaded_data          = loaded_data,
         study_accession      = selected_study,
         experiment_accession = selected_experiment,
