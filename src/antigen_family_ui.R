@@ -22,62 +22,49 @@ data_summary <- list()
 std_curve_tab_active <- reactiveVal(FALSE)
 
 
-fetch_antigen_family_table <- function(study_accession, project_id, experiment_accession, default_family = "All Antigens") {
-  if (study_accession == "reset") {
-    return(NULL)
-  }
+fetch_antigen_family_table <- function(study_accession, project_id, experiment_accession = NULL, default_family = "All Antigens") {
   
-  # Quoted values for safe SQL interpolation
-  q_study   <- dbQuoteString(conn, study_accession)
-  q_exp     <- dbQuoteString(conn, experiment_accession)
-  q_family  <- dbQuoteString(conn, default_family)
+  q_study   <- DBI::dbQuoteString(conn, study_accession)
   q_project <- as.integer(project_id)
   
-  # --- Step 1: Insert any antigens from xmap_sample that are missing in xmap_antigen_family ---
-  # This handles BOTH the "no rows at all" and "some rows missing" cases in one pass.
-  insert_query <- paste0("
-    INSERT INTO madi_results.xmap_antigen_family
-      (study_accession, project_id, experiment_accession, antigen, feature, antigen_family, standard_curve_concentration)
-    SELECT DISTINCT
-      s.study_accession,
-      ", q_project, ",
-      ", q_exp, ",
-      s.antigen,
-      s.feature, 
-      ", q_family, ",
-      10000
-    FROM madi_results.xmap_sample s
-    WHERE s.study_accession = ", q_study, "
-      AND NOT EXISTS (
-        SELECT 1
-        FROM madi_results.xmap_antigen_family f
-        WHERE f.study_accession = s.study_accession
-          AND f.project_id = ", q_project, "
-          AND f.experiment_accession = ", q_exp, "
-          AND f.antigen = s.antigen
-          AND f.feature = s.feature
-      );")
+  # Normalize placeholder
+  if (is.null(experiment_accession) || experiment_accession == "Click here") {
+    experiment_accession <- NULL
+  }
   
-  dbExecute(conn, insert_query)
+  # Base WHERE clause
+  where_clause <- paste0("
+      study_accession = ", q_study, "
+      AND project_id = ", q_project, "
+      AND l_asy_constraint_method IS NOT NULL
+  ")
   
-  # --- Step 2: Fetch the full result set (always exactly one query) ---
+  # Add experiment filter only if provided
+  if (!is.null(experiment_accession) && nzchar(experiment_accession)) {
+    q_exp <- DBI::dbQuoteString(conn, experiment_accession)
+    where_clause <- paste0(where_clause, "
+      AND experiment_accession = ", q_exp)
+  }
+  
   select_query <- paste0("
     SELECT xmap_antigen_family_id, study_accession, project_id, experiment_accession,
            antigen, feature, antigen_family, standard_curve_concentration,
            antigen_name, virus_bacterial_strain, antigen_source, catalog_number,
-           l_asy_min_constraint, l_asy_max_constraint, l_asy_constraint_method, model_form_list,
-           pcov_threshold
+           l_asy_min_constraint, l_asy_max_constraint, l_asy_constraint_method,
+           model_form_list, pcov_threshold
     FROM madi_results.xmap_antigen_family
-    WHERE study_accession = ", q_study, "
-      AND project_id = ", q_project, "
-      AND experiment_accession = ", q_exp, ";")
+    WHERE ", where_clause, ";
+  ")
   
-  result_df <- dbGetQuery(conn, select_query)
+  print(select_query)
   
-  # --- Step 3: Backfill empty/NA antigen_family values in the returned data ---
+  result_df <- DBI::dbGetQuery(conn, select_query)
+  
+  # Backfill missing antigen_family
   if (nrow(result_df) > 0 && "antigen_family" %in% names(result_df)) {
     na_or_empty <- is.na(result_df$antigen_family) |
       trimws(as.character(result_df$antigen_family)) == ""
+    
     if (any(na_or_empty)) {
       result_df$antigen_family[na_or_empty] <- default_family
     }
@@ -85,6 +72,77 @@ fetch_antigen_family_table <- function(study_accession, project_id, experiment_a
   
   return(result_df)
 }
+# fetch_antigen_family_table <- function(study_accession, project_id, experiment_accession, default_family = "All Antigens") {
+#   # if (study_accession == "reset") {
+#   #   return(NULL)
+#   # }
+#   # 
+#   # # Quoted values for safe SQL interpolation
+#   q_study   <- dbQuoteString(conn, study_accession)
+#   q_exp     <- dbQuoteString(conn, experiment_accession)
+#   q_family  <- dbQuoteString(conn, default_family)
+#   q_project <- as.integer(project_id)
+#   
+#   print("Q_experiment")
+#   print(q_exp)
+#   # 
+#   # # --- Step 1: Insert any antigens from xmap_sample that are missing in xmap_antigen_family ---
+#   # # This handles BOTH the "no rows at all" and "some rows missing" cases in one pass.
+#   # insert_query <- paste0("
+#   #   INSERT INTO madi_results.xmap_antigen_family
+#   #     (study_accession, project_id, experiment_accession, antigen, feature, antigen_family, standard_curve_concentration)
+#   #   SELECT DISTINCT
+#   #     s.study_accession,
+#   #     ", q_project, ",
+#   #     ", q_exp, ",
+#   #     s.antigen,
+#   #     s.feature, 
+#   #     ", q_family, ",
+#   #     10000
+#   #   FROM madi_results.xmap_sample s
+#   #   WHERE s.study_accession = ", q_study, "
+#   #     AND NOT EXISTS (
+#   #       SELECT 1
+#   #       FROM madi_results.xmap_antigen_family f
+#   #       WHERE f.study_accession = s.study_accession
+#   #         AND f.project_id = ", q_project, "
+#   #         AND f.experiment_accession = ", q_exp, "
+#   #         AND f.antigen = s.antigen
+#   #         AND f.feature = s.feature
+#   #     );")
+#   # 
+#   # dbExecute(conn, insert_query)
+#   # 
+#   # --- Step 2: Fetch the full result set (always exactly one query) ---
+#   select_query <- paste0("
+#     SELECT xmap_antigen_family_id, study_accession, project_id, experiment_accession,
+#            antigen, feature, antigen_family, standard_curve_concentration,
+#            antigen_name, virus_bacterial_strain, antigen_source, catalog_number,
+#            l_asy_min_constraint, l_asy_max_constraint, l_asy_constraint_method, model_form_list,
+#            pcov_threshold
+#     FROM madi_results.xmap_antigen_family
+#     WHERE study_accession = ", q_study, "
+#       AND project_id = ", q_project, "
+#       AND experiment_accession = ", q_exp, "
+#       AND l_asy_constraint_method is not NULL;")
+#   
+#   result_df <- dbGetQuery(conn, select_query)
+#   
+#   # --- Step 3: Backfill empty/NA antigen_family values in the returned data ---
+#   if (nrow(result_df) > 0 && "antigen_family" %in% names(result_df)) {
+#     na_or_empty <- is.na(result_df$antigen_family) |
+#       trimws(as.character(result_df$antigen_family)) == ""
+#     if (any(na_or_empty)) {
+#       result_df$antigen_family[na_or_empty] <- default_family
+#     }
+#   }
+#   
+#   return(result_df)
+# }
+
+
+
+
 # fetch_antigen_family_table <- function(study_accession, project_id, experiment_accession, default_family = "All Antigens") {
 #   if (study_accession == "reset") {
 #     result_df <- NULL

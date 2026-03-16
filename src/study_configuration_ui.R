@@ -219,6 +219,8 @@ render_study_parameters <- reactive({
   cat("Study in parameters: ")
   cat(selected_study)
   cat(main_tab_selected)
+  cat("experiment:")
+  cat(selected_experiment)
  if (selected_study != "Click here") {
    cat("in study not click here")
   study_sources <- fetch_study_sources(study_accession = selected_study)
