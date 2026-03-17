@@ -819,7 +819,7 @@ observeEvent(
               is_log_response            = study_params$is_log_response,
               is_log_concentration       = study_params$is_log_independent,
               undiluted_sc_concentration = plate$antigen_settings$standard_curve_concentration,
-              cv_threshold               = 15, # pCoV threshold 
+              cv_threshold               = plate$antigen_settings$pcov_threshold, #15 # pCoV threshold 
               lloq_cv_threshold          = 25,  # if it is the lowest dilution factor/highest concentration use this. 
               accuracy_lo                = 80,
               accuracy_hi                = 120,
