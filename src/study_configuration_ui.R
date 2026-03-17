@@ -130,21 +130,20 @@ observeEvent(input$antigen_family_table_cell_edit, {
     }, error = function(e) {
       showNotification(paste("Error updating l_asy_max_constraint:", e$message), type = "error")
     })
-   }
-  #else if (col_name == "l_asy_constraint_method") {
-  #   new_value <- as.character(new_value)
-  #   update_query <- "UPDATE madi_results.xmap_antigen_family
-  #                    SET l_asy_constraint_method = $1 WHERE xmap_antigen_family_id = $2"
-  #
-  #   tryCatch({
-  #     dbExecute(conn, update_query, params = list(new_value, row_id))
-  #     current_data$l_asy_constraint_method[row_num] <- new_value
-  #     antigen_families_rv(current_data)
-  #     showNotification("l_asy_constraint_method updated successfully", type = "message")
-  #   }, error = function(e) {
-  #     showNotification(paste("Error updating l_asy_constraint_method:", e$message), type = "error")
-  #   })
-  # }
+   } else if (col_name == "pcov_threshold") {
+      new_value <- as.character(new_value)
+      update_query <- "UPDATE madi_results.xmap_antigen_family
+                       SET pcov_threshold = $1 WHERE xmap_antigen_family_id = $2"
+  
+      tryCatch({
+        dbExecute(conn, update_query, params = list(new_value, row_id))
+        current_data$pcov_threshold[row_num] <- new_value
+        antigen_families_rv(current_data)
+        showNotification("pcov_threshold updated successfully", type = "message")
+      }, error = function(e) {
+        showNotification(paste("Error updating pcov_threshold:", e$message), type = "error")
+      })
+    }
 })
 
 observeEvent(input$antigen_family_dropdown_edit, {
@@ -175,7 +174,22 @@ observeEvent(input$antigen_family_dropdown_edit, {
     }, error = function(e) {
       showNotification(paste("Error updating l_asy_constraint_method:", e$message), type = "error")
     })
-   }
+  } else if (col_name == "model_form_list") {
+    new_value <- as.character(new_value)
+    update_query <- "
+      UPDATE madi_results.xmap_antigen_family
+      SET model_form_list = $1
+      WHERE xmap_antigen_family_id = $2
+    "
+    tryCatch({
+      dbExecute(conn, update_query, params = list(new_value, row_id))
+      current_data$model_form_list[row_num] <- new_value
+      antigen_families_rv(current_data)
+      showNotification("model_form_list updated successfully", type = "message")
+    }, error = function(e) {
+      showNotification(paste("Error updating model_form_list:", e$message), type = "error")
+    })
+  }
 })
 # observeEvent(input$antigen_family_table_cell_edit, {
 #   info <- input$antigen_family_table_cell_edit
@@ -396,19 +410,101 @@ render_study_parameters <- reactive({
     #     title = "Antigen Family Parameters",
 
       #HTML("<h4><strong>Antigen Family</strong></h4>"),
-      HTML(paste0("<h4>Order the antigen family and antigens from most important antigen family and antigen from left to right. </h4>")),
-      orderInput(
-        inputId = antigen_family_order_params$param_name,
-        label = antigen_family_order_params$param_label,
-        items = default_db_antigen_family_order#unique(antigen_families_rv()$antigen_family)
+      # HTML(paste0("<h4>Order the antigen family and antigens from most important antigen family and antigen from left to right. </h4>")),
+      # orderInput(
+      #   inputId = antigen_family_order_params$param_name,
+      #   label = antigen_family_order_params$param_label,
+      #   items = default_db_antigen_family_order#unique(antigen_families_rv()$antigen_family)
+      # ),
+      # uiOutput("antigen_family_order_warning"),
+      # orderInput(
+      #   inputId = antigen_order_params$param_name,
+      #   label = antigen_order_params$param_label,
+      #   items = default_db_antigen_order# unique(antigen_families_rv()$antigen)
+      # ),
+      # uiOutput("antigen_order_warning"),
+      # tags$table(
+      #   tags$tr(
+      #     tags$td(
+      #       numericInputIcon(
+      #         "study_pcov_threshold",
+      #         "pCoV Threshold",
+      #         value = 15,
+      #         min = 0,
+      #         max = 100,
+      #         step = 1
+      #       )
+      #     ),
+      #     tags$td(
+      #       "Set a study-wide precision threshold (0 - 100%) to define acceptable uncertainty in estimated concentrations.
+      #  When set it is applied for all antigens. For additional granularity, set the threshold for individual antigens
+      #  in the antigen settings."
+      #     )
+      #   )
+      # ),
+      tags$table(
+        style = "width: 100%; border-collapse: collapse; border: 1px solid #ddd;",
+        
+        # ---- Antigen Family ----
+        tags$tr(
+          tags$td(
+            style = "border: 1px solid #ddd; padding: 10px; width: 50%; vertical-align: top;",
+            orderInput(
+              inputId = antigen_family_order_params$param_name,
+              label = antigen_family_order_params$param_label,
+              items = default_db_antigen_family_order
+            ),
+            br(),
+            uiOutput("antigen_family_order_warning")
+          ),
+          tags$td(
+            style = "border: 1px solid #ddd; padding: 10px; width: 50%; vertical-align: top;",
+            HTML("<strong>Antigen Family Order:</strong><br>
+              Order antigen families from most to least important, from left to right.")
+          )
+        ),
+        
+        # ---- Antigen ----
+        tags$tr(
+          tags$td(
+            style = "border: 1px solid #ddd; padding: 10px; vertical-align: top;",
+            orderInput(
+              inputId = antigen_order_params$param_name,
+              label = antigen_order_params$param_label,
+              items = default_db_antigen_order
+            ),
+            br(),
+            uiOutput("antigen_order_warning")
+          ),
+          tags$td(
+            style = "border: 1px solid #ddd; padding: 10px; vertical-align: top;",
+            HTML("<strong>Antigen Order:</strong><br>
+              Order antigens based on their importance for analysis. Place the most important on the left and the least important on the right.")
+          )
+        ),
+        
+        # ---- Threshold ----
+        tags$tr(
+          tags$td(
+            style = "border: 1px solid #ddd; padding: 10px; vertical-align: top;",
+            numericInputIcon(
+              "study_pcov_threshold",
+              "pCoV Threshold",
+              value = 15,
+              min = 0,
+              max = 100,
+              step = 1
+            )
+          ),
+          tags$td(
+            style = "border: 1px solid #ddd; padding: 10px; vertical-align: top;",
+            HTML("<strong>Precision Threshold:</strong><br>
+              Set a study-wide precision threshold (0–100%) to define acceptable uncertainty in estimated concentrations.
+              When set, it applies to all antigens. For additional granularity, define thresholds for individual antigens
+              in the table below.")
+          )
+        )
       ),
-      uiOutput("antigen_family_order_warning"),
-      orderInput(
-        inputId = antigen_order_params$param_name,
-        label = antigen_order_params$param_label,
-        items = default_db_antigen_order# unique(antigen_families_rv()$antigen)
-      ),
-      uiOutput("antigen_order_warning"),
       div(
         style = "width: 100%; padding: 0 15px;",  # Added container styling
         span(
@@ -439,55 +535,73 @@ render_study_parameters <- reactive({
   })
 
 
-
   output$antigen_family_table <- renderDT({
     req(antigen_families_rv())
-    #req(study_config)
-    # study_config <- study_config[study_config$param_group == "antigen_family",]
-    # antigen_family_order_params <- study_config[study_config$param_name == "antigen_family_order",]
-    # antigen_order_params <- study_config[study_config$param_name == "antigen_order",]
-    #
-    # antigen_family_order <- strsplit(antigen_family_order_params$param_character_value, ",")[[1]]
-    # antigen_order <- strsplit(antigen_order_params$param_character_value, ",")[[1]]
-    #
-    #
-     cat("Rendering datatable\n")
-    # antigen_family_df <- antigen_families_rv()
-    # antigen_family_df$antigen_family <- factor(antigen_family_df$antigen_family, levels = antigen_family_order)
-    # antigen_family_df <- antigen_family_df[order(antigen_family_df$antigen_family), , drop = FALSE]
-    #
-    # antigen_family_df$antigen <- factor(antigen_family_df$antigen, levels = antigen_order)
-    # antigen_family_df <- antigen_family_df[order(antigen_family_df$antigen), , drop = FALSE]
-    # antigen_families_rv(antigen_family_df)
-
+    cat("Rendering datatable\n")
+    
     datatable(antigen_families_rv(),
               options = list(
                 pageLength = 50,
                 scrollX = TRUE,
                 scrollY = "400px",
-                autoWidth = TRUE,  # Added this
-                responsive = TRUE, # Added this
+                autoWidth = TRUE,
+                responsive = TRUE,
                 order = list(list(0, 'asc')),
                 columnDefs = list(
                   list(className = 'dt-center', targets = '_all'),
+                  # ---- existing l_asy_constraint_method dropdown ----
                   list(
                     targets = which(colnames(antigen_families_rv()) == "l_asy_constraint_method"),
                     render = JS("
-                                  function(data, type, row, meta) {
-                                    var opts = ['default','user_defined','range_of_blanks', 'geometric_mean_of_blanks'];
-                                    if (type === 'display') {
-                                      var select = '<select>';
-                                      for (var i = 0; i < opts.length; i++) {
-                                        var selected = (data == opts[i]) ? 'selected' : '';
-                                        select += '<option value=\"' + opts[i] + '\" ' + selected + '>' + opts[i] + '</option>';
-                                      }
-                                      select += '</select>';
-                                      return select;
-                                    }
-                                    return data;
-                                  }
-                                ")
-                    )
+                    function(data, type, row, meta) {
+                      var opts = ['default','user_defined','range_of_blanks', 'geometric_mean_of_blanks'];
+                      if (type === 'display') {
+                        var select = '<select class=\"dt-select\">';
+                        for (var i = 0; i < opts.length; i++) {
+                          var selected = (data == opts[i]) ? 'selected' : '';
+                          select += '<option value=\"' + opts[i] + '\" ' + selected + '>' + opts[i] + '</option>';
+                        }
+                        select += '</select>';
+                        return select;
+                      }
+                      return data;
+                    }
+                  ")
+                  ),
+                  # ---- NEW model_form_list dropdown ----
+                  list(
+                    targets = which(colnames(antigen_families_rv()) == "model_form_list"),
+                    render = JS("
+                    function(data, type, row, meta) {
+                      var opts = [
+                        'Y5,Yd5,Y4,Yd4,Ygomp4',   // default: all models
+                        'Y5',
+                        'Yd5',
+                        'Y4',
+                        'Yd4',
+                        'Ygomp4'
+                      ];
+                      var labels = [
+                        'Y5, Yd5, Y4, Yd4, Ygomp4',
+                        'Y5',
+                        'Yd5',
+                        'Y4',
+                        'Yd4',
+                        'Ygomp4'
+                      ];
+                      if (type === 'display') {
+                        var select = '<select class=\"dt-select\">';
+                        for (var i = 0; i < opts.length; i++) {
+                          var selected = (data == opts[i]) ? 'selected' : '';
+                          select += '<option value=\"' + opts[i] + '\" ' + selected + '>' + labels[i] + '</option>';
+                        }
+                        select += '</select>';
+                        return select;
+                      }
+                      return data;
+                    }
+                  ")
+                  )
                 )
               ),
               editable = list(
@@ -495,27 +609,105 @@ render_study_parameters <- reactive({
                 disable = list(columns = c(0:4))
               ),
               selection = 'none',
-              class = 'cell-border stripe hover',  # Added styling classes
+              class = 'cell-border stripe hover',
+              # ---- updated callback to handle BOTH dropdowns ----
               callback = JS("
-    $(document).on('change', '#antigen_family_table table select', function() {
-      var tbl = $('#antigen_family_table table').DataTable();
-      var cell = tbl.cell($(this).closest('td'));
-      var rowIndex = cell.index().row;
-      var colIndex = cell.index().column;
-      var value = $(this).val();
-      Shiny.setInputValue('antigen_family_dropdown_edit', {
-        row: rowIndex + 1,
-        col: colIndex,
-        value: value,
-        rand: Math.random()
-      });
-    });
-  ")
+              $(document).on('change', '#antigen_family_table table select', function() {
+                var tbl = $('#antigen_family_table table').DataTable();
+                var cell = tbl.cell($(this).closest('td'));
+                var rowIndex = cell.index().row;
+                var colIndex = cell.index().column;
+                var value = $(this).val();
+                Shiny.setInputValue('antigen_family_dropdown_edit', {
+                  row: rowIndex + 1,
+                  col: colIndex,
+                  value: value,
+                  rand: Math.random()
+                });
+              });
+            ")
     ) %>%
-      formatStyle(columns = 1:ncol(antigen_families_rv()),  # Added column styling
+      formatStyle(columns = 1:ncol(antigen_families_rv()),
                   backgroundColor = 'white',
                   borderBottom = '1px solid #ddd')
   })
+
+  # output$antigen_family_table <- renderDT({
+  #   req(antigen_families_rv())
+  #   #req(study_config)
+  #   # study_config <- study_config[study_config$param_group == "antigen_family",]
+  #   # antigen_family_order_params <- study_config[study_config$param_name == "antigen_family_order",]
+  #   # antigen_order_params <- study_config[study_config$param_name == "antigen_order",]
+  #   #
+  #   # antigen_family_order <- strsplit(antigen_family_order_params$param_character_value, ",")[[1]]
+  #   # antigen_order <- strsplit(antigen_order_params$param_character_value, ",")[[1]]
+  #   #
+  #   #
+  #    cat("Rendering datatable\n")
+  #   # antigen_family_df <- antigen_families_rv()
+  #   # antigen_family_df$antigen_family <- factor(antigen_family_df$antigen_family, levels = antigen_family_order)
+  #   # antigen_family_df <- antigen_family_df[order(antigen_family_df$antigen_family), , drop = FALSE]
+  #   #
+  #   # antigen_family_df$antigen <- factor(antigen_family_df$antigen, levels = antigen_order)
+  #   # antigen_family_df <- antigen_family_df[order(antigen_family_df$antigen), , drop = FALSE]
+  #   # antigen_families_rv(antigen_family_df)
+  # 
+  #   datatable(antigen_families_rv(),
+  #             options = list(
+  #               pageLength = 50,
+  #               scrollX = TRUE,
+  #               scrollY = "400px",
+  #               autoWidth = TRUE,  # Added this
+  #               responsive = TRUE, # Added this
+  #               order = list(list(0, 'asc')),
+  #               columnDefs = list(
+  #                 list(className = 'dt-center', targets = '_all'),
+  #                 list(
+  #                   targets = which(colnames(antigen_families_rv()) == "l_asy_constraint_method"),
+  #                   render = JS("
+  #                                 function(data, type, row, meta) {
+  #                                   var opts = ['default','user_defined','range_of_blanks', 'geometric_mean_of_blanks'];
+  #                                   if (type === 'display') {
+  #                                     var select = '<select>';
+  #                                     for (var i = 0; i < opts.length; i++) {
+  #                                       var selected = (data == opts[i]) ? 'selected' : '';
+  #                                       select += '<option value=\"' + opts[i] + '\" ' + selected + '>' + opts[i] + '</option>';
+  #                                     }
+  #                                     select += '</select>';
+  #                                     return select;
+  #                                   }
+  #                                   return data;
+  #                                 }
+  #                               ")
+  #                   )
+  #               )
+  #             ),
+  #             editable = list(
+  #               target = 'cell',
+  #               disable = list(columns = c(0:4))
+  #             ),
+  #             selection = 'none',
+  #             class = 'cell-border stripe hover',  # Added styling classes
+  #             callback = JS("
+  #   $(document).on('change', '#antigen_family_table table select', function() {
+  #     var tbl = $('#antigen_family_table table').DataTable();
+  #     var cell = tbl.cell($(this).closest('td'));
+  #     var rowIndex = cell.index().row;
+  #     var colIndex = cell.index().column;
+  #     var value = $(this).val();
+  #     Shiny.setInputValue('antigen_family_dropdown_edit', {
+  #       row: rowIndex + 1,
+  #       col: colIndex,
+  #       value: value,
+  #       rand: Math.random()
+  #     });
+  #   });
+  # ")
+  #   ) %>%
+  #     formatStyle(columns = 1:ncol(antigen_families_rv()),  # Added column styling
+  #                 backgroundColor = 'white',
+  #                 borderBottom = '1px solid #ddd')
+  # })
 
   output$bead_count_config <- renderUI({
    req(study_config)
@@ -1693,6 +1885,7 @@ observeEvent(input$save_antigen_family_settings, {
 
   req(input$antigen_family_order)
   req(input$antigen_order)
+  req(input$study_pcov_threshold)
   cat("Antigen Family settings saved")
 
   antigen_family_order_str <- paste0("'", paste(input$antigen_family_order, collapse = ","), "'")
@@ -1713,6 +1906,21 @@ observeEvent(input$save_antigen_family_settings, {
   AND param_user = '", currentuser(), "';")
 
   dbExecute(conn, update_antigen_order)
+  
+  update_study_pcov_threshold <- paste0("UPDATE madi_results.xmap_antigen_family
+                                        SET pcov_threshold = ",input$study_pcov_threshold, "
+                                        WHERE study_accession = '",input$readxMap_study_accession,"'
+                                        AND project_id = ", userWorkSpaceID(), "
+                                        AND l_asy_constraint_method is not null;"
+                                        )
+  dbExecute(conn, update_study_pcov_threshold)
+  
+  antigen_families_rv(
+    fetch_antigen_family_table(
+      input$readxMap_study_accession,
+      userWorkSpaceID()
+    )
+  )
 
   showNotification("Antigen Family Parameters updated successfully", type = "message")
 
