@@ -220,7 +220,7 @@ output$landing_page_ui <- renderUI({
         HTML(
           'For more detailed documentation on I-SPI please visit
    <a href="https://immunoplex.org/" target="_blank">Immunoplex</a>.
-   All the Immunoodle tools are available through
+   All the Immunoplex tools are available through
    <a href="https://github.com/immunoplex/deployment" target="_blank">GitHub</a>.
           To download the source code for I-SPI please visit the <a href = "https://github.com/immunoplex/i-spi", target="_blank"> I-SPI repository</a>.
           We welcome feedback which can be given on the <a href = "https://github.com/immunoplex/i-spi/issues", target ="_blank"> issues page </a> of our repository for I-SPI.'
