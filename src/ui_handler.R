@@ -219,21 +219,16 @@ output$landing_page_ui <- renderUI({
         br(),
         HTML(
           'For more detailed documentation on I-SPI please visit
-   <a href="https://immunoodle.org/" target="_blank">Immunoodle</a>.
+   <a href="https://immunoplex.org/" target="_blank">Immunoplex</a>.
    All the Immunoodle tools are available through
-   <a href="https://github.com/immunoodle/deployment" target="_blank">GitHub</a>.
-          To download the source code for I-SPI please visit the <a href = "https://github.com/immunoodle/i-spi", target="_blank"> I-SPI repository</a>.
-          We welcome feedback which can be given on the <a href = "https://github.com/immunoodle/i-spi/issues", target ="_blank"> issues page </a> of our repository for I-SPI.'
+   <a href="https://github.com/immunoplex/deployment" target="_blank">GitHub</a>.
+          To download the source code for I-SPI please visit the <a href = "https://github.com/immunoplex/i-spi", target="_blank"> I-SPI repository</a>.
+          We welcome feedback which can be given on the <a href = "https://github.com/immunoplex/i-spi/issues", target ="_blank"> issues page </a> of our repository for I-SPI.'
         ),
         br(),
         br(),
         p(strong("Citing I-SPI")),
         p("Citation information is coming soon.")
-        # p("For more detailed documentation on I-SPI please visit ",
-        # a("Immunoodle", href = "https://immunoodle.org/", target = "_blank"), ".All the Immunoodle tools are available through",
-        # a("GitHub", href = "https://github.com/immunoodle/deployment"), ".", target = "_blank")
-
-
       )
     )
     )
