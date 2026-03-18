@@ -28,6 +28,10 @@ observeEvent(list(
                                              experiment_accession = selected_experiment,
                                              project_id = userWorkSpaceID(),
                                              conn = conn)
+      
+      best_plate_all <- enrich_source_with_wavelength(best_plate_all)
+      
+      
 
       # best_standard_all <- fetch_best_standard_all(study_accession = selected_study,
       #                                              experiment_accession = selected_experiment,
@@ -37,7 +41,8 @@ observeEvent(list(
                                                            param_user = currentuser(),
                                                            project_id = userWorkSpaceID(),
                                                            conn = conn)
-
+      
+      best_standard_all <- enrich_source_with_wavelength(best_standard_all)
 
 
       # best_pred_all <- fetch_best_pred_all(study_accession = selected_study,
@@ -48,6 +53,9 @@ observeEvent(list(
                                                    param_user = currentuser(),
                                                    project_id = userWorkSpaceID(),
                                                    conn = conn)
+      
+
+      #best_pred_all <- align_source_prefixes(best_standard_all, best_pred_all)
 
 
 
@@ -57,6 +65,7 @@ observeEvent(list(
 
       best_pred_all <- attach_antigen_familes(best_pred_all = best_pred_all,
                                               antigen_families = antigen_families)
+      best_pred_all <- enrich_source_with_wavelength(best_pred_all)
 
       best_pred_all_2 <- best_pred_all
 
@@ -65,6 +74,8 @@ observeEvent(list(
                                                        param_user = currentuser(),
                                                        project_id = userWorkSpaceID(),
                                                        conn = conn)
+      best_glance_all <- enrich_source_with_wavelength(best_glance_all)
+     # best_glance_all <- align_source_prefixes(best_standard_all, best_glance_all)
 
       # best_sample_se_all <- fetch_best_sample_se_all(study_accession = selected_study,
       #                                            experiment_accession = selected_experiment,
@@ -75,9 +86,10 @@ observeEvent(list(
                                                              param_user = currentuser(),
                                                              project_id = userWorkSpaceID(),
                                                              conn = conn)
+      best_sample_se_all <- enrich_source_with_wavelength(best_sample_se_all)
 
-
-
+      #best_sample_se_all <- align_source_prefixes(best_standard_all, best_sample_se_all)
+      
       antigen_settings <- fetch_antigen_parameters(
         study_accession = selected_study,
         experiment_accession = selected_experiment,
