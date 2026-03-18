@@ -921,7 +921,9 @@ observeEvent(
         is_display_log_independent = input$display_log_independent,
         pcov_threshold             = plate$antigen_settings$pcov_threshold,
         independent_variable       = loaded_data$indep_var,
-        response_variable          = loaded_data$response_var
+        response_variable          = loaded_data$response_var,
+        mcmc_samples               = plate$plate_mcmc_samples,
+        mcmc_pred                  = plate$plate_mcmc_pred
       )
     })
     

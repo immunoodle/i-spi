@@ -129,6 +129,14 @@ AND experiment_accession = '{experiment_accession}'
   return(sample_data)
 }
 
+fix_source_nom <- function(df, std_prefix) {
+  
+  suffix <- sub("^[^|]*", "", df$source_nom)
+  df$source_nom <- paste0(std_prefix, suffix)
+  
+  df
+}
+
 pull_data <- function(study_accession, experiment_accession, project_id, conn = conn) {
   plates <- fetch_db_header(study_accession = study_accession,
                             experiment_accession = experiment_accession,
@@ -253,13 +261,6 @@ pull_data <- function(study_accession, experiment_accession, project_id, conn = 
     
     if (needs_fix) {
       
-      fix_source_nom <- function(df, std_prefix) {
-        
-        suffix <- sub("^[^|]*", "", df$source_nom)
-        df$source_nom <- paste0(std_prefix, suffix)
-        
-        df
-      }
       
       samples <- fix_source_nom(samples, std_prefix)
       blanks  <- fix_source_nom(blanks, std_prefix)
@@ -274,9 +275,81 @@ pull_data <- function(study_accession, experiment_accession, project_id, conn = 
     cat("⚠ Multiple standard source prefixes detected:",
         paste(std_prefix, collapse = ", "), "\n")
   }
-
+  
+  mcmc_samples <- fetch_best_sample_robust_concentrations(study_accession = study_accession,
+                                                               experiment_accession = experiment_accession,
+                                                               project_id = project_id,
+                                                               conn = conn)
+  
+  mcmc_samples_read <<- mcmc_samples
+  
+  mcmc_pred <- fetch_best_pred_robust_concentrations(study_accession = study_accession,
+                                                     experiment_accession = experiment_accession,
+                                                     project_id = project_id,
+                                                     conn = conn)
+  
+  # ── Normalize MCMC data for ELISA wavelength compatibility ──────────
+  # Apply the same wavelength normalization and source_nom construction
+  # that standards/blanks/samples receive above, so that
+  # select_antigen_plate can filter MCMC data consistently.
+  if (nrow(mcmc_samples) > 0) {
+    if (!"wavelength" %in% names(mcmc_samples)) {
+      mcmc_samples$wavelength <- WL_NONE
+    }
+    mcmc_samples$wavelength <- normalize_wavelength(mcmc_samples$wavelength)
+    mcmc_samples$source_nom <- build_source_nom(mcmc_samples)
+    
+    # Ensure plate_nom exists and is consistent
+    if (all(c("plate", "nominal_sample_dilution") %in% names(mcmc_samples))) {
+      mcmc_samples$plate_nom <- paste(
+        mcmc_samples$plate, mcmc_samples$nominal_sample_dilution, sep = "-"
+      )
+    }
+    
+    # Fix source_nom prefix to match standards (same logic as above)
+    if (length(std_prefix) == 1) {
+      mcmc_samp_prefix <- unique(sub("\\|.*$", "", mcmc_samples$source_nom))
+      if (!all(mcmc_samp_prefix == std_prefix)) {
+        mcmc_samples <- fix_source_nom(mcmc_samples, std_prefix)
+        cat("  ✓ mcmc_samples source_nom prefixes updated to match standards\n")
+      }
+    }
+    
+    # Rename response column for ELISA compatibility
+    if (length(response_var) == 1 && response_var != "mfi" &&
+        "mfi" %in% names(mcmc_samples)) {
+      names(mcmc_samples)[names(mcmc_samples) == "mfi"] <- response_var
+    }
+  }
+  
+  if (nrow(mcmc_pred) > 0) {
+    if (!"wavelength" %in% names(mcmc_pred)) {
+      mcmc_pred$wavelength <- WL_NONE
+    }
+    mcmc_pred$wavelength <- normalize_wavelength(mcmc_pred$wavelength)
+    mcmc_pred$source_nom <- build_source_nom(mcmc_pred)
+    
+    if (all(c("plate", "nominal_sample_dilution") %in% names(mcmc_pred))) {
+      mcmc_pred$plate_nom <- paste(
+        mcmc_pred$plate, mcmc_pred$nominal_sample_dilution, sep = "-"
+      )
+    }
+    
+    if (length(std_prefix) == 1) {
+      mcmc_pred_prefix <- unique(sub("\\|.*$", "", mcmc_pred$source_nom))
+      if (!all(mcmc_pred_prefix == std_prefix)) {
+        mcmc_pred <- fix_source_nom(mcmc_pred, std_prefix)
+        cat("  ✓ mcmc_pred source_nom prefixes updated to match standards\n")
+      }
+    }
+  }
+  
+  mcmc_samples_2 <<- mcmc_samples
+  
   return(list(plates=plates, standards=standards,
               blanks=blanks, samples=samples,
+              mcmc_samples = mcmc_samples,
+              mcmc_pred = mcmc_pred,
               antigen_constraints=antigen_constraints,
               response_var = response_var,
               indep_var = indep_var)
@@ -1147,7 +1220,7 @@ select_antigen_plate <- function(loaded_data,
                                  antigen = antigen,
                                  plate = plate,
                                  wavelength = WL_NONE,
-                                 antigen_constraints = antigen_constraints){
+                                 antigen_constraints = antigen_constraints) {
   print("select antigen plate in batch\n")
   print("plate in\n")
   print(plate)
@@ -1160,23 +1233,24 @@ select_antigen_plate <- function(loaded_data,
   print(unique(loaded_data$standards$source_nom))
   print("plate_nom\n")
   print(unique(loaded_data$standards$plate_nom))
-
   print("plate\n")
   print(unique(loaded_data$standards$plate))
-
-  # Use source_nom for filtering if available, fall back to source
+  
+  # ── Filter standards ───────────────────────────────────────────────
   if ("source_nom" %in% names(loaded_data$standards)) {
-    plate_standard  <- loaded_data$standards[loaded_data$standards$source_nom == source &
-                                               loaded_data$standards$antigen == antigen &
-                                               loaded_data$standards$plate_nom == plate ,]
+    plate_standard <- loaded_data$standards[
+      loaded_data$standards$source_nom == source &
+        loaded_data$standards$antigen    == antigen &
+        loaded_data$standards$plate_nom  == plate, ]
   } else {
-    plate_standard  <- loaded_data$standards[loaded_data$standards$source == source &
-                                               loaded_data$standards$antigen == antigen &
-                                               loaded_data$standards$plate_nom == plate ,]
+    plate_standard <- loaded_data$standards[
+      loaded_data$standards$source    == source &
+        loaded_data$standards$antigen   == antigen &
+        loaded_data$standards$plate_nom == plate, ]
   }
   
-  # ── Filter by wavelength when data contains multiple wavelengths ──
-  if ("wavelength" %in% names(plate_standard) && 
+  # ── Filter by wavelength for standards ────────────────────────────
+  if ("wavelength" %in% names(plate_standard) &&
       !is.null(wavelength) && wavelength != WL_NONE) {
     plate_standard$wavelength <- normalize_wavelength(plate_standard$wavelength)
     wl_filter <- plate_standard$wavelength == normalize_wavelength(wavelength)
@@ -1190,7 +1264,8 @@ select_antigen_plate <- function(loaded_data,
       ))
     }
   }
-  # Guard against empty plate_standard data
+  
+  # ── Guard against empty plate_standard data ───────────────────────
   if (is.null(plate_standard) || nrow(plate_standard) == 0) {
     warning(paste("No standard curve data found for:",
                   "source =", source,
@@ -1198,61 +1273,377 @@ select_antigen_plate <- function(loaded_data,
                   ", plate =", plate))
     return(NULL)
   }
-
-  plate_blanks <- loaded_data$blanks[loaded_data$blanks$antigen == antigen &
-                                       loaded_data$blanks$plate_nom == plate,]
-
-  plate_samples <- loaded_data$samples[loaded_data$samples$antigen == antigen &
-                                         loaded_data$samples$plate_nom == plate,]
-
-  # ── Filter blanks and samples by wavelength when relevant ──
+  
+  # ── Filter blanks ─────────────────────────────────────────────────
+  plate_blanks <- loaded_data$blanks[
+    loaded_data$blanks$antigen   == antigen &
+      loaded_data$blanks$plate_nom == plate, ]
+  
+  # ── Filter samples ────────────────────────────────────────────────
+  plate_samples <- loaded_data$samples[
+    loaded_data$samples$antigen   == antigen &
+      loaded_data$samples$plate_nom == plate, ]
+  
+  # # ── Filter mcmc_samples — same pattern as blanks and samples ──────
+  # plate_mcmc_samples <- if (!is.null(loaded_data$mcmc_samples) &&
+  #                           nrow(loaded_data$mcmc_samples) > 0) {
+  #   loaded_data$mcmc_samples[
+  #     loaded_data$mcmc_samples$antigen   == antigen &
+  #       loaded_data$mcmc_samples$plate_nom == plate, , drop = FALSE]
+  # } else {
+  #   data.frame()
+  # }
+  # 
+  # # ── Filter mcmc_pred — dense prediction grid with MCMC pCoV ──────
+  # plate_mcmc_pred <- if (!is.null(loaded_data$mcmc_pred) &&
+  #                        nrow(loaded_data$mcmc_pred) > 0) {
+  #   loaded_data$mcmc_pred[
+  #     loaded_data$mcmc_pred$antigen   == antigen &
+  #       loaded_data$mcmc_pred$plate_nom == plate, , drop = FALSE]
+  # } else {
+  #   data.frame()
+  # }
+  
+  # ── Filter mcmc_samples — match by antigen, plate_nom, AND source_nom ──
+  plate_mcmc_samples <- if (!is.null(loaded_data$mcmc_samples) &&
+                            nrow(loaded_data$mcmc_samples) > 0) {
+    mcmc_df <- loaded_data$mcmc_samples
+    filter_mask <- mcmc_df$antigen == antigen & mcmc_df$plate_nom == plate
+    # Also filter by source_nom if available (critical for ELISA multi-wavelength)
+    if ("source_nom" %in% names(mcmc_df)) {
+      filter_mask <- filter_mask & mcmc_df$source_nom == source
+    }
+    mcmc_df[filter_mask, , drop = FALSE]
+  } else {
+    data.frame()
+  }
+  
+  # ── Filter mcmc_pred — match by antigen, plate_nom, AND source_nom ──
+  plate_mcmc_pred <- if (!is.null(loaded_data$mcmc_pred) &&
+                         nrow(loaded_data$mcmc_pred) > 0) {
+    pred_df <- loaded_data$mcmc_pred
+    filter_mask <- pred_df$antigen == antigen & pred_df$plate_nom == plate
+    # Also filter by source_nom if available (critical for ELISA multi-wavelength)
+    if ("source_nom" %in% names(pred_df)) {
+      filter_mask <- filter_mask & pred_df$source_nom == source
+    }
+    pred_df[filter_mask, , drop = FALSE]
+  } else {
+    data.frame()
+  }
+  
+  # ── Filter blanks, samples, mcmc_samples, mcmc_pred by wavelength ─
   if (!is.null(wavelength) && wavelength != WL_NONE) {
     if ("wavelength" %in% names(plate_blanks) && nrow(plate_blanks) > 0) {
-      plate_blanks$wavelength <- normalize_wavelength(plate_blanks$wavelength)
       wl_b <- plate_blanks$wavelength == normalize_wavelength(wavelength)
       if (any(wl_b)) plate_blanks <- plate_blanks[wl_b, , drop = FALSE]
     }
     if ("wavelength" %in% names(plate_samples) && nrow(plate_samples) > 0) {
-      plate_samples$wavelength <- normalize_wavelength(plate_samples$wavelength)
       wl_s <- plate_samples$wavelength == normalize_wavelength(wavelength)
       if (any(wl_s)) plate_samples <- plate_samples[wl_s, , drop = FALSE]
     }
+    if ("wavelength" %in% names(plate_mcmc_samples) && nrow(plate_mcmc_samples) > 0) {
+      wl_m <- plate_mcmc_samples$wavelength == normalize_wavelength(wavelength)
+      if (any(wl_m)) plate_mcmc_samples <- plate_mcmc_samples[wl_m, , drop = FALSE]
+    }
+    if ("wavelength" %in% names(plate_mcmc_pred) && nrow(plate_mcmc_pred) > 0) {
+      wl_p <- plate_mcmc_pred$wavelength == normalize_wavelength(wavelength)
+      if (any(wl_p)) plate_mcmc_pred <- plate_mcmc_pred[wl_p, , drop = FALSE]
+    }
   }
-
+  
   # anything after - is removed (nominal sample dilutions)
   plate_c <- sub("-.*$", "", plate)
-
-  # Resolve response column for this data (mfi for bead array, absorbance for ELISA)
+  
+  # ── Resolve response column ───────────────────────────────────────
   response_col <- resolve_response_col(plate_standard)
-
-  antigen_settings <- obtain_lower_constraint(dat = plate_standard,
-                                              antigen = antigen,
-                                              study_accession = study_accession,
-                                              experiment_accession = experiment_accession,
-                                              plate = plate_c,
-
-                                              plateid = unique(plate_standard$plateid),
-
-                                              plate_blanks = plate_blanks,
-                                              antigen_constraints = antigen_constraints,
-                                              response_col = response_col)
-
-
+  
+  # ── Antigen settings ──────────────────────────────────────────────
+  antigen_settings <- obtain_lower_constraint(
+    dat                  = plate_standard,
+    antigen              = antigen,
+    study_accession      = study_accession,
+    experiment_accession = experiment_accession,
+    plate                = plate_c,
+    plateid              = unique(plate_standard$plateid),
+    plate_blanks         = plate_blanks,
+    antigen_constraints  = antigen_constraints,
+    response_col         = response_col
+  )
+  
+  # ── Fixed lower asymptote ─────────────────────────────────────────
   fixed_a_result <- resolve_fixed_lower_asymptote(antigen_settings)
   fixed_a_result <- validate_fixed_lower_asymptote(
     fixed_a_result_raw = fixed_a_result,
-    verbose = TRUE
+    verbose            = TRUE
   )
-
+  
+  # ── Blank standard error ──────────────────────────────────────────
   std_error_blank <- get_blank_se(antigen_settings = antigen_settings)
-
-  return (list(plate_standard=plate_standard,
-               plate_blanks=plate_blanks,
-               plate_samples=plate_samples,
-               antigen_settings=antigen_settings,
-               fixed_a_result = fixed_a_result,
-               std_error_blank = std_error_blank))
+  
+  # ── Sort mcmc_pred by x for smooth line drawing ───────────────────
+  if (nrow(plate_mcmc_pred) > 0 && "x" %in% names(plate_mcmc_pred)) {
+    plate_mcmc_pred <- plate_mcmc_pred[order(plate_mcmc_pred$x), , drop = FALSE]
+  }
+  
+  # ── Return ────────────────────────────────────────────────────────
+  return(list(
+    plate_standard     = plate_standard,
+    plate_blanks       = plate_blanks,
+    plate_samples      = plate_samples,
+    plate_mcmc_samples = plate_mcmc_samples,
+    plate_mcmc_pred    = plate_mcmc_pred,
+    antigen_settings   = antigen_settings,
+    fixed_a_result     = fixed_a_result,
+    std_error_blank    = std_error_blank
+  ))
 }
+# select_antigen_plate <- function(loaded_data,
+#                                  study_accession = study_accession,
+#                                  experiment_accession = experiment_accession,
+#                                  source = source,
+#                                  antigen = antigen,
+#                                  plate = plate,
+#                                  wavelength = WL_NONE,
+#                                  antigen_constraints = antigen_constraints) {
+#   
+#   print("select antigen plate in batch\n")
+#   print("plate in\n")
+#   print(plate)
+#   print(paste("wavelength in:", wavelength))
+#   print("standards structure\n")
+#   print(str(loaded_data$standards))
+#   print("antigens\n")
+#   print(unique(loaded_data$standards$antigen))
+#   print("source_nom\n")
+#   print(unique(loaded_data$standards$source_nom))
+#   print("plate_nom\n")
+#   print(unique(loaded_data$standards$plate_nom))
+#   print("plate\n")
+#   print(unique(loaded_data$standards$plate))
+#   
+#   # ── Filter standards ───────────────────────────────────────────────
+#   if ("source_nom" %in% names(loaded_data$standards)) {
+#     plate_standard <- loaded_data$standards[
+#       loaded_data$standards$source_nom == source &
+#         loaded_data$standards$antigen    == antigen &
+#         loaded_data$standards$plate_nom  == plate, ]
+#   } else {
+#     plate_standard <- loaded_data$standards[
+#       loaded_data$standards$source    == source &
+#         loaded_data$standards$antigen   == antigen &
+#         loaded_data$standards$plate_nom == plate, ]
+#   }
+#   
+#   # ── Filter by wavelength for standards ────────────────────────────
+#   if ("wavelength" %in% names(plate_standard) &&
+#       !is.null(wavelength) && wavelength != WL_NONE) {
+#     plate_standard$wavelength <- normalize_wavelength(plate_standard$wavelength)
+#     wl_filter <- plate_standard$wavelength == normalize_wavelength(wavelength)
+#     if (any(wl_filter)) {
+#       plate_standard <- plate_standard[wl_filter, , drop = FALSE]
+#     } else {
+#       message(sprintf(
+#         "[select_antigen_plate] WARNING: wavelength '%s' matched 0 rows; keeping all %d rows. Wavelengths in data: %s",
+#         wavelength, nrow(plate_standard),
+#         paste(unique(plate_standard$wavelength), collapse = ", ")
+#       ))
+#     }
+#   }
+#   
+#   # ── Guard against empty plate_standard data ───────────────────────
+#   if (is.null(plate_standard) || nrow(plate_standard) == 0) {
+#     warning(paste("No standard curve data found for:",
+#                   "source =", source,
+#                   ", antigen =", antigen,
+#                   ", plate =", plate))
+#     return(NULL)
+#   }
+#   
+#   # ── Filter blanks ─────────────────────────────────────────────────
+#   plate_blanks <- loaded_data$blanks[
+#     loaded_data$blanks$antigen   == antigen &
+#       loaded_data$blanks$plate_nom == plate, ]
+#   
+#   # ── Filter samples ────────────────────────────────────────────────
+#   plate_samples <- loaded_data$samples[
+#     loaded_data$samples$antigen   == antigen &
+#       loaded_data$samples$plate_nom == plate, ]
+#   
+#   # ── Filter mcmc_samples — same pattern as blanks and samples ──────
+#   plate_mcmc_samples <- loaded_data$mcmc_samples[
+#     loaded_data$mcmc_samples$antigen   == antigen &
+#       loaded_data$mcmc_samples$plate_nom == plate, ]
+#   
+#   # ── Filter blanks, samples, mcmc_samples by wavelength ────────────
+#   if (!is.null(wavelength) && wavelength != WL_NONE) {
+#     if ("wavelength" %in% names(plate_blanks) && nrow(plate_blanks) > 0) {
+#       wl_b <- plate_blanks$wavelength == normalize_wavelength(wavelength)
+#       if (any(wl_b)) plate_blanks <- plate_blanks[wl_b, , drop = FALSE]
+#     }
+#     if ("wavelength" %in% names(plate_samples) && nrow(plate_samples) > 0) {
+#       wl_s <- plate_samples$wavelength == normalize_wavelength(wavelength)
+#       if (any(wl_s)) plate_samples <- plate_samples[wl_s, , drop = FALSE]
+#     }
+#     if ("wavelength" %in% names(plate_mcmc_samples) && nrow(plate_mcmc_samples) > 0) {
+#       wl_m <- plate_mcmc_samples$wavelength == normalize_wavelength(wavelength)
+#       if (any(wl_m)) plate_mcmc_samples <- plate_mcmc_samples[wl_m, , drop = FALSE]
+#     }
+#   }
+#   
+#   # anything after - is removed (nominal sample dilutions)
+#   plate_c <- sub("-.*$", "", plate)
+#   
+#   # ── Resolve response column ───────────────────────────────────────
+#   response_col <- resolve_response_col(plate_standard)
+#   
+#   # ── Antigen settings ──────────────────────────────────────────────
+#   antigen_settings <- obtain_lower_constraint(
+#     dat                  = plate_standard,
+#     antigen              = antigen,
+#     study_accession      = study_accession,
+#     experiment_accession = experiment_accession,
+#     plate                = plate_c,
+#     plateid              = unique(plate_standard$plateid),
+#     plate_blanks         = plate_blanks,
+#     antigen_constraints  = antigen_constraints,
+#     response_col         = response_col
+#   )
+#   
+#   # ── Fixed lower asymptote ─────────────────────────────────────────
+#   fixed_a_result <- resolve_fixed_lower_asymptote(antigen_settings)
+#   fixed_a_result <- validate_fixed_lower_asymptote(
+#     fixed_a_result_raw = fixed_a_result,
+#     verbose            = TRUE
+#   )
+#   
+#   # ── Blank standard error ──────────────────────────────────────────
+#   std_error_blank <- get_blank_se(antigen_settings = antigen_settings)
+#   
+#   # ── Return ────────────────────────────────────────────────────────
+#   return(list(
+#     plate_standard     = plate_standard,
+#     plate_blanks       = plate_blanks,
+#     plate_samples      = plate_samples,
+#     plate_mcmc_samples = plate_mcmc_samples,
+#     antigen_settings   = antigen_settings,
+#     fixed_a_result     = fixed_a_result,
+#     std_error_blank    = std_error_blank
+#   ))
+# }
+# select_antigen_plate <- function(loaded_data,
+#                                  study_accession = study_accession,
+#                                  experiment_accession = experiment_accession,
+#                                  source = source,
+#                                  antigen = antigen,
+#                                  plate = plate,
+#                                  wavelength = WL_NONE,
+#                                  antigen_constraints = antigen_constraints){
+#   print("select antigen plate in batch\n")
+#   print("plate in\n")
+#   print(plate)
+#   print(paste("wavelength in:", wavelength))
+#   print("standards structure\n")
+#   print(str(loaded_data$standards))
+#   print("antigens\n")
+#   print(unique(loaded_data$standards$antigen))
+#   print("source_nom\n")
+#   print(unique(loaded_data$standards$source_nom))
+#   print("plate_nom\n")
+#   print(unique(loaded_data$standards$plate_nom))
+# 
+#   print("plate\n")
+#   print(unique(loaded_data$standards$plate))
+# 
+#   # Use source_nom for filtering if available, fall back to source
+#   if ("source_nom" %in% names(loaded_data$standards)) {
+#     plate_standard  <- loaded_data$standards[loaded_data$standards$source_nom == source &
+#                                                loaded_data$standards$antigen == antigen &
+#                                                loaded_data$standards$plate_nom == plate ,]
+#   } else {
+#     plate_standard  <- loaded_data$standards[loaded_data$standards$source == source &
+#                                                loaded_data$standards$antigen == antigen &
+#                                                loaded_data$standards$plate_nom == plate ,]
+#   }
+#   
+#   # ── Filter by wavelength when data contains multiple wavelengths ──
+#   if ("wavelength" %in% names(plate_standard) && 
+#       !is.null(wavelength) && wavelength != WL_NONE) {
+#     plate_standard$wavelength <- normalize_wavelength(plate_standard$wavelength)
+#     wl_filter <- plate_standard$wavelength == normalize_wavelength(wavelength)
+#     if (any(wl_filter)) {
+#       plate_standard <- plate_standard[wl_filter, , drop = FALSE]
+#     } else {
+#       message(sprintf(
+#         "[select_antigen_plate] WARNING: wavelength '%s' matched 0 rows; keeping all %d rows. Wavelengths in data: %s",
+#         wavelength, nrow(plate_standard),
+#         paste(unique(plate_standard$wavelength), collapse = ", ")
+#       ))
+#     }
+#   }
+#   # Guard against empty plate_standard data
+#   if (is.null(plate_standard) || nrow(plate_standard) == 0) {
+#     warning(paste("No standard curve data found for:",
+#                   "source =", source,
+#                   ", antigen =", antigen,
+#                   ", plate =", plate))
+#     return(NULL)
+#   }
+# 
+#   plate_blanks <- loaded_data$blanks[loaded_data$blanks$antigen == antigen &
+#                                        loaded_data$blanks$plate_nom == plate,]
+# 
+#   plate_samples <- loaded_data$samples[loaded_data$samples$antigen == antigen &
+#                                          loaded_data$samples$plate_nom == plate,]
+# 
+#   # ── Filter blanks and samples by wavelength when relevant ──
+#   if (!is.null(wavelength) && wavelength != WL_NONE) {
+#     if ("wavelength" %in% names(plate_blanks) && nrow(plate_blanks) > 0) {
+#       plate_blanks$wavelength <- normalize_wavelength(plate_blanks$wavelength)
+#       wl_b <- plate_blanks$wavelength == normalize_wavelength(wavelength)
+#       if (any(wl_b)) plate_blanks <- plate_blanks[wl_b, , drop = FALSE]
+#     }
+#     if ("wavelength" %in% names(plate_samples) && nrow(plate_samples) > 0) {
+#       plate_samples$wavelength <- normalize_wavelength(plate_samples$wavelength)
+#       wl_s <- plate_samples$wavelength == normalize_wavelength(wavelength)
+#       if (any(wl_s)) plate_samples <- plate_samples[wl_s, , drop = FALSE]
+#     }
+#   }
+# 
+#   # anything after - is removed (nominal sample dilutions)
+#   plate_c <- sub("-.*$", "", plate)
+# 
+#   # Resolve response column for this data (mfi for bead array, absorbance for ELISA)
+#   response_col <- resolve_response_col(plate_standard)
+# 
+#   antigen_settings <- obtain_lower_constraint(dat = plate_standard,
+#                                               antigen = antigen,
+#                                               study_accession = study_accession,
+#                                               experiment_accession = experiment_accession,
+#                                               plate = plate_c,
+# 
+#                                               plateid = unique(plate_standard$plateid),
+# 
+#                                               plate_blanks = plate_blanks,
+#                                               antigen_constraints = antigen_constraints,
+#                                               response_col = response_col)
+# 
+# 
+#   fixed_a_result <- resolve_fixed_lower_asymptote(antigen_settings)
+#   fixed_a_result <- validate_fixed_lower_asymptote(
+#     fixed_a_result_raw = fixed_a_result,
+#     verbose = TRUE
+#   )
+# 
+#   std_error_blank <- get_blank_se(antigen_settings = antigen_settings)
+# 
+#   return (list(plate_standard=plate_standard,
+#                plate_blanks=plate_blanks,
+#                plate_samples=plate_samples,
+#                antigen_settings=antigen_settings,
+#                fixed_a_result = fixed_a_result,
+#                std_error_blank = std_error_blank))
+# }
 
 #### Fetch saved results from std_curver
 fetch_best_plate_all <- function(study_accession, experiment_accession, project_id, conn) {
@@ -1453,6 +1844,91 @@ update_combined_mcmc_bulk <- function(pred_all_mcmc, sample_all_mcmc, best_glanc
   invisible(TRUE)
 }
 
+
+fetch_best_sample_robust_concentrations <- function(study_accession, experiment_accession, project_id, conn) {
+  query <- glue("SELECT
+    -- Sample identifiers
+    bss.project_id,
+    bss.study_accession,
+    bss.experiment_accession,
+    bss.patientid,
+    bss.sampleid,
+    bss.well,
+    bss.stype,
+    bss.agroup,
+    bss.timeperiod,
+    bss.antigen,
+    bss.plateid,
+    bss.plate,
+    bss.nominal_sample_dilution,
+    CONCAT(bss.plate, '-', bss.nominal_sample_dilution) AS plate_nom,
+    -- Feature info
+    bss.feature,
+    bss.wavelength,
+    bss.source,
+    -- Robust concentration results
+	bss.assay_response,
+    bss.raw_robust_concentration,
+    bss.final_robust_concentration,
+    bss.se_robust_concentration,
+    bss.pcov_robust_concentration,
+    -- Key LOQ/LOD gating only
+    bss.gate_class_loq,
+    bss.gate_class_lod,
+    -- Curve quality from glance
+    bga.last_concentration_calc_method
+
+FROM madi_results.best_sample_se_all bss
+INNER JOIN madi_results.best_glance_all bga
+    ON  bss.best_glance_all_id = bga.best_glance_all_id
+    AND bss.study_accession    = bga.study_accession
+    AND bss.plateid             = bga.plateid
+    AND bss.antigen             = bga.antigen
+    AND bss.feature             = bga.feature
+	AND bss.source              = bga.source
+    AND bss.wavelength          = bga.wavelength
+
+WHERE bss.study_accession                = '{study_accession}'
+  AND bss.experiment_accession               = '{experiment_accession}'
+  AND bss.project_id                     = {project_id}
+  AND bga.last_concentration_calc_method = 'mcmc_robust';")
+  
+  robust_sample_concentrations <- dbGetQuery(conn, query)
+  return(robust_sample_concentrations)
+}
+
+fetch_best_pred_robust_concentrations <- function(study_accession, experiment_accession, project_id, conn) {
+  query <- glue("SELECT
+    bpa.project_id,
+    bpa.study_accession,
+    bpa.experiment_accession,
+    bpa.x,
+    bpa.yhat,
+    bpa.pcov,
+    bpa.antigen,
+    bpa.plateid,
+    bpa.plate,
+    bpa.nominal_sample_dilution,
+    CONCAT(bpa.plate, '-', bpa.nominal_sample_dilution) AS plate_nom,
+    bpa.feature,
+    bpa.wavelength,
+    bpa.source,
+    -- MCMC robust results on the dense grid
+    bpa.raw_robust_concentration,
+    bpa.se_robust_concentration,
+    bpa.pcov_robust_concentration,
+    -- Curve quality from glance
+    bga.last_concentration_calc_method
+FROM madi_results.best_pred_all bpa
+INNER JOIN madi_results.best_glance_all bga
+    ON  bpa.best_glance_all_id = bga.best_glance_all_id
+WHERE bpa.study_accession        = '{study_accession}'
+  AND bpa.experiment_accession   = '{experiment_accession}'
+  AND bpa.project_id             = {project_id}
+  AND bga.last_concentration_calc_method = 'mcmc_robust';")
+  robust_pred_concentrations <- dbGetQuery(conn, query)
+  return(robust_pred_concentrations)
+}
 #' Fetch best_glance_all filtered by user's current study parameters
 #' This ensures consistency with fetch_best_pred_all_summary and other summary functions
 #' @param study_accession Study accession ID

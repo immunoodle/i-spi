@@ -5279,7 +5279,6 @@ predict_and_propagate_error <- function(best_fit,
                                         se_std_response,
                                         cv_x_max = 150,
                                         verbose = TRUE) {
-  
   if (study_params$is_log_response) {
     
     # Step 1: validate the raw value before any log transform
@@ -5551,6 +5550,11 @@ predict_and_propagate_error <- function(best_fit,
   names(sample_se)[names(sample_se) == "predicted_concentration"] <-
     "raw_predicted_concentration"
 
+  # sample_se$raw_robust_concentration   <- NA_real_
+  # sample_se$final_robust_concentration <- NA_real_
+  # sample_se$se_robust_concentration    <- NA_real_
+  # sample_se$pcov_robust_concentration  <- NA_real_
+  # 
   # sample_se_v  <<- sample_se
   best_fit$sample_se <- sample_se
 
