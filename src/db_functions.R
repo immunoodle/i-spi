@@ -283,6 +283,69 @@ pull_data <- function(study_accession, experiment_accession, project_id, conn = 
   )
 }
 
+apply_source_nom <- function(df) {
+  if (is.null(df) || nrow(df) == 0) return(df)
+  
+  # Normalize wavelength
+  if ("wavelength" %in% names(df)) {
+    df$wavelength <- normalize_wavelength(df$wavelength)
+  } else {
+    df$wavelength <- WL_NONE
+  }
+  
+  # Build source_nom (same as pull_data)
+  if ("source" %in% names(df)) {
+    df$source_nom <- build_source_nom(df$source, df$wavelength)
+  }
+  
+  # Build plate_nom if plate and nominal_sample_dilution exist
+  if (all(c("plate", "nominal_sample_dilution") %in% names(df))) {
+    df$plate_nom <- paste0(df$plate, "-", df$nominal_sample_dilution)
+  }
+  
+  df
+}
+
+#' Overwrite source with source|wavelength for ELISA data
+#' For bead array (wavelength == WL_NONE or missing), source is left unchanged.
+enrich_source_with_wavelength <- function(df) {
+  if (!"wavelength" %in% names(df) || !"source" %in% names(df)) return(df)
+  
+  src <- as.character(df$source)
+  src[is.na(src) | trimws(src) == ""] <- "unknown"
+  wl  <- as.character(df$wavelength)
+  
+  df$source <- ifelse(
+    is.na(wl) | trimws(wl) == "" | wl == WL_NONE,
+    src,
+    paste0(src, "|", wl, "_nm")
+  )
+  
+  df
+}
+
+
+# align_source_prefixes <- function(standards_df, target_df) {
+#   if (is.null(target_df) || nrow(target_df) == 0) return(target_df)
+#   if (is.null(standards_df) || nrow(standards_df) == 0) return(target_df)
+#   
+#   std_prefixes <- unique(sub("\\|.*$", "", standards_df$source_nom))
+#   tgt_prefixes <- unique(sub("\\|.*$", "", target_df$source_nom))
+#   
+#   if (length(std_prefixes) == 1 && length(tgt_prefixes) == 1 &&
+#       std_prefixes != tgt_prefixes) {
+#     message(sprintf("  Aligning source_nom prefix: '%s' -> '%s'", 
+#                     tgt_prefixes, std_prefixes))
+#     target_df$source_nom <- sub(
+#       paste0("^", gsub("([.|()\\^{}+$*?])", "\\\\\\1", tgt_prefixes)),
+#       std_prefixes,
+#       target_df$source_nom
+#     )
+#   }
+#   
+#   target_df
+# }
+
 shiny_notify <- function(session = shiny::getDefaultReactiveDomain()) {
   function(msg) {
     shiny::showNotification(
@@ -1431,7 +1494,10 @@ fetch_best_glance_all_summary <- function(study_accession, experiment_accession,
       AND g.apply_prozone = params.apply_prozone",
                     .con = conn
   )
-  dbGetQuery(conn, query)
+  result <- dbGetQuery(conn, query)
+  #result <- apply_source_nom(result)
+  return(result)
+  
 }
 
 fetch_best_sample_se_all <- function(study_accession, experiment_accession, project_id, conn) {
@@ -1448,6 +1514,8 @@ gate_class_pcov, best_glance_all_id, feature, norm_assay_response, raw_robust_co
 	AND study_accession = '{study_accession}'
 	AND experiment_accession = '{experiment_accession}';")
   best_sample_se_all <- dbGetQuery(conn, query)
+  #best_sample_se_all <- apply_source_nom(result)
+
   return(best_sample_se_all)
 }
 
@@ -1532,7 +1600,10 @@ fetch_best_standard_all_summary <- function(study_accession, experiment_accessio
       AND g.apply_prozone = params.apply_prozone",
                     .con = conn
   )
-  dbGetQuery(conn, query)
+  result <- dbGetQuery(conn, query)
+ # result <- apply_source_nom(result)
+  return(result)
+  
 }
 
 fetch_best_sample_se_all_summary <- function(study_accession, experiment_accession, param_user, project_id, conn) {

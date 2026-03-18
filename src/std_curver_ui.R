@@ -195,6 +195,21 @@ observeEvent(
                 tags$dt(tags$strong("Standards")),
                 tags$dd("Known concentration reference points used to construct the standard curve."),
                 
+                tags$dt(tags$strong("FDA + 2018")),
+                tags$dd("Parameter QC Levels. Standard curve reference points with precision ≤ 20% unless more concentrated than the
+                        ULOQ where ≤25% is used. In addition, between-plate accuracy is ±20% of the nominal concentration."),
+                
+                tags$dt(tags$strong("FDA - 2018")),
+                tags$dd("Standard curve reference points with precision > 20% (> ULOQ: > 25%) and 
+                        between-plate accuracy is > ±20% of the nominal concentration.
+                        U.S. Food and Drug Administration. Bioanalytical Method Validation:
+                        Guidance for Industry. Center for Drug Evaluation and Research (CDER) / Center for Veterinary Medicine (CVM). May 2018.
+                        Available ", tags$a(
+                          href   = "https://www.fda.gov/files/drugs/published/Bioanalytical-Method-Validation-Guidance-for-Industry.pdf",
+                          "here",
+                          target = "_blank")
+                        ),
+                
                 tags$dt(tags$strong("Samples")),
                 tags$dd(paste0(
                   "Unknown test samples interpolated against the standard curve to determine ",
@@ -819,7 +834,7 @@ observeEvent(
               is_log_response            = study_params$is_log_response,
               is_log_concentration       = study_params$is_log_independent,
               undiluted_sc_concentration = plate$antigen_settings$standard_curve_concentration,
-              cv_threshold               = plate$antigen_settings$pcov_threshold, #15 # pCoV threshold 
+              cv_threshold               = 20, #plate$antigen_settings$pcov_threshold, #15 # pCoV threshold 
               lloq_cv_threshold          = 25,  # if it is the lowest dilution factor/highest concentration use this. 
               accuracy_lo                = 80,
               accuracy_hi                = 120,
