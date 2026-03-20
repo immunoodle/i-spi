@@ -373,12 +373,14 @@ format_assay_terms <- function(x) {
 
   # normalize lookup keys for matching
   names(lookup) <- tolower(names(lookup))
-
+  
   sapply(x, function(v) {
-    key <- tolower(v)
+    key <- trimws(tolower(v))
     if (key %in% names(lookup)) lookup[[key]] else v
   }, USE.NAMES = FALSE)
 }
+
+
 
 # # best fit must contain sample_se
 # plot_standard_curve <- function(best_fit,
@@ -1123,9 +1125,9 @@ plot_standard_curve <- function(best_fit,
                                 mcmc_samples = NULL,
                                 mcmc_pred = NULL) {
   p <- plotly::plot_ly()
-  best_fit_v <<- best_fit
-  mcmc_samples_in <<- mcmc_samples
-  mcmc_pred_in <<- mcmc_pred
+  # best_fit_v <<- best_fit
+  # mcmc_samples_in <<- mcmc_samples
+  # mcmc_pred_in <<- mcmc_pred
   
   # ── Resolve response column ────────────────────────────────────────
   resolved <- ensure_response_column(
@@ -1256,13 +1258,16 @@ plot_standard_curve <- function(best_fit,
   y3_label <- "Precision Coefficient of Variation (pCoV %)"
   
   if (is_display_log_response) {
-    y_label <- paste("log<sub>10</sub>", format_assay_terms(response_variable))
+    response_formatted <- format_assay_terms(response_variable)
+    cat("FORMATTED:", response_formatted, "\n")
+    y_label <- paste0("log<sub>10</sub> ", response_formatted)
   } else {
     y_label <- format_assay_terms(response_variable)
   }
-  
+  # y_label_v <<- y_label
+  # 
   if (is_display_log_independent) {
-    x_label <- paste("log<sub>10</sub>", format_assay_terms(independent_variable))
+    x_label <- paste0("log<sub>10</sub> ", format_assay_terms(independent_variable))
   } else {
     x_label <- format_assay_terms(independent_variable)
   }
@@ -1529,6 +1534,25 @@ plot_standard_curve <- function(best_fit,
     visible = "legendonly"
   )
   
+  ## 9. Samples - interpolated
+  p <- p %>% add_trace(
+    data = samples_predicted_conc,
+    x = ~raw_predicted_concentration,
+    y = samples_predicted_conc[[response_variable]],
+    type = "scatter",
+    mode = "markers",
+    name = "Samples",
+    marker = list(color = "#d1992a", symbol = "circle"),
+    text = ~paste("Predicted", x_label, ":", raw_predicted_concentration,
+                  "<br>", y_label, ":", samples_predicted_conc[[response_variable]],
+                  "<br>Patient ID:", patientid,
+                  "<br> Timepoint:", timeperiod,
+                  "<br>Well:", well,
+                  "<br>LOQ Gate Class:", samples_predicted_conc$gate_class_loq,
+                  "<br>LOD Gate Class:", samples_predicted_conc$gate_class_lod,
+                  "<br> PCOV Gate Class:", samples_predicted_conc$gate_class_pcov),
+    hovertemplate = "%{text}<extra></extra>"
+  )
   ### 8b. Sample uncertainty (y3 axis) — interpolated
   unc_col <- list(color = "#e68fac")
   p <- p %>% add_lines(
@@ -1564,75 +1588,7 @@ plot_standard_curve <- function(best_fit,
     visible = "legendonly"
   )
   
-  ### 8c. MCMC pCoV uncertainty smooth line (y3 axis) — dense pred grid
-  if (!is.null(mcmc_pred) && nrow(mcmc_pred) > 0 &&
-      "pcov_robust_concentration" %in% names(mcmc_pred) &&
-      "raw_robust_concentration" %in% names(mcmc_pred)) {
-    
-    pred_valid <- is.finite(mcmc_pred$pcov_robust_concentration) &
-      is.finite(mcmc_pred$raw_robust_concentration)
-    
-    if (any(pred_valid)) {
-      mcmc_pred_x    <- mcmc_pred$raw_robust_concentration[pred_valid]
-      mcmc_pred_pcov <- mcmc_pred$pcov_robust_concentration[pred_valid]
-      
-      # Apply same x-axis transform as all other traces (Section 2)
-      if (log_x_status && !isTRUE(is_display_log_independent)) {
-        mcmc_pred_x <- 10^mcmc_pred_x
-      }
-      
-      # Sort by x for smooth line
-      sort_idx       <- order(mcmc_pred_x)
-      mcmc_pred_x    <- mcmc_pred_x[sort_idx]
-      mcmc_pred_pcov <- mcmc_pred_pcov[sort_idx]
-      
-      # MCMC uncertainty smooth line
-      p <- p %>% plotly::add_lines(
-        x = mcmc_pred_x,
-        y = mcmc_pred_pcov,
-        name = "MCMC Uncertainty",
-        yaxis = "y3",
-        line = list(color = "#e68fac"),
-        legendgroup = "linked_mcmc_uncertainty",
-        showlegend = TRUE,
-        visible = "legendonly"
-      )
-      
-      # pCoV threshold line — same threshold, shown with MCMC group
-      p <- p %>% plotly::add_lines(
-        x = mcmc_pred_x,
-        y = rep(pcov_threshold, length(mcmc_pred_x)),
-        name = paste0("pCoV Threshold: ", pcov_threshold, "%"),
-        yaxis = "y3",
-        line = list(color = "#e68fac", dash = "dash"),
-        legendgroup = "linked_mcmc_uncertainty",
-        showlegend = TRUE,
-        visible = "legendonly"
-      )
-    }
-  }
-  
-  ### 9a. SAMPLES
-  p <- p %>% add_trace(
-    data = samples_predicted_conc,
-    x = ~raw_predicted_concentration,
-    y = samples_predicted_conc[[response_variable]],
-    type = "scatter",
-    mode = "markers",
-    name = "Samples",
-    marker = list(color = "#d1992a", symbol = "circle"),
-    text = ~paste("Predicted", x_label, ":", raw_predicted_concentration,
-                  "<br>", y_label, ":", samples_predicted_conc[[response_variable]],
-                  "<br>Patient ID:", patientid,
-                  "<br> Timepoint:", timeperiod,
-                  "<br>Well:", well,
-                  "<br>LOQ Gate Class:", samples_predicted_conc$gate_class_loq,
-                  "<br>LOD Gate Class:", samples_predicted_conc$gate_class_lod,
-                  "<br> PCOV Gate Class:", samples_predicted_conc$gate_class_pcov),
-    hovertemplate = "%{text}<extra></extra>"
-  )
-  
-  ### 9b. MCMC ROBUST SAMPLES
+  # MCMC ROBUST SAMPLES
   if (!is.null(mcmc_samples) && nrow(mcmc_samples) > 0) {
     # Map assay_response to the plot's response variable if needed
     if ("assay_response" %in% names(mcmc_samples) &&
@@ -1713,6 +1669,57 @@ plot_standard_curve <- function(best_fit,
     }
   }
   
+  ### 8c. MCMC pCoV uncertainty smooth line (y3 axis) — dense pred grid
+  if (!is.null(mcmc_pred) && nrow(mcmc_pred) > 0 &&
+      "pcov_robust_concentration" %in% names(mcmc_pred) &&
+      "raw_robust_concentration" %in% names(mcmc_pred)) {
+    
+    pred_valid <- is.finite(mcmc_pred$pcov_robust_concentration) &
+      is.finite(mcmc_pred$raw_robust_concentration)
+    
+    if (any(pred_valid)) {
+      mcmc_pred_x    <- mcmc_pred$raw_robust_concentration[pred_valid]
+      mcmc_pred_pcov <- mcmc_pred$pcov_robust_concentration[pred_valid]
+      
+      # Apply same x-axis transform as all other traces (Section 2)
+      if (log_x_status && !isTRUE(is_display_log_independent)) {
+        mcmc_pred_x <- 10^mcmc_pred_x
+      }
+      
+      # Sort by x for smooth line
+      sort_idx       <- order(mcmc_pred_x)
+      mcmc_pred_x    <- mcmc_pred_x[sort_idx]
+      mcmc_pred_pcov <- mcmc_pred_pcov[sort_idx]
+      
+      # MCMC uncertainty smooth line
+      p <- p %>% plotly::add_lines(
+        x = mcmc_pred_x,
+        y = mcmc_pred_pcov,
+        name = "MCMC Measurement Uncertainty",
+        yaxis = "y3",
+        line = list(color = "#e68fac"),
+        legendgroup = "linked_mcmc_uncertainty",
+        showlegend = TRUE,
+        visible = "legendonly"
+      )
+      
+      # pCoV threshold line — same threshold, shown with MCMC group
+      p <- p %>% plotly::add_lines(
+        x = mcmc_pred_x,
+        y = rep(pcov_threshold, length(mcmc_pred_x)),
+        name = paste0("pCoV Threshold: ", pcov_threshold, "%"),
+        yaxis = "y3",
+        line = list(color = "#e68fac", dash = "dash"),
+        legendgroup = "linked_mcmc_uncertainty",
+        showlegend = TRUE,
+        visible = "legendonly"
+      )
+    }
+  }
+ 
+  
+  ### 9b. MCMC ROBUST SAMPLES
+
   ### 10. INFLECTION POINT
   p <- p %>% add_trace(
     x = best_fit$best_glance$inflect_x,

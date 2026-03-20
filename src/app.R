@@ -5,8 +5,8 @@ source("global.R", local = TRUE)
 
 # Set to 1 for local and do not push in prod
 # Sys.setenv(LOCAL_DEV = "1")
-# # local_email_user <- "seamus.owen.stein@dartmouth.edu"
-# local_email_user <- "mscotzens@gmail.com"
+# local_email_user <- "seamus.owen.stein@dartmouth.edu"
+# # local_email_user <- "mscotzens@gmail.com"
 
 # Source authentication configuration (Step 1)
 # Defines DEX_*, APP_REDIRECT_URI, OIDC_SCOPES, endpoints, get_jwks(), `%||%`, dex_client
@@ -869,7 +869,9 @@ server <- function(input, output, session) {
       optimization_ready <- reactiveVal(FALSE)
       # in plates tab split by nominal sample dilution
       split_by_nominal_dilution <- reactiveVal(FALSE)
-
+      show_wavelength_subtraction  <- reactiveVal(FALSE)
+      
+      
       plate_data <- reactiveVal()
       sc_feature_select <- reactiveVal()
       header_info <- reactiveVal()
@@ -1006,6 +1008,7 @@ server <- function(input, output, session) {
       source("xPonentReader.R", local = TRUE)
       source("elisa_reader.R", local = TRUE)
       source("elisa_diagnostic.R", local = TRUE)
+      source("elisa_wavelength_subtraction.R", local = TRUE)
       # source("segment_reader.R", local = TRUE)
 
       source("plate_norm_server.R", local = TRUE)

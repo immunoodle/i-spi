@@ -5,27 +5,52 @@ fetch_study_header <- function(selected_study) {
 # WHERE study_accession = {selected_study}",
 #                                   .con = conn)
 
-  header_query <- glue::glue_sql("SELECT
-    h.experiment_accession,
-    h.plate_id,
-    h.plateid,
-    h.plate,
-    h.nominal_sample_dilution,
-    STRING_AGG( DISTINCT s.source, ',') AS standard_curve_sources
-FROM
-    madi_results.xmap_header as h
-JOIN
-    madi_results.xmap_standard as s
-    ON h.experiment_accession = s.experiment_accession AND h.plate_id = s.plate_id
-WHERE
-    h.study_accession = {selected_study}
-    AND s.study_accession = {selected_study}
-GROUP BY
-    h.experiment_accession,
-    h.plate_id,
-    h.plateid,
-    h.plate,
-    h.nominal_sample_dilution;
+#   header_query <- glue::glue_sql("SELECT
+#     h.experiment_accession,
+#     h.plate_id,
+#     h.plateid,
+#     h.plate,
+#     h.nominal_sample_dilution,
+#     STRING_AGG( DISTINCT s.source, ',') AS standard_curve_sources
+# FROM
+#     madi_results.xmap_header as h
+# JOIN
+#     madi_results.xmap_standard as s
+#     ON h.experiment_accession = s.experiment_accession AND h.plate_id = s.plate_id
+# WHERE
+#     h.study_accession = {selected_study}
+#     AND s.study_accession = {selected_study}
+# GROUP BY
+#     h.experiment_accession,
+#     h.plate_id,
+#     h.plateid,
+#     h.plate,
+#     h.nominal_sample_dilution;
+# ", .con = conn)
+  header_query <- glue::glue_sql("
+  SELECT
+      h.experiment_accession,
+      h.plate_id,
+      h.plateid,
+      h.plate,
+      h.nominal_sample_dilution,
+      STRING_AGG(DISTINCT s.source, ',') AS standard_curve_sources
+  FROM
+      madi_results.xmap_header AS h
+  JOIN
+      madi_results.xmap_standard AS s
+      ON h.experiment_accession = s.experiment_accession
+      AND REGEXP_REPLACE(TRIM(h.plate_id), '\\s+', ' ', 'g')
+        = REGEXP_REPLACE(TRIM(s.plate_id), '\\s+', ' ', 'g')
+  WHERE
+      h.study_accession = {selected_study}
+      AND s.study_accession = {selected_study}
+  GROUP BY
+      h.experiment_accession,
+      h.plate_id,
+      h.plateid,
+      h.plate,
+      h.nominal_sample_dilution;
 ", .con = conn)
 
   study_header <- dbGetQuery(conn, header_query)

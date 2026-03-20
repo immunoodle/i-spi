@@ -96,7 +96,7 @@ observeEvent(
       conn                 = conn
     )
     
-    #loaded_data_v <<- loaded_data
+    loaded_data_v <<- loaded_data
     
     response_var <- loaded_data$response_var
     indep_var    <- loaded_data$indep_var
@@ -214,6 +214,12 @@ observeEvent(
                 tags$dd(paste0(
                   "Unknown test samples interpolated against the standard curve to determine ",
                   "their concentrations based on measured assay response values."
+                )),
+                tags$dt(tags$strong("MCMC Samples")),
+                tags$dd(paste0(
+                  "Unknown test samples with a robust MCMC Bayes algorithm with the standard curve to determine ",
+                  "their concentrations based on measured assay response values. MCMC sample estimates and their precision profile
+                  are shown when the robust MCMC Bayes algorithm is completed for the samples for the specific standard curve."
                 )),
                 
                 tags$dt(tags$strong("Fitted Curve")),
@@ -2001,6 +2007,21 @@ lapply(c("study", "experiment", "plate"), function(s) {
     return()
   }
   
+  # ── NEW: Fetch tidy params snapshot for all curves in scope ─────────────
+  tidy_params_snapshot <- tryCatch(
+    fetch_tidy_params_bulk(
+      study_accession = study,
+      project_id      = proj,
+      best_glance_snapshot = best_glance_snapshot,
+      conn            = conn
+    ),
+    error = function(e) {
+      message("Warning: could not fetch tidy params — error was: ", e$message)
+      NULL
+    }
+  )
+  
+  
   # Snapshot DB connection args so the future can open its own connection
   db_conn_args <- get_db_connection_args()
   
@@ -2035,12 +2056,36 @@ lapply(c("study", "experiment", "plate"), function(s) {
       pred_df  <- curve_df[curve_df$mcmc_set == "pred_se", ]
       if (nrow(pred_df) == 0) next
       
+      
+      # ── NEW: Extract tidy params for this curve ────────────────────────
+      if (is.null(tidy_row) || nrow(tidy_row) == 0) {
+        message(paste0(
+          "[MCMC] Warning: no tidy params found for ID ", id,
+          " (", row$study_accession,
+          " / ", row$experiment_accession,
+          " / ", row$antigen, ")",
+          " — running without parameter uncertainty."
+        ))
+        tidy_row <- NULL
+      }
+      
+      # ── Warn if tidy params missing ────────────────────────────────────
+      if (is.null(tidy_row) || nrow(tidy_row) == 0) {
+        message(paste0(
+          "[MCMC] Warning: no tidy params found for ID",
+          id, row$study_accession, row$experiment_accession, row$antigen,
+          "running without parameter uncertainty."
+        ))
+        tidy_row <- NULL
+      }
+      
       res <- tryCatch(
         run_jags_predicted_concentration(
           glance_row   = row,
           best_pred_df = pred_df,
           sample_df    = curve_df,
           response_col = "assay_response",
+          tidy_df = tidy_row,
           verbose      = TRUE
         ),
         error = function(e) {

@@ -518,7 +518,8 @@ output$dynamic_data_ui <- renderUI({
         DT::dataTableOutput("stored_header"),
         downloadButton("download_stored_header"),
         uiOutput("header_actions"),
-        uiOutput("split_plate_nominal_UI")
+        uiOutput("split_plate_nominal_UI"),
+        uiOutput("wavelength_subtraction_UI")
        # uiOutput("split_button_ui")
       ),
       tabPanel(
@@ -577,6 +578,15 @@ output$split_plate_nominal_UI <- renderUI({
   }
 })
 
+output$wavelength_subtraction_UI <- renderUI({
+  req(input$stored_header_rows_selected)
+  if ((show_wavelength_subtraction())) {
+    actionButton("wavelength_subtraction", "Subtract Wavelengths")
+  } else {
+    NULL
+  }
+})
+
 observeEvent(input$split_plates_nominal,{
   cat("split plates by nominal_sample dilution")
   header_row_selected <- stored_plates_data$stored_header[input$stored_header_rows_selected,]
@@ -590,6 +600,290 @@ observeEvent(input$split_plates_nominal,{
   )
 })
 
+## wavelength subtraction
+observeEvent(input$wavelength_subtraction, {
+  cat("starting subtraction\n")
+  
+  showNotification(id = "subtract_wavelength_notify", 
+                   HTML("Subtracting wavelengths<span class='dots'>"), 
+                   duration = NULL, type = "message")
+  
+  header_row_selected <- stored_plates_data$stored_header[input$stored_header_rows_selected, ]
+  
+  args <- list(
+    study_accession         = header_row_selected$study_accession,
+    experiment_accession    = header_row_selected$experiment_accession,
+    plate                   = header_row_selected$plate,
+    nominal_sample_dilution = header_row_selected$nominal_sample_dilution,
+    wavelengths             = header_row_selected$wavelengths
+  )
+  
+  std_ctrl_buf_join_keys <- c(
+    "project_id", "study_accession", "experiment_accession",
+    "well", "sampleid", "antigen", "dilution",
+    "feature", "source", "stype",
+    "nominal_sample_dilution", "plate"
+  )
+  
+  sample_join_keys <- c(
+    "project_id", "study_accession", "experiment_accession",
+    "well", "sampleid", "patientid", "timeperiod",
+    "antigen", "feature", "stype", "dilution"
+  )
+  
+  delta_standard <- do.call(subtract_wavelength_mfi, c(
+    list(df = stored_plates_data$stored_standard, join_keys = std_ctrl_buf_join_keys), args))
+  
+  delta_control <- do.call(subtract_wavelength_mfi, c(
+    list(df = stored_plates_data$stored_control, join_keys = std_ctrl_buf_join_keys), args))
+  
+  delta_buffer <- do.call(subtract_wavelength_mfi, c(
+    list(df = stored_plates_data$stored_buffer, join_keys = std_ctrl_buf_join_keys), args))
+  
+  
+  # delta_standard <- do.call(subtract_wavelength_mfi, c(list(df = stored_plates_data$stored_standard), args))
+  # delta_control  <- do.call(subtract_wavelength_mfi, c(list(df = stored_plates_data$stored_control),  args))
+  # delta_buffer   <- do.call(subtract_wavelength_mfi, c(list(df = stored_plates_data$stored_buffer),   args))
+  
+  delta_sample <- do.call(subtract_wavelength_mfi, c(
+    list(df = stored_plates_data$stored_sample, join_keys = sample_join_keys),
+    args
+  ))
+  
+  # for (tbl in c("xmap_standard", "xmap_control", "xmap_buffer", "xmap_sample", "xmap_header")) {
+  #   cat("\n---", tbl, "---\n")
+  #   col_sql <- glue::glue("
+  #   SELECT column_name, column_default, is_nullable
+  #   FROM information_schema.columns
+  #   WHERE table_schema = 'madi_results'
+  #     AND table_name = '{tbl}'
+  #   ORDER BY ordinal_position;
+  # ")
+  #   print(DBI::dbGetQuery(conn, col_sql))
+  # }
+  
+  
+  if (!is.null(delta_standard) && nrow(delta_standard) > 0) {
+    showNotification(id = "subtract_wavelength_notify",
+                     HTML("Subtracting wavelengths.. saving standards<span class='dots'>"),
+                     duration = NULL, type = "message")
+    insert_delta_sql(conn, "madi_results", "xmap_standard", delta_standard)
+  }
+
+  if (!is.null(delta_control) && nrow(delta_control) > 0) {
+    showNotification(id = "subtract_wavelength_notify",
+                     HTML("Subtracting wavelengths... saving controls<span class='dots'>"),
+                     duration = NULL, type = "message")
+    insert_delta_sql(conn, "madi_results", "xmap_control", delta_control)
+  }
+
+  if (!is.null(delta_buffer) && nrow(delta_buffer) > 0) {
+    showNotification(id = "subtract_wavelength_notify",
+                     HTML("Subtracting wavelengths... saving blanks<span class='dots'>"),
+                     duration = NULL, type = "message")
+    insert_delta_sql(conn, "madi_results", "xmap_buffer", delta_buffer)
+  }
+
+  if (!is.null(delta_sample) && nrow(delta_sample) > 0) {
+    showNotification(id = "subtract_wavelength_notify",
+                     HTML("Subtracting wavelengths... saving samples<span class='dots'>"),
+                     duration = NULL, type = "message")
+    insert_delta_sql(conn, "madi_results", "xmap_sample", delta_sample)
+  }
+
+  # Insert delta header
+  delta_header <- header_row_selected
+  delta_header$experiment_accession <- paste0(header_row_selected$experiment_accession, "|D")
+  delta_header$wavelengths <- "delta"
+  insert_delta_sql(conn, "madi_results", "xmap_header", delta_header)
+
+  #show_wavelength_subtraction(FALSE)
+  
+  # Copy antigen family settings from base experiment to delta experiment
+  delta_experiment <- paste0(header_row_selected$experiment_accession, "|D")
+  base_experiment  <- header_row_selected$experiment_accession
+  
+  antigen_family_base <- DBI::dbGetQuery(conn, glue::glue("
+    SELECT * FROM madi_results.xmap_antigen_family
+    WHERE study_accession      = '{header_row_selected$study_accession}'
+      AND experiment_accession = '{base_experiment}'
+      AND project_id           = {header_row_selected$project_id}
+      AND NOT EXISTS (
+        SELECT 1 FROM madi_results.xmap_antigen_family tgt
+        WHERE tgt.study_accession      = '{header_row_selected$study_accession}'
+          AND tgt.experiment_accession = '{delta_experiment}'
+          AND tgt.antigen              = xmap_antigen_family.antigen
+          AND tgt.project_id           = {header_row_selected$project_id}
+      );
+  "))
+  
+  if (nrow(antigen_family_base) > 0) {
+    antigen_family_base$experiment_accession <- delta_experiment
+    # remove the pkey 
+    antigen_family_base <- antigen_family_base[, !names(antigen_family_base) %in% "xmap_antigen_family_id"]
+    insert_delta_sql(conn, "madi_results", "xmap_antigen_family", antigen_family_base)
+    cat("antigen family rows copied to delta experiment:", nrow(antigen_family_base), "\n")
+  } else {
+    cat("no antigen family rows to copy\n")
+  }
+  
+  showNotification(id = "subtract_wavelength_notify",
+                   "Wavelength subtraction complete!",
+                   duration = NULL, type = "message")
+  removeNotification(id = "subtract_wavelength_notify")
+
+  cat("all delta inserts complete\n")
+})
+
+
+# observeEvent(input$wavelength_subtraction, {
+#   cat("starting subtraction\n")
+#   showNotification(id = "subtract_wavelength_notify", HTML("Subtracting Wavelength for the selected plate<span class = 'dots'>"), duration = NULL)
+#   header_row_selected <- stored_plates_data$stored_header[input$stored_header_rows_selected, ]
+#   
+#   args <- list(
+#     study_accession         = header_row_selected$study_accession,
+#     experiment_accession    = header_row_selected$experiment_accession,
+#     plate                   = header_row_selected$plate,
+#     nominal_sample_dilution = header_row_selected$nominal_sample_dilution,
+#     wavelengths             = header_row_selected$wavelengths
+#   )
+#   
+#   delta_standard <<- do.call(subtract_wavelength_mfi, c(list(df = stored_plates_data$stored_standard), args))
+#   delta_control  <<- do.call(subtract_wavelength_mfi, c(list(df = stored_plates_data$stored_control),  args))
+#   delta_buffer   <<-  do.call(subtract_wavelength_mfi, c(list(df = stored_plates_data$stored_buffer),   args))
+#   
+#   sample_join_keys <- c(
+#     "project_id",
+#     "study_accession", 
+#     "experiment_accession",
+#     "well",
+#     "sampleid",
+#     "patientid",
+#     "timeperiod", 
+#     "antigen",
+#     "feature",
+#     "stype",
+#     "dilution"
+#   )
+#   
+#   delta_sample <<- do.call(subtract_wavelength_mfi, c(
+#     list(df = stored_plates_data$stored_sample, join_keys = sample_join_keys),
+#     args
+#   ))
+#   
+#   # # --- Insert delta results to DB ---
+#   # cat("inserting delta results to DB\n")
+#   # 
+#   # if (!is.null(delta_standard) && nrow(delta_standard) > 0) {
+#   #   update_db(
+#   #     operation  = "insert",
+#   #     schema     = "madi_results",
+#   #     table_name = "xmap_standard",
+#   #     data       = delta_standard
+#   #   )
+#   #   cat("delta_standard inserted:", nrow(delta_standard), "rows\n")
+#   # } else {
+#   #   cat("delta_standard empty, skipping insert\n")
+#   # }
+#   # 
+#   # if (!is.null(delta_control) && nrow(delta_control) > 0) {
+#   #   update_db(
+#   #     operation  = "insert",
+#   #     schema     = "madi_results",
+#   #     table_name = "xmap_control",
+#   #     data       = delta_control
+#   #   )
+#   #   cat("delta_control inserted:", nrow(delta_control), "rows\n")
+#   # } else {
+#   #   cat("delta_control empty, skipping insert\n")
+#   # }
+#   # 
+#   # if (!is.null(delta_buffer) && nrow(delta_buffer) > 0) {
+#   #   update_db(
+#   #     operation  = "insert",
+#   #     schema     = "madi_results",
+#   #     table_name = "xmap_buffer",
+#   #     data       = delta_buffer
+#   #   )
+#   #   cat("delta_buffer inserted:", nrow(delta_buffer), "rows\n")
+#   # } else {
+#   #   cat("delta_buffer empty, skipping insert\n")
+#   # }
+#   # 
+#   # if (!is.null(delta_sample) && nrow(delta_sample) > 0) {
+#   #   update_db(
+#   #     operation  = "insert",
+#   #     schema     = "madi_results",
+#   #     table_name = "xmap_sample",
+#   #     data       = delta_sample
+#   #   )
+#   #   cat("delta_sample inserted:", nrow(delta_sample), "rows\n")
+#   # } else {
+#   #   cat("delta_sample empty, skipping insert\n")
+#   # }
+#   # 
+#   cat("all delta inserts complete\n")
+# 
+#   cat("subtract completed\n")
+#   removeNotification("subtract_wavelength_notify")
+#   
+# })
+# observeEvent(input$wavelength_subtraction, {
+#   cat("starting subtraction")
+#   header_row_selected <- stored_plates_data$stored_header[input$stored_header_rows_selected, ]
+#   print(header_row_selected)
+#   print(str(stored_plates_data$stored_standard))
+#   
+#   delta_standard <<- subtract_wavelength_mfi(
+#     df                   = stored_plates_data$stored_standard,
+#     study_accession      = header_row_selected$study_accession,
+#     experiment_accession = header_row_selected$experiment_accession,
+#     plate              = header_row_selected$plate,
+#     nominal_sample_dilution = header_row_selected$nominal_sample_dilution,
+#     wavelengths          = header_row_selected$wavelengths
+#   )
+#   
+#   delta_control <<- subtract_wavelength_mfi(
+#     df                   = stored_plates_data$stored_control,
+#     study_accession      = header_row_selected$study_accession,
+#     experiment_accession = header_row_selected$experiment_accession,
+#     plate                 = header_row_selected$plate,
+#     nominal_sample_dilution = header_row_selected$nominal_sample_dilution,
+#     wavelengths          = header_row_selected$wavelengths
+#   )
+#   
+#   delta_buffer <<- subtract_wavelength_mfi(
+#     df                   = stored_plates_data$stored_buffer,
+#     study_accession      = header_row_selected$study_accession,
+#     experiment_accession = header_row_selected$experiment_accession,
+#     plate              = header_row_selected$plate,
+#     nominal_sample_dilution = header_row_selected$nominal_sample_dilution,
+#     wavelengths          = header_row_selected$wavelengths
+#   )
+#   
+#   delta_sample <<- subtract_wavelength_mfi(
+#     df                   = stored_plates_data$stored_sample,
+#     study_accession      = header_row_selected$study_accession,
+#     experiment_accession = header_row_selected$experiment_accession,
+#     plate                 = header_row_selected$plate,
+#     nominal_sample_dilution = header_row_selected$nominal_sample_dilution,
+#     wavelengths          = header_row_selected$wavelengths
+#   )
+#   
+#   cat("subtract completed")
+#   
+#   # perform_wavelength_subtraction(
+#   #   header_row_selected  = header_row_selected,
+#   #   delta_standard       = delta_standard,
+#   #   delta_control        = delta_control,
+#   #   delta_buffer         = delta_buffer,
+#   #   delta_sample         = delta_sample,
+#   #   conn                 = conn,
+#   #   refresh_data_trigger = refresh_data_trigger
+#   # )
+# })
+# 
 
 observeEvent(input$optimize_plates, {
   split_optimization_plates(study_accession = input$readxMap_study_accession, experiment_accession = input$readxMap_experiment_accession )

@@ -281,7 +281,7 @@ pull_data <- function(study_accession, experiment_accession, project_id, conn = 
                                                                project_id = project_id,
                                                                conn = conn)
   
-  mcmc_samples_read <<- mcmc_samples
+  #mcmc_samples_read <<- mcmc_samples
   
   mcmc_pred <- fetch_best_pred_robust_concentrations(study_accession = study_accession,
                                                      experiment_accession = experiment_accession,
@@ -344,7 +344,7 @@ pull_data <- function(study_accession, experiment_accession, project_id, conn = 
     }
   }
   
-  mcmc_samples_2 <<- mcmc_samples
+  #mcmc_samples_2 <<- mcmc_samples
   
   return(list(plates=plates, standards=standards,
               blanks=blanks, samples=samples,
@@ -1254,6 +1254,8 @@ select_antigen_plate <- function(loaded_data,
       !is.null(wavelength) && wavelength != WL_NONE) {
     plate_standard$wavelength <- normalize_wavelength(plate_standard$wavelength)
     wl_filter <- plate_standard$wavelength == normalize_wavelength(wavelength)
+    cat("wavelength filter:\n")
+    print(wl_filter)
     if (any(wl_filter)) {
       plate_standard <- plate_standard[wl_filter, , drop = FALSE]
     } else {
@@ -1766,20 +1768,22 @@ fetch_combined_mcmc <- function(study_accession, project_id, best_glance_ids, co
       1                 AS dilution,
       yhat              AS assay_response,
       best_glance_all_id,
+      wavelength,
+      feature,
       'pred_se'         AS mcmc_set
     FROM madi_results.best_pred_all
     WHERE project_id = {project_id}
       AND study_accession = '{study_accession}'
       AND best_glance_all_id IN ({ids})
-
     UNION ALL
-
     SELECT 
       best_sample_se_all_id AS row_id,
       NULL                  AS concentration,
       dilution,
       assay_response,
       best_glance_all_id,
+      wavelength,
+      feature,
       'sample_se'           AS mcmc_set
     FROM madi_results.best_sample_se_all
     WHERE project_id = {project_id}
@@ -1789,6 +1793,40 @@ fetch_combined_mcmc <- function(study_accession, project_id, best_glance_ids, co
   
   DBI::dbGetQuery(conn, query)
 }
+# fetch_combined_mcmc <- function(study_accession, project_id, best_glance_ids, conn) {
+#   
+#   ids <- paste(best_glance_ids, collapse = ", ")
+#   
+#   query <- glue::glue("
+#     SELECT 
+#       best_pred_all_id  AS row_id,
+#       x                 AS concentration,
+#       1                 AS dilution,
+#       yhat              AS assay_response,
+#       best_glance_all_id,
+#       'pred_se'         AS mcmc_set
+#     FROM madi_results.best_pred_all
+#     WHERE project_id = {project_id}
+#       AND study_accession = '{study_accession}'
+#       AND best_glance_all_id IN ({ids})
+# 
+#     UNION ALL
+# 
+#     SELECT 
+#       best_sample_se_all_id AS row_id,
+#       NULL                  AS concentration,
+#       dilution,
+#       assay_response,
+#       best_glance_all_id,
+#       'sample_se'           AS mcmc_set
+#     FROM madi_results.best_sample_se_all
+#     WHERE project_id = {project_id}
+#       AND study_accession = '{study_accession}'
+#       AND best_glance_all_id IN ({ids})
+#   ")
+#   
+#   DBI::dbGetQuery(conn, query)
+# }
 
 
 update_combined_mcmc_bulk <- function(pred_all_mcmc, sample_all_mcmc, best_glance_complete,  conn) {
