@@ -25,6 +25,8 @@ observeEvent(input$stored_header_rows_selected, {
   print(paste("selected plate:", selected_studyexpplate$plate))
   selected_studyexpplate$nominal_sample_dilution <- stored_plates_data$stored_header[input$stored_header_rows_selected, c("nominal_sample_dilution")]
   print(paste("selected nominal sample dilution", selected_studyexpplate$nominal_sample_dilution))
+  selected_studyexpplate$wavelengths <- stored_plates_data$stored_header[input$stored_header_rows_selected, c("wavelengths")]
+  print(paste("selected wavelengths", selected_studyexpplate$wavelengths))
   # header_row_selected <- stored_plates_data$stored_header[input$stored_header_rows_selected,]
   # print(header_row_selected)
 
@@ -53,6 +55,32 @@ observeEvent(input$stored_header_rows_selected, {
   } else {
     split_by_nominal_dilution(FALSE)
   }
+  
+  ## wavelength check
+  wl_parts <- strsplit(selected_studyexpplate$wavelengths, "\\|")[[1]]
+  if (length(wl_parts) == 2) {
+    delta_experiment <- paste0(input$readxMap_experiment_accession, "_delta")
+    
+    already_subtracted_sql <- glue::glue("
+      SELECT EXISTS (
+        SELECT 1
+        FROM madi_results.xmap_header
+        WHERE study_accession     = '{input$readxMap_study_accession}'
+          AND experiment_accession = '{delta_experiment}'
+          AND plateid              = '{plateid}'
+      ) AS already_subtracted;
+    ")
+    already_subtracted <- DBI::dbGetQuery(conn, already_subtracted_sql)$already_subtracted
+    
+    if (!already_subtracted) {
+      show_wavelength_subtraction(TRUE)
+    } else {
+      show_wavelength_subtraction(FALSE)
+    }
+  } else {
+    show_wavelength_subtraction(FALSE)
+  }
+  
 
 
   # output$selected_plate_text = renderText({
@@ -165,6 +193,10 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
   print(selected_studyexpplate$experiment_accession == "")
 
   req(selected_studyexpplate$experiment_accession,selected_studyexpplate$study_accession)
+  
+  display_exclude_cols <- c("plate_id", "xmap_standard_id", "antibody_name", 
+                            "xmap_control_id", "xmap_buffer_id", "xmap_sample_id")
+  
 
   m <- 0
   selected_studyexpplate$plateid <- NA
@@ -187,10 +219,17 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
                                table_name = "xmap_header",
                                select_where = list("concat(study_accession,experiment_accession)" = paste0(input$readxMap_study_accession,input$readxMap_experiment_accession))
     )
+    
+    # columns to display 
+    stored_header_display_cols <- c("project_id", "study_accession", "experiment_accession", 
+                                    "plate", "nominal_sample_dilution", "plateid", "wavelengths",
+                                    "acquisition_date", "reader_serial_number", "rp1_pmt_volts", 
+                                    "rp1_target", "auth0_user", "plate_id", "Curve_Status", "curve_plate")
+    
 
     # stored_header$plateid <- gsub("[[:punct:][:blank:]]+", ".", basename(gsub("\\", "/", stored_header$plate_id, fixed=TRUE)))
-    stored_header <- stored_header[ , c("experiment_accession", "plateid", "plate", "nominal_sample_dilution", "acquisition_date", "reader_serial_number",
-                                        "rp1_pmt_volts", "rp1_target", "auth0_user", "project_id", "study_accession", "plate_id")]
+    # stored_header <- stored_header[ , c("experiment_accession", "plateid", "plate", "nominal_sample_dilution", "wavelengths", "acquisition_date", "reader_serial_number",
+    #                                     "rp1_pmt_volts", "rp1_target", "auth0_user", "project_id", "study_accession", "plate_id")]
     stored_header$Curve_Status <- NA
 
 
@@ -210,7 +249,9 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
       # stored_standard$plateid <- gsub("[[:punct:][:blank:]]+", ".", basename(gsub("\\", "/", stored_standard$plate_id, fixed=TRUE)))
       names(stored_standard)[names(stored_standard) == "antibody_n"] <- "n"
       names(stored_standard)[names(stored_standard) == "antibody_mfi"] <- "mfi"
-      stored_standard <- distinct(stored_standard[,!(names(stored_standard) %in% c("xmap_standard_id", "antibody_name", "plate_id"))])
+      #stored_standard <- distinct(stored_standard[,!(names(stored_standard) %in% c("xmap_standard_id", "antibody_name", "plate_id"))])
+      stored_standard <- distinct(stored_standard)
+      
       # selected_studyexpplate$stored_standard <- stored_standard
       # storedlong_plates_data$stored_standard <- stored_standard
       stored_plates_data$stored_standard <- stored_standard
@@ -218,7 +259,12 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
      # wide_standard <- pivot_wider(stored_standard, id_cols = c("plateid", "sampleid", "source", "feature", "dilution", "pctaggbeads", "samplingerrors", "study_accession", "experiment_accession"), names_from = antigen, values_from = c(mfi, n))
       # output$swide_standard = DT::renderDataTable(wide_standard, options = list(scrollX = TRUE))
       # stored_plates_data$stored_standardw = wide_standard
-      output$swide_standard = DT::renderDataTable(stored_standard, options = list(scrollX = TRUE))
+      
+     # output$swide_standard = DT::renderDataTable(stored_standard, options = list(scrollX = TRUE))
+      output$swide_standard <- DT::renderDataTable(
+        stored_standard[, !(names(stored_standard) %in% display_exclude_cols)],
+        options = list(scrollX = TRUE)
+      )
       #stored_plates_data$stored_standardw = stored_standard
 
 
@@ -344,7 +390,7 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
 
     # print("creating output stored_header ")
     # stored_header_react <- reactive(stored_header)
-    stored_header_dt <- datatable(stored_header,
+    stored_header_dt <- datatable(stored_header[, names(stored_header) %in% stored_header_display_cols],
                                   options = list(scrollX = TRUE),
                                   selection = 'single',
                                   escape = FALSE
@@ -388,14 +434,20 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
 
       names(stored_control)[names(stored_control) == "antibody_n"] <- "n"
       names(stored_control)[names(stored_control) == "antibody_mfi"] <- "mfi"
-      stored_control <- distinct(stored_control[,!(names(stored_control) %in% c("xmap_control_id", "antibody_name","plate_id"))])
+      #stored_control <- distinct(stored_control[,!(names(stored_control) %in% c("xmap_control_id", "antibody_name","plate_id"))])
+      stored_control <- distinct(stored_control)
+      
       stored_plates_data$stored_control <- stored_control
       # selected_studyexpplate$stored_control
       # storedlong_plates_data$stored_control = stored_control
       # wide_control <- pivot_wider(stored_control, names_from = antigen, values_from = c(mfi, n))
       # output$swide_control = DT::renderDataTable(wide_control, options = list(scrollX = TRUE))
       # stored_plates_data$stored_controlw <- wide_control
-      output$swide_control = DT::renderDataTable(stored_control, options = list(scrollX = TRUE))
+      #output$swide_control = DT::renderDataTable(stored_control, options = list(scrollX = TRUE))
+      output$swide_control = DT::renderDataTable(
+        stored_control[, !(names(stored_control) %in% display_exclude_cols)],
+        options = list(scrollX = TRUE)
+      )
       #stored_plates_data$stored_controlw <- stored_control
 
     }
@@ -418,7 +470,8 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
       # stored_buffer$plateid <- gsub("[[:punct:][:blank:]]+", ".", basename(gsub("\\", "/", stored_buffer$plate_id, fixed=TRUE)))
       names(stored_buffer)[names(stored_buffer) == "antibody_n"] <- "n"
       names(stored_buffer)[names(stored_buffer) == "antibody_mfi"] <- "mfi"
-      stored_buffer <- distinct(stored_buffer[,!(names(stored_buffer) %in% c("xmap_buffer_id", "antibody_name","plate_id"))])
+      #stored_buffer <- distinct(stored_buffer[,!(names(stored_buffer) %in% c("xmap_buffer_id", "antibody_name","plate_id"))])
+      stored_buffer <- distinct(stored_buffer)
       # print(paste("nrow previous stored buffer", nrow(stored_buffer)))
       stored_plates_data$stored_buffer <- stored_buffer
       # selected_studyexpplate$stored_buffer
@@ -427,7 +480,12 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
       # output$swide_buffer = DT::renderDataTable(wide_buffer, options = list(scrollX = TRUE))
       # # Updating the stored_plates_data reactive for downloading
       # stored_plates_data$stored_bufferw <- wide_buffer
-      output$swide_buffer = DT::renderDataTable(stored_buffer, options = list(scrollX = TRUE))
+      #output$swide_buffer = DT::renderDataTable(stored_buffer, options = list(scrollX = TRUE))
+      output$swide_buffer = DT::renderDataTable(
+        stored_buffer[, !(names(stored_buffer) %in% display_exclude_cols)],
+        options = list(scrollX = TRUE)
+      )
+      
       # Updating the stored_plates_data reactive for downloading
       #stored_plates_data$stored_bufferw <- stored_buffer
     }
@@ -453,7 +511,10 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
     if (nrows_sample > 0) {
       names(stored_sampley)[names(stored_sampley) == "antibody_n"] <- "n"
       names(stored_sampley)[names(stored_sampley) == "antibody_mfi"] <- "mfi"
-      stored_samplex <- distinct(stored_sampley, study_accession, experiment_accession, plate_id, antigen, well, .keep_all = TRUE)
+      stored_samplex <- distinct(stored_sampley, study_accession, 
+                                 experiment_accession, plate_id, antigen, wavelength,
+                                 well, 
+                                 .keep_all = TRUE)
       begin_cols <-  c("experiment_accession", "plate", "nominal_sample_dilution")
       stored_samplex <- stored_samplex[, c(
         begin_cols,
@@ -481,6 +542,7 @@ observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), 
       # stored_plates_data$stored_samplew <- wide_sample
 
       output$swide_sample <- DT::renderDataTable(stored_samplex, options = list(scrollX = TRUE))
+      
       #stored_plates_data$stored_samplew <- stored_samplex
     }
 
