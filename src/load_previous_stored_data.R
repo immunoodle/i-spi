@@ -33,6 +33,10 @@ observeEvent(input$stored_header_rows_selected, {
   plateid <- stored_plates_data$stored_header[
     input$stored_header_rows_selected, "plateid"
   ]
+  
+  plate_id <- stored_plates_data$stored_header[
+    input$stored_header_rows_selected, "plate_id"
+  ]
 
   # --- Check if already split ---
   already_split_sql <- glue::glue("
@@ -59,7 +63,7 @@ observeEvent(input$stored_header_rows_selected, {
   ## wavelength check
   wl_parts <- strsplit(selected_studyexpplate$wavelengths, "\\|")[[1]]
   if (length(wl_parts) == 2) {
-    delta_experiment <- paste0(input$readxMap_experiment_accession, "_delta")
+    delta_experiment <- paste0(input$readxMap_experiment_accession, "|D")
     
     already_subtracted_sql <- glue::glue("
       SELECT EXISTS (
@@ -67,7 +71,7 @@ observeEvent(input$stored_header_rows_selected, {
         FROM madi_results.xmap_header
         WHERE study_accession     = '{input$readxMap_study_accession}'
           AND experiment_accession = '{delta_experiment}'
-          AND plateid              = '{plateid}'
+          AND plate_id              = '{plate_id}'
       ) AS already_subtracted;
     ")
     already_subtracted <- DBI::dbGetQuery(conn, already_subtracted_sql)$already_subtracted
