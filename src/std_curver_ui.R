@@ -96,8 +96,7 @@ observeEvent(
       conn                 = conn
     )
     
-    loaded_data_v <<- loaded_data
-    
+
     response_var <- loaded_data$response_var
     indep_var    <- loaded_data$indep_var
     

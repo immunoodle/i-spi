@@ -884,20 +884,6 @@ classify_sample_data <- function(sample_data, selectedAntigen, selectedPatient =
 
 }
 
-format_assay_terms <- function(x) {
-  lookup <- c(
-    MFI = "MFI",
-    Concentration = "Concentration"
-  )
-
-  # normalize lookup keys for matching
-  names(lookup) <- tolower(names(lookup))
-
-  sapply(x, function(v) {
-    key <- tolower(v)
-    if (key %in% names(lookup)) lookup[[key]] else v
-  }, USE.NAMES = FALSE)
-}
 
 plot_patient_dilution_series  <- function(sample_data, selectedAntigen, selectedPatient,selectedTimepoints, selectedDilutions) {
 
