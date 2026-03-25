@@ -153,6 +153,12 @@ output$study_sidebar <- renderUI({
 # When study is enabled, explicitly clear any selection among study_tabs so that none are selected.
 # We use a sentinel string "study_none" that does not correspond to any tabName.
 observeEvent(input$readxMap_study_accession, {
+  # Reset experiment FIRST before anything else with priorty helps app not crash when study is changed and experiment is a value
+  updateSelectInput(session, "readxMap_experiment_accession",
+                    choices = c("Click here" = "Click here"),
+                    selected = "Click here"
+  )
+  
   val <- input$readxMap_study_accession
   enabled <- !is.null(val) && nzchar(trimws(val)) && val != "Click here"
 
@@ -165,7 +171,7 @@ observeEvent(input$readxMap_study_accession, {
     updateTabItems(session, "study_tabs", selected = "study_none")
   }
 
-}, ignoreNULL = FALSE)
+}, ignoreNULL = FALSE, priority = 10)
 
 output$landing_page_ui <- renderUI({
   cat(input$main_tabs)
