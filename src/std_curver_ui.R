@@ -82,6 +82,32 @@ observeEvent(
     selected_study      <- input$readxMap_study_accession
     selected_experiment <- input$readxMap_experiment_accession
     
+    # #  Validate experiment belongs to current study
+    valid_exps <- reactive_df_study_exp()
+    if (!is.null(valid_exps) && nrow(valid_exps) > 0) {
+      study_exps <- valid_exps[
+        valid_exps$study_accession == selected_study,
+        "experiment_accession"
+      ]
+      if (!selected_experiment %in% study_exps) {
+        cat("⚠ [std_curver_ui] Stale experiment", selected_experiment,
+            "not in study", selected_study, "- skipping pull_data\n")
+        return()
+      }
+    }
+
+    stored_std <- stored_plates_data$stored_standard
+    if (!is.null(stored_std) && nrow(stored_std) > 0) {
+      if ("study_accession" %in% names(stored_std)) {
+        stored_study <- unique(stored_std$study_accession)
+        if (!selected_study %in% stored_study) {
+          cat("⚠ [std_curver_ui] stored_standard belongs to", stored_study,
+              "not current study", selected_study, "- skipping\n")
+          return()
+        }
+      }
+    }
+    
     verbose                    <- FALSE
     model_names                <- c("Y5", "Yd5", "Y4", "Yd4", "Ygomp4")
     param_group                <- "standard_curve_options"
@@ -95,6 +121,11 @@ observeEvent(
       project_id           = userWorkSpaceID(),
       conn                 = conn
     )
+    
+    if (is.null(loaded_data)) {
+      cat("⚠ [std_curver_ui] pull_data returned NULL - aborting\n")
+      return()
+    }
     
 
     response_var <- loaded_data$response_var

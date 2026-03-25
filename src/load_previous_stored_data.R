@@ -133,6 +133,23 @@ observeEvent(input$readxMap_study_accession, {
 observeEvent(list(input$readxMap_experiment_accession, refresh_data_trigger()), {
   req(input$readxMap_experiment_accession != "Click here")
 
+  
+  # Validate experiment belongs to current study before doing anything
+  current_study <- input$readxMap_study_accession
+  current_exp   <- input$readxMap_experiment_accession
+  
+  if (is.null(current_study) || current_study == "Click here") return()
+  if (is.null(current_exp)   || current_exp   == "Click here") return()
+  
+  valid_exps <- reactive_df_study_exp()
+  if (!is.null(valid_exps)) {
+    study_exps <- valid_exps[valid_exps$study_accession == current_study, "experiment_accession"]
+    if (!current_exp %in% study_exps) {
+      cat("⚠ Stale experiment selection:", current_exp, "not in study:", current_study, "- skipping\n")
+      return()
+    }
+  }
+  
   removeTab(inputId = "body_panel_id", target="previewxMap")
   removeTab(inputId = "body_panel_id", target="headerxMap")
   removeTab(inputId = "inLoadedData", target="Data")
