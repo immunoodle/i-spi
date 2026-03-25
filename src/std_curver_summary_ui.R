@@ -102,7 +102,8 @@ observeEvent(list(
       print(unique(antigen_settings$study_accession))
       print(unique(antigen_settings$experiment_accession))
 
-      cv_df <- calculate_cv_dilution_platewise(best_standard = best_standard_all, antigen_settings = antigen_settings)
+      cv_df <- calculate_cv_dilution_platewise(best_standard = best_standard_all, antigen_settings = antigen_settings,
+                                               study_params = study_params)
       message("after calculate cv_df")
 
       output$std_curver_summary_ui <- renderUI({

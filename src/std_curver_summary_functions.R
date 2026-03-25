@@ -8,68 +8,89 @@ aggregate_params <- function(df) {
   )
 }
 
-calculate_cv_dilution_platewise <- function(best_standard, antigen_settings) {
-
+calculate_cv_dilution_platewise <- function(best_standard, antigen_settings, study_params) {
+ 
   df_cv_dilution_factor <- data.frame(
     experiment_accession = character(),
     source = character(),
-
     antigen = character(),
     dilution = numeric(),
-    #  log_dilution_mean_antigen = numeric(),
     mean_assay_response_at_dilution = numeric(),
     sd_assay_response_at_dilution = numeric(),
     cv_assay_response_pct_at_dilution = numeric(),
     stringsAsFactors = FALSE)
-
-  # unique combinations of antigens and dilutions
+  
+  # Determine if back-transformation is needed
+  is_log_response <- isTRUE(study_params$is_log_response)
+  
   for (experiment in unique(best_standard$experiment_accession)) {
     for (source in unique(best_standard$source)) {
       for (antigen in unique(best_standard$antigen)) {
         for (dilution in unique(best_standard$dilution)) {
-
-          # subset data for the current antigen and dilution across all plates
-          subset_data_dilution_series <- best_standard[best_standard$antigen == antigen & best_standard$dilution == dilution
-                                                       & best_standard$source == source & best_standard$experiment_accession == experiment,]
-          # print(subset_data_dilution_series$mfi)
-          # check if there is more than 1 row for the current dilution level
+          
+          subset_data_dilution_series <- best_standard[
+            best_standard$antigen == antigen &
+              best_standard$dilution == dilution &
+              best_standard$source == source &
+              best_standard$experiment_accession == experiment, ]
+          
           if (nrow(subset_data_dilution_series) > 1) {
-            mean_assay_response_at_dilution <- mean(subset_data_dilution_series$assay_response, na.rm = TRUE)
-            sd_assay_response_at_dilution <- sd(subset_data_dilution_series$assay_response, na.rm = TRUE)
-            cv_assay_response_pct_at_dilution <- (sd_assay_response_at_dilution / mean_assay_response_at_dilution) * 100
-
-            # Add the original log_dilution along with calculated mean, sd, and CV
-            current_combination <- data.frame(experiment_accession = experiment,
-                                              source = source,
-                                              antigen = antigen,
-                                              dilution = dilution,
-                                              mean_assay_response_at_dilution = mean_assay_response_at_dilution,
-                                              sd_assay_response_at_dilution = sd_assay_response_at_dilution,
-                                              cv_assay_response_pct_at_dilution = cv_assay_response_pct_at_dilution)
-
-            df_cv_dilution_factor <- rbind(df_cv_dilution_factor, current_combination)
+            
+            # Back-transform to raw scale if response is log10-transformed
+            # CV% should always be calculated on raw (non-log) values
+            raw_responses <- if (is_log_response) {
+              10^(subset_data_dilution_series$assay_response)
+            } else {
+              subset_data_dilution_series$assay_response
+            }
+            
+            # Protect against zero or negative values before CV calculation
+            # These would be invalid even on raw scale
+            raw_responses <- raw_responses[!is.na(raw_responses) & raw_responses > 0]
+            
+            if (length(raw_responses) > 1) {
+              mean_assay_response_at_dilution <- mean(raw_responses, na.rm = TRUE)
+              sd_assay_response_at_dilution   <- sd(raw_responses, na.rm = TRUE)
+              
+              # CV% on raw scale: SD/Mean * 100
+              # Mean is guaranteed > 0 due to filter above
+              cv_assay_response_pct_at_dilution <- 
+                (sd_assay_response_at_dilution / mean_assay_response_at_dilution) * 100
+              
+              current_combination <- data.frame(
+                experiment_accession          = experiment,
+                source                        = source,
+                antigen                       = antigen,
+                dilution                      = dilution,
+                mean_assay_response_at_dilution   = mean_assay_response_at_dilution,
+                sd_assay_response_at_dilution     = sd_assay_response_at_dilution,
+                cv_assay_response_pct_at_dilution = cv_assay_response_pct_at_dilution
+              )
+              df_cv_dilution_factor <- rbind(df_cv_dilution_factor, current_combination)
+            }
           }
         }
       }
     }
   }
-
+  
   df_cv_dilution_factor <- df_cv_dilution_factor[
     is.finite(df_cv_dilution_factor$cv_assay_response_pct_at_dilution), ]
-
-  # compute antigen-specific concentrations and attach to cv dataframe
+  
+  # Compute antigen-specific concentrations and attach to CV dataframe
   cv_df <- data.frame()
   for (antigen in unique(df_cv_dilution_factor$antigen)) {
-    antigen_undiluted_sc_concentration <- get_study_exp_antigen_plate_param(antigen_settings[antigen_settings$antigen == antigen,])
-    cv_df <- rbind(cv_df,compute_concentration(data = df_cv_dilution_factor[df_cv_dilution_factor$antigen == antigen, ],
-                                               undiluted_sc_concentration = antigen_undiluted_sc_concentration,
-                                               independent_variable = "concentration",
-                                               is_log_concentration = TRUE))
-
+    antigen_undiluted_sc_concentration <- get_study_exp_antigen_plate_param(
+      antigen_settings[antigen_settings$antigen == antigen, ])
+    
+    cv_df <- rbind(cv_df, compute_concentration(
+      data                   = df_cv_dilution_factor[df_cv_dilution_factor$antigen == antigen, ],
+      undiluted_sc_concentration = antigen_undiluted_sc_concentration,
+      independent_variable   = "concentration",
+      is_log_concentration   = TRUE
+    ))
   }
-
   return(cv_df)
-
 }
 
 
