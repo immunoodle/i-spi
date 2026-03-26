@@ -58,6 +58,56 @@ getProjectName <- function(conn, current_user){
   return(list(name = name, id = id))
 }
 
+# returns a data frame for the experiment in the study and project and return ELISA or bead_assy
+# used to determine if it is a bead based assay or not. 
+get_exp_assay_type <- function(conn, project_id, study_accession, experiment_accession) {
+  query <- glue::glue("SELECT
+    project_id,
+    study_accession,
+    experiment_accession,
+    CASE
+        WHEN LOWER(TRIM(assay_response_variable)) = 'absorbance' THEN 'ELISA'
+        ELSE 'bead_assay'
+    END AS assay_type
+FROM madi_results.xmap_header
+WHERE project_id = {project_id}
+  AND study_accession      = '{study_accession}'
+  AND experiment_accession = '{experiment_accession}'
+GROUP BY
+    project_id,
+    study_accession,
+    experiment_accession,
+    assay_type
+LIMIT 1;")
+  
+  result <- dbGetQuery(conn, query)
+  return(result)
+}
+
+info_context_box <- function(txt) {
+  tagList(
+    div(
+      style = paste0(
+        "background-color:#f0f8ff; ",      # very light blue background
+        "border:1px solid #4a90e2; ",      # medium‑blue border
+        "padding:10px; ",
+        "margin-bottom:15px; ",
+        "border-radius:5px; "
+      ),
+      # ---- Heading ----
+      tags$h4(
+        "Current Bead Count Context",
+        style = "margin-top:0; color:#2c5aa0; font-weight:600;"
+      ),
+      # ---- Body text (passed in) ----
+      tags$p(
+        HTML(txt),
+        style = "margin:0; color:#333333; line-height:1.4;"
+      )
+    )
+  )
+}
+
 output$project_info <- renderUI({
   tagList(
     div(
@@ -373,6 +423,7 @@ output$view_stored_experiments_ui <- renderUI({
 
 # if (input$readxMap_study_accession != "Click here") {
    stored_plate_title <- paste("View, Process, and Export", input$readxMap_study_accession, "Data", sep = " ")
+   
 
   tagList(
     fluidPage(
@@ -425,9 +476,16 @@ output$view_stored_experiments_ui <- renderUI({
                             selected = character(0)
                           ),
                           conditionalPanel(
-                            condition = "input.qc_component == 'Bead Count'",
+                            condition = "input.qc_component == 'Bead Count' && output.exp_assay_type_js == 'bead_assay'",
+                            uiOutput("bead_count_available_ui"),
                             uiOutput("bead_count_module_ui")
                           ),
+                          conditionalPanel(
+                            condition = "input.qc_component == 'Bead Count' && output.exp_assay_type_js == 'ELISA'",
+                            uiOutput("bead_not_available_ui")
+                          ),
+                          
+                          
                           # conditionalPanel(
                           #   condition = "input.qc_component == 'Standard Curve'",
                           #  uiOutput("sc_fit_module_ui")
@@ -560,6 +618,79 @@ output$dynamic_data_ui <- renderUI({
     NULL  # Removes the bsCollapse completely
   }
 })
+
+
+exp_assay_info <- reactive({
+  req(input$readxMap_study_accession,
+      input$readxMap_experiment_accession,
+      userWorkSpaceID())
+  
+  # Query the DB – returns a data.frame with column "assay_type"
+  res <- get_exp_assay_type(
+    conn                 = conn,
+    project_id           = userWorkSpaceID(),
+    study_accession      = input$readxMap_study_accession,
+    experiment_accession = input$readxMap_experiment_accession
+  )
+  assay_type <- if (nrow(res) == 0) NA_character_ else res$assay_type[1]
+  
+  list(
+    assay_type          = assay_type,
+    study_accession     = input$readxMap_study_accession,
+    experiment_accession= input$readxMap_experiment_accession
+  )
+})
+
+output$exp_assay_type_js <- renderText({
+  info <- exp_assay_info()
+  # Default to bead_assay (the most common case) while the query runs
+  if (is.null(info$assay_type) || is.na(info$assay_type)) {
+    "bead_assay"
+  } else {
+    info$assay_type
+  }
+  
+})
+
+output$bead_not_available_ui <- renderUI({
+  info <- exp_assay_info()
+  # Show the box only for ELISA assays
+  if (info$assay_type != "ELISA") return(NULL)
+  
+  txt <- sprintf(
+    "Current Study: <strong>%s</strong><br>
+     Current Experiment: <strong>%s</strong><br>
+     Assay Type: <strong>ELISA</strong> (absorbance‑based).<br>
+     Because the assay is absorbance‑based and not bead‑based,
+     bead‑count analysis is not available for this experiment.",
+    info$study_accession,
+    info$experiment_accession
+  )
+  info_context_box(txt)
+})
+
+output$bead_count_available_ui <- renderUI({
+  info <- exp_assay_info()
+  # Show the box only for bead assays assays
+  if (info$assay_type != "bead_assay") return(NULL)
+  
+  txt <- sprintf(
+    "Current Study: <strong>%s</strong><br>
+     Current Experiment: <strong>%s</strong><br>
+     Assay Type: <strong>Bead Array</strong><br>
+     Bead count analysis is avaliable.",
+    info$study_accession,
+    info$experiment_accession
+  )
+  info_context_box(txt)
+})
+
+
+  
+  
+# Keep it alive even when the UI element that uses it is hidden
+outputOptions(output, "exp_assay_type_js", suspendWhenHidden = FALSE)
+
 
 optimization_parsed_boolean <- reactive({
   optimization_refresh() # refresh dependency
@@ -1035,6 +1166,8 @@ observeEvent(input$qc_component, {
   }
   gc(verbose = TRUE)
 })
+
+
 
 observeEvent(input$study_level_tabs, {
   if (input$study_level_tabs == "Experiments") {
