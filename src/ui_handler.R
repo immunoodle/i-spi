@@ -97,7 +97,7 @@ info_context_box <- function(txt) {
       # ---- Heading ----
       tags$h4(
         "Current Bead Count Context",
-        style = "margin-top:0; color:#2c5aa0; font-weight:600;"
+        style = "margin-top:0; color:#2c5aa0;"
       ),
       # ---- Body text (passed in) ----
       tags$p(
